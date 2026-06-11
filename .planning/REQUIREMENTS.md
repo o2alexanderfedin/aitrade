@@ -119,13 +119,56 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (populated by roadmapper) | | |
+| SPEC-01 | Phase 2 | Pending |
+| SPEC-02 | Phase 2 | Pending |
+| SPEC-03 | Phase 2 | Pending |
+| SPEC-04 | Phase 2 | Pending |
+| DATA-01 | Phase 1 | Pending |
+| DATA-02 | Phase 3 | Pending |
+| DATA-03 | Phase 3 | Pending |
+| DATA-04 | Phase 1 | Pending |
+| DATA-05 | Phase 3 | Pending |
+| DATA-06 | Phase 3 | Pending |
+| DATA-07 | Phase 3 | Pending |
+| DATA-08 | Phase 3 | Pending |
+| FEAT-01 | Phase 4 | Pending |
+| FEAT-02 | Phase 4 | Pending |
+| FEAT-03 | Phase 4 | Pending |
+| FEAT-04 | Phase 4 | Pending |
+| FEAT-05 | Phase 4 | Pending |
+| EVAL-01 | Phase 5 | Pending |
+| EVAL-02 | Phase 5 | Pending |
+| EVAL-03 | Phase 5 | Pending |
+| EVAL-04 | Phase 5 | Pending |
+| EVAL-05 | Phase 9 | Pending |
+| EVAL-06 | Phase 8 | Pending |
+| FCST-01 | Phase 7 | Pending |
+| FCST-02 | Phase 8 | Pending |
+| FCST-03 | Phase 8 | Pending |
+| FCST-04 | Phase 7 | Pending |
+| FCST-05 | Phase 8 | Pending |
+| FCST-06 | Phase 8 | Pending |
+| SIM-01 | Phase 6 | Pending |
+| SIM-02 | Phase 6 | Pending |
+| SIM-03 | Phase 6 | Pending |
+| MON-01 | Phase 9 | Pending |
+| MON-02 | Phase 9 | Pending |
+| MON-03 | Phase 9 | Pending |
+| TRACK-01 | Phase 2 | Pending |
+| TRACK-02 | Phase 2 | Pending |
+| GATE-01 | Phase 8 | Pending |
+| GATE-02 | Phase 9 | Pending |
+| GATE-03 | Phase 11 | Pending |
+| GATE-04 | Phase 11 | Pending |
+| GATE-05 | Phase 11 | Pending |
+| AGNT-01 | Phase 8 | Pending |
+| AGNT-02 | Phase 10 | Pending |
 
 **Coverage:**
-- v1 requirements: 41 total
-- Mapped to phases: 0
-- Unmapped: 41 ⚠️ (pending roadmap)
+- v1 requirements: 44 total (header previously said 41 — corrected to actual checkbox count during roadmap creation)
+- Mapped to phases: 44
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-06-10*
-*Last updated: 2026-06-10 after initial definition*
+*Last updated: 2026-06-10 after roadmap creation (traceability populated)*
