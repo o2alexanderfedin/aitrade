@@ -1,8 +1,10 @@
-# AiHedgeFund — BinanceSwap Forecast + Monetization MVP
+# AiHedgeFund — Predictive + Monetization Platform (Milestone 1: BinanceSwap MVP)
 
 ## What This Is
 
-A two-stage ML trading system for Binance perpetual futures (swap): Stage 1 forecasts the 10-second midprice return from L1 + trade data; Stage 2 fits a TOB-cross threshold monetization policy on those forecasts in simulation. Built under heavy, explicitly-listed simplifications (zero latency, zero fees, $100 max position) with a documented queue for removing them one by one toward a real-life tradeable model. Equally important deliverable: validation of the **agentic-iteration workflow** — Claude + ML models iterating on the system, with at least one metric-moving improvement produced by the agentic loop.
+A general two-stage prediction + monetization platform: Stage 1 forecasts a target signal from event-stream data; Stage 2 fits a monetization policy on those forecasts in simulation. The methodology core — leakage-proof feature/label catalogues, walk-forward fold harness that owns time, selection-bias budgets, held-out lockbox, frozen-predictor interfaces, agentic iteration — is **domain-neutral by design**: it applies to any money market, stock exchange, or even non-price prediction domains such as news-landscape forecasting. Venue- and domain-specific code (capture, unit registries, symbol conventions) is isolated behind thin adapter boundaries.
+
+**Current milestone (this roadmap)**: the Binance perpetual-futures MVP — Stage 1 forecasts the 10-second midprice return from L1 + trade data; Stage 2 fits a TOB-cross threshold policy. Built under heavy, explicitly-listed simplifications (zero latency, zero fees, $100 max position) with a documented queue for removing them toward a real-life tradeable model. Equally important deliverable: validation of the **agentic-iteration workflow** — Claude + ML models iterating on the system, with at least one metric-moving improvement produced by the agentic loop. Binance crypto is the beachhead because its data is free, continuous (24/7), and operationally simplest — not because the platform is about crypto.
 
 Source documents: `mvp.md` (MVP definition) and `spec.md` (living spec — wins on conflict).
 
@@ -33,6 +35,7 @@ A reproducible, leakage-proof two-stage pipeline that achieves Net P&L > 0 and a
 
 ### Out of Scope
 
+- Other venues/asset classes (equities, FX, money markets) and non-price domains (news-landscape prediction) **in this milestone** — they are the platform vision, not MVP scope; the MVP earns them by proving the methodology core on the cheapest beachhead. Generalization happens at proven seams (adapter boundary), not speculatively
 - Realistic execution (fees, latency, queue position, market impact, maker orders) — explicitly deferred; the simplification-removal queue is post-MVP, each removal its own version gate
 - RL-based monetization — open question (Q4), deferred past MVP; threshold policy first
 - Funding-rate P&L — post-MVP queue item 7
@@ -70,7 +73,8 @@ A reproducible, leakage-proof two-stage pipeline that achieves Net P&L > 0 and a
 | No subsampling, no tradeability filter at MVP | Justified by zero-latency assumption; revisit triggers documented in spec.md | — Pending |
 | Sharpe > 5 MVP gate | Achievable only because of zero-cost/zero-latency/small-size; bar for "simplified setup works", not real-world | — Pending |
 | 5-segment fold split with 3-segment OOF fallback | Anti-leakage by construction; fallback handles 3-month data starvation | — Pending |
-| `mvp/` at repo root as the MVP containment directory | mvp.md says `aitrade/mvp/`; this repo (AiHedgeFund) is the project root, so `mvp/` here is the equivalent — mvp.md/spec.md move inside during Stage 0 | — Pending |
+| `mvp/` at repo root as the MVP containment directory | mvp.md says `aitrade/mvp/`; this repo (published as `aitrade` on GitHub) is the project root, so `mvp/` here is the equivalent — mvp.md/spec.md move inside during Stage 0 | — Pending |
+| Platform vision is venue/domain-agnostic; MVP stays Binance-only | Methodology core (catalogues, fold harness, lockbox, two-stage split, agentic loop) is domain-neutral; venue specifics isolated behind adapter boundaries (capture, unit registry, symbol naming). Broaden at proven seams post-MVP, not speculatively (YAGNI) | — Pending |
 
 ## Evolution
 
@@ -90,4 +94,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-10 after initialization*
+*Last updated: 2026-06-11 after vision broadening (venue/domain-agnostic platform; Binance MVP as beachhead)*

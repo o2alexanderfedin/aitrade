@@ -1,6 +1,8 @@
 # aitrade
 
-ML trading research for Binance perpetual futures: a two-stage pipeline that forecasts the 10-second midprice return (Stage 1) and fits a TOB-cross threshold monetization policy on those forecasts in simulation (Stage 2). Built under explicit, documented simplifications (zero latency, zero fees, $100 max position) that are removed one by one toward a real-life tradeable model.
+A general two-stage **prediction + monetization platform**: Stage 1 forecasts a target signal from event-stream data; Stage 2 fits a monetization policy on those forecasts in simulation. The methodology core — leakage-proof feature/label catalogues, walk-forward evaluation that owns time, selection-bias budgets, held-out lockbox, parallel model-class tracks — is domain-neutral: it applies to any money market, stock exchange, or non-price domains such as news-landscape prediction. Venue specifics stay behind thin adapters.
+
+**Current milestone — Binance perpetual futures MVP**: Stage 1 forecasts the 10-second midprice return from L1 + trade data; Stage 2 fits a TOB-cross threshold policy. Built under explicit, documented simplifications (zero latency, zero fees, $100 max position) removed one by one toward a real-life tradeable model. Crypto is the beachhead because its data is free, continuous, and operationally simplest — the platform is not about crypto.
 
 Equally important deliverable: validating the **agentic-iteration workflow** — Claude + ML models iterating on the system, with metric-moving improvements produced by the agentic loop.
 

@@ -101,6 +101,13 @@ Deferred to post-MVP (simplification-removal queue). Tracked but not in current 
 - **METH-02**: RL-based monetization (mvp.md Q4, post-v3)
 - **METH-03**: Live calibration monitor with automatic demotion (when live exists)
 
+### Platform Generalization (vision — earn via MVP first)
+
+- **PLAT-01**: Venue adapter interface extracted from the Binance capture/ingest seam (second venue proves the abstraction; candidates: another crypto exchange, then equities/FX feeds)
+- **PLAT-02**: Stock exchange / money-market data plane (sessioned markets: calendars, halts, auctions, corporate actions — new adapter concerns the 24/7 crypto beachhead doesn't exercise)
+- **PLAT-03**: Domain-neutral target/label abstraction so Stage 1 can forecast non-price signals (e.g., news-landscape prediction) on the same fold harness, catalogues, and overfitting controls
+- **PLAT-04**: Cross-domain reporting — same side-by-side model-class protocol applied per domain/venue
+
 ## Out of Scope
 
 | Feature | Reason |

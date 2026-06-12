@@ -1,9 +1,11 @@
 <!-- GSD:project-start source:PROJECT.md -->
 ## Project
 
-**AiHedgeFund — BinanceSwap Forecast + Monetization MVP**
+**AiHedgeFund — Predictive + Monetization Platform (Milestone 1: BinanceSwap MVP)**
 
-A two-stage ML trading system for Binance perpetual futures (swap): Stage 1 forecasts the 10-second midprice return from L1 + trade data; Stage 2 fits a TOB-cross threshold monetization policy on those forecasts in simulation. Built under heavy, explicitly-listed simplifications (zero latency, zero fees, $100 max position) with a documented queue for removing them one by one toward a real-life tradeable model. Equally important deliverable: validation of the **agentic-iteration workflow** — Claude + ML models iterating on the system, with at least one metric-moving improvement produced by the agentic loop.
+A general two-stage prediction + monetization platform: Stage 1 forecasts a target signal from event-stream data; Stage 2 fits a monetization policy on those forecasts in simulation. The methodology core — leakage-proof feature/label catalogues, walk-forward fold harness that owns time, selection-bias budgets, held-out lockbox, frozen-predictor interfaces, agentic iteration — is **domain-neutral by design**: it applies to any money market, stock exchange, or even non-price prediction domains such as news-landscape forecasting. Venue- and domain-specific code (capture, unit registries, symbol conventions) is isolated behind thin adapter boundaries.
+
+**Current milestone (this roadmap)**: the Binance perpetual-futures MVP — Stage 1 forecasts the 10-second midprice return from L1 + trade data; Stage 2 fits a TOB-cross threshold policy. Built under heavy, explicitly-listed simplifications (zero latency, zero fees, $100 max position) with a documented queue for removing them toward a real-life tradeable model. Equally important deliverable: validation of the **agentic-iteration workflow** — Claude + ML models iterating on the system, with at least one metric-moving improvement produced by the agentic loop. Binance crypto is the beachhead because its data is free, continuous (24/7), and operationally simplest — not because the platform is about crypto.
 
 Source documents: `mvp.md` (MVP definition) and `spec.md` (living spec — wins on conflict).
 
