@@ -59,38 +59,66 @@ class Watchdog:
     def _tick(self) -> None:
         now_ns = time.time_ns()
 
-        for key in (*self.conn_ids, "merged"):
-            last_seen = self.last_seen_state.get(key)
+        # "merged" is checked first and takes priority over any individual
+        # connection's stall, mirroring rotation.py's reactive
+        # merged-silent-vs-connection-silent priority: when both
+        # connections are silent, the merged row is the more informative
+        # one and a per-connection row alongside it would be redundant
+        # noise for the same underlying outage.
+        merged_last_seen = self.last_seen_state.get("merged")
+        merged_stalled = False
+        if merged_last_seen is not None:
+            silence_ns = now_ns - merged_last_seen
+            if silence_ns > self.stall_threshold_seconds * 1e9:
+                merged_stalled = True
+                if not self._active_stall.get("merged", False):
+                    self.gap_ledger.record_gap(
+                        stream="__connection__",
+                        conn_id="watchdog",
+                        gap_start_rtime=merged_last_seen,
+                        gap_end_rtime=now_ns,
+                        cause=(
+                            f"merged-silent-ongoing: no message from either "
+                            f"connection for {silence_ns / 1e9:.1f}s (watchdog)"
+                        ),
+                    )
+                self._active_stall["merged"] = True
+            else:
+                self._active_stall["merged"] = False
+
+        for conn_id in self.conn_ids:
+            last_seen = self.last_seen_state.get(conn_id)
             if last_seen is None:
                 # Not started yet (e.g. connection B during daemon.py's
                 # stagger window) -- absence is not silence, do not alarm
                 # on a connection that was never supposed to be live yet.
-                self._active_stall[key] = False
+                self._active_stall[conn_id] = False
+                continue
+
+            if merged_stalled:
+                # Already covered by the merged-silent row above; still
+                # mark this connection as "in an active stall" so it does
+                # not immediately re-fire the moment merged resolves but
+                # this specific connection is still individually silent.
+                self._active_stall[conn_id] = True
                 continue
 
             silence_ns = now_ns - last_seen
             if silence_ns > self.stall_threshold_seconds * 1e9:
-                if not self._active_stall.get(key, False):
-                    silence_seconds = silence_ns / 1e9
-                    cause = (
-                        f"merged-silent-ongoing: no message from either connection "
-                        f"for {silence_seconds:.1f}s (watchdog)"
-                        if key == "merged"
-                        else (
-                            f"connection-silent-ongoing: no message from "
-                            f"conn_id={key} for {silence_seconds:.1f}s (watchdog)"
-                        )
-                    )
+                if not self._active_stall.get(conn_id, False):
                     self.gap_ledger.record_gap(
                         stream="__connection__",
-                        conn_id="watchdog" if key == "merged" else key,
+                        conn_id=conn_id,
                         gap_start_rtime=last_seen,
                         gap_end_rtime=now_ns,
-                        cause=cause,
+                        cause=(
+                            f"connection-silent-ongoing: no message from "
+                            f"conn_id={conn_id} for {silence_ns / 1e9:.1f}s (watchdog)"
+                        ),
                     )
-                    self._active_stall[key] = True
+                    self._active_stall[conn_id] = True
             else:
-                self._active_stall[key] = False
+                self._active_stall[conn_id] = False
 
         try:
             free_bytes = shutil.disk_usage(self.data_root).free
