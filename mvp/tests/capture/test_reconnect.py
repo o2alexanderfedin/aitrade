@@ -97,6 +97,16 @@ def test_duplicate_frame_from_two_connections_dedups_to_one_row(tmp_path: Path) 
 
 
 def test_gap_longer_than_threshold_produces_one_ledger_row(tmp_path: Path) -> None:
+    """Plan 04 policy correction: a single connection (only "A" is ever
+    used here) that goes silent for longer than the threshold is, by
+    construction, BOTH connection-silent for A and merged-silent (no other
+    connection is around to keep the merged watermark fresh) -- the
+    merged-silent signal takes priority as the more informative one, so
+    this now records a `__connection__`/merged row rather than the old
+    per-stream `trade`/merged row Plan 03 produced. See
+    01-04-SUMMARY.md's Deviations for why this test's assertions changed
+    rather than the implementation being bent to match the stale plan text."""
+
     async def scenario() -> None:
         queue: asyncio.Queue = asyncio.Queue()
         # Three distinct trade ids on the same stream: 0.5s gap (below the
@@ -112,8 +122,9 @@ def test_gap_longer_than_threshold_produces_one_ledger_row(tmp_path: Path) -> No
         df = ledger.read_all()
         assert df.height == 1
         row = df.row(0, named=True)
-        assert row["stream"] == "trade"
+        assert row["stream"] == "__connection__"
         assert row["conn_id"] == "merged"
+        assert row["cause"].startswith("merged-silent")
         assert row["gap_start_rtime"] == 500_000_000
         assert row["gap_end_rtime"] == 3_000_000_000
 
