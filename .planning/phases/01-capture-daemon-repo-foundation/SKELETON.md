@@ -12,8 +12,12 @@ read back and asserted — proving the full capture stack against the real excha
 
 This is not a web app: there is no UI and no user-facing database. The "user" exercising this
 skeleton is the operator running `verify_live_connection.py` from the CLI; the "interaction" is
-the CLI invocation and its stdout/exit-code contract. This statement becomes true (not
-aspirational) only once Plan 01 Task 4 completes its live run.
+the CLI invocation and its stdout/exit-code contract.
+
+**This statement is now true, not aspirational.** Plan 01 Task 4 completed its live run on
+2026-09-12: `OK: bookTicker=19 trade=1 path=/Volumes/ProjectsSSD/aihedgefund/capture/skeleton_verify/verify_1789191817.parquet`
+(exit 0), and the redundancy-check re-proof of Assumption A1 reproduced Jaccard=1.000000 on
+both streams. See `01-01-SUMMARY.md` for full stdout and Parquet inspection output.
 
 ## Architectural Decisions
 
@@ -32,13 +36,13 @@ aspirational) only once Plan 01 Task 4 completes its live run.
 
 ## Stack Touched in Phase 1 (Plan 01 — this skeleton)
 
-- [ ] Project scaffold — `mvp/pyproject.toml`, `uv.lock`, `.gitignore`, ruff banned-api pandas rule, pytest config
-- [ ] Live exchange connection — routed `/public` combined stream, real BTCUSDT traffic (no mock)
-- [ ] Durable read/write — one Parquet file written to a validated `data_root`, read back with polars
-- [ ] CLI interaction — `verify_live_connection.py` is the "UI": invoked by a human or by Claude via Bash, reports per-stream counts and exits non-zero on any failure
-- [ ] Documented local-run command — `uv run --directory mvp python -m scripts.verify_live_connection --data-root /Volumes/ProjectsSSD/<path> --symbol BTCUSDT`
+- [x] Project scaffold — `mvp/pyproject.toml`, `uv.lock`, `.gitignore`, ruff banned-api pandas rule, pytest config
+- [x] Live exchange connection — routed `/public` combined stream, real BTCUSDT traffic (no mock)
+- [x] Durable read/write — one Parquet file written to a validated `data_root`, read back with polars
+- [x] CLI interaction — `verify_live_connection.py` is the "UI": invoked by a human or by Claude via Bash, reports per-stream counts and exits non-zero on any failure
+- [x] Documented local-run command — `uv run --directory mvp python -m scripts.verify_live_connection --data-root /Volumes/ProjectsSSD/<path> --symbol BTCUSDT`
 
-> Plan 01 Task 4 checks these boxes off after the live run actually succeeds — do not pre-check.
+> Checked off 2026-09-12 after Plan 01 Task 4's live run actually succeeded (see `01-01-SUMMARY.md`).
 
 ## Out of Scope (Deferred to Later Slices in This Phase)
 
