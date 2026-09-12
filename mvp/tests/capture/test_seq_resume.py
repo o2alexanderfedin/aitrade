@@ -1,7 +1,19 @@
-"""Tests for rotation.py's atomic writer/orphan-sweep and seq.py's restart-resume."""
+"""Tests for rotation.py's atomic writer/orphan-sweep and seq.py's restart-resume.
+
+Plan 04 Task 1 ("seq-resume scalability" correction) adds the `seq_state.json`
+sidecar cases: (a) sidecar present and covers the newest on-disk partition ->
+zero partition files opened; (b) sidecar absent -> falls back to a scan
+restricted to the newest `date=*` directory only; (c) sidecar present but
+stale relative to a newer partition (simulates a crash between a flush and
+its sidecar write) -> resume takes max(sidecar, scan) and self-heals the
+sidecar. See `data/capture/rotation.py`'s `read_seq_sidecar`/
+`write_seq_state_atomic`/`part_ns_of` and `data/capture/seq.py`'s
+`resume_seq_assigner`.
+"""
 
 from __future__ import annotations
 
+import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,9 +23,12 @@ import pytest
 
 from data.capture.parse import parse_bookticker, parse_trade
 from data.capture.rotation import (
+    part_ns_of,
     partition_dir,
+    read_seq_sidecar,
     sweep_orphan_tmp_files,
     write_partition_atomic,
+    write_seq_state_atomic,
 )
 from data.capture.seq import SeqAssigner, resume_seq_assigner
 from data.schema import BOOKTICKER_SCHEMA
@@ -120,3 +135,115 @@ def test_resume_seq_assigner_seeds_from_max_seq_no_history_starts_fresh(
 def test_partition_dir_is_the_single_path_shape(tmp_path: Path) -> None:
     expected = tmp_path / "parsed" / "symbol=BTCUSDT" / "stream=trade"
     assert partition_dir(tmp_path, "BTCUSDT", "trade") == expected
+
+
+def test_resume_seq_assigner_sidecar_present_and_covers_disk_opens_zero_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Case (a): sidecar's `part_ns` matches the newest file on disk, so the
+    restricted newest-date scan finds nothing newer than the sidecar and
+    never opens a partition file at all."""
+    event_ms = int(datetime(2026, 9, 12, tzinfo=timezone.utc).timestamp() * 1000)
+    rows = [_bookticker_row(seq, event_ms + seq) for seq in range(18)]  # seq 0..17
+    written = write_partition_atomic(rows, BOOKTICKER_SCHEMA, tmp_path, "BTCUSDT", "bookTicker")
+    write_seq_state_atomic(
+        tmp_path, "BTCUSDT", {"bookTicker": {"seq": 17, "part_ns": part_ns_of(written[0])}}
+    )
+
+    import data.capture.seq as seq_module
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("resume_seq_assigner opened a partition file despite a covering sidecar")
+
+    monkeypatch.setattr(seq_module.pl, "scan_parquet", _boom)
+
+    assigner = SeqAssigner()
+    resume_seq_assigner(assigner, tmp_path, "BTCUSDT", ["bookTicker", "trade"])
+
+    assert assigner.next("BTCUSDT", "bookTicker") == 18
+    assert assigner.next("BTCUSDT", "trade") == 0
+
+
+def test_resume_seq_assigner_sidecar_absent_falls_back_to_newest_date_scan(
+    tmp_path: Path,
+) -> None:
+    """Case (b): no sidecar exists yet -> falls back to scanning the newest
+    `date=*` directory (not every historical date) and produces the correct
+    max, exactly like Plan 02's original behavior for a fresh store."""
+    event_ms = int(datetime(2026, 9, 12, tzinfo=timezone.utc).timestamp() * 1000)
+    rows = [_bookticker_row(seq, event_ms + seq) for seq in range(18)]  # seq 0..17
+    write_partition_atomic(rows, BOOKTICKER_SCHEMA, tmp_path, "BTCUSDT", "bookTicker")
+
+    assert not (tmp_path / "seq_state.json").exists()
+
+    assigner = SeqAssigner()
+    resume_seq_assigner(assigner, tmp_path, "BTCUSDT", ["bookTicker", "trade"])
+
+    assert assigner.next("BTCUSDT", "bookTicker") == 18
+    assert assigner.next("BTCUSDT", "trade") == 0
+
+    # Self-heal: absence of a sidecar is itself a form of staleness: this
+    # resume should now have written one, so the NEXT restart is sidecar-only.
+    healed = read_seq_sidecar(tmp_path, "BTCUSDT")
+    assert healed["bookTicker"]["seq"] == 17
+
+
+def test_resume_seq_assigner_stale_sidecar_takes_max_of_sidecar_and_scan(
+    tmp_path: Path,
+) -> None:
+    """Case (c): sidecar reflects only the first of two flushes (simulating a
+    crash between the second flush's Parquet write and its sidecar update).
+    Resume must take max(sidecar, scan-of-newer-partitions), never a value
+    lower than what is actually on disk, and self-heal the sidecar."""
+    event_ms = int(datetime(2026, 9, 12, tzinfo=timezone.utc).timestamp() * 1000)
+
+    rows1 = [_bookticker_row(seq, event_ms + seq) for seq in range(5)]  # seq 0..4
+    written1 = write_partition_atomic(rows1, BOOKTICKER_SCHEMA, tmp_path, "BTCUSDT", "bookTicker")
+    write_seq_state_atomic(
+        tmp_path, "BTCUSDT", {"bookTicker": {"seq": 4, "part_ns": part_ns_of(written1[0])}}
+    )
+
+    time.sleep(0.001)  # ensure a distinct part-<ns> filename for the 2nd flush
+    rows2 = [_bookticker_row(seq, event_ms + seq) for seq in range(5, 10)]  # seq 5..9
+    write_partition_atomic(rows2, BOOKTICKER_SCHEMA, tmp_path, "BTCUSDT", "bookTicker")
+    # Sidecar deliberately NOT updated for this second flush -> now stale.
+
+    assigner = SeqAssigner()
+    resume_seq_assigner(assigner, tmp_path, "BTCUSDT", ["bookTicker", "trade"])
+
+    assert assigner.next("BTCUSDT", "bookTicker") == 10  # max(sidecar=4, scan=9) + 1
+
+    healed = read_seq_sidecar(tmp_path, "BTCUSDT")
+    assert healed["bookTicker"]["seq"] == 9
+
+
+def test_resume_seq_assigner_5000_partitions_with_sidecar_under_2_seconds(
+    tmp_path: Path,
+) -> None:
+    """Scalability acceptance: a store with 5,000 partition files for one
+    stream, plus a sidecar covering the newest of them, resumes in well
+    under 2 seconds -- because the covering sidecar means zero files are
+    opened, regardless of how many partitions exist on disk (closes the
+    O(all-partitions-ever) hazard found live in Plan 02's checkpoint,
+    where 1,261 files cost ~14s of daemon downtime)."""
+    event_ms = int(datetime(2026, 9, 12, tzinfo=timezone.utc).timestamp() * 1000)
+    rows = [_bookticker_row(0, event_ms)]
+    written = write_partition_atomic(rows, BOOKTICKER_SCHEMA, tmp_path, "BTCUSDT", "bookTicker")
+    template = written[0]
+    part_dir = template.parent
+    last_ns = part_ns_of(template)
+
+    for _ in range(1, 5000):
+        last_ns += 1
+        clone = part_dir / f"part-{last_ns}.parquet"
+        os.link(template, clone)  # instant -- no parquet-write cost, just a filename
+
+    write_seq_state_atomic(tmp_path, "BTCUSDT", {"bookTicker": {"seq": 0, "part_ns": last_ns}})
+
+    assigner = SeqAssigner()
+    start = time.monotonic()
+    resume_seq_assigner(assigner, tmp_path, "BTCUSDT", ["bookTicker", "trade"])
+    elapsed = time.monotonic() - start
+
+    assert elapsed < 2.0, f"resume took {elapsed:.2f}s with 5,000 partitions on disk"
+    assert assigner.next("BTCUSDT", "bookTicker") == 1
