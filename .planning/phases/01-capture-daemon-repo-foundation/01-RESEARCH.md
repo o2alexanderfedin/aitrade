@@ -4,6 +4,34 @@
 **Domain:** Binance USD-M perpetual-futures websocket market-data capture; durable event-store writing; uv/Python repo scaffolding
 **Confidence:** HIGH on Binance protocol and stack versions (verified against official docs and PyPI same-day); MEDIUM on macOS operational specifics (launchd/caffeinate — verified via community/Apple sources, not project-specific testing); LOW/none on live-traffic-only behaviors (actual gap frequency, `a`-ID consecutiveness) — flagged explicitly below.
 
+> ## ⛔ EMPIRICAL CORRECTION — READ FIRST (supersedes parts of this document)
+>
+> This research was written **without probing the live exchange** (see "Open Questions / not probed live").
+> Two of its headline claims were tested against live Binance traffic on 2026-09-11 and are **FALSE**.
+> Full evidence, including per-endpoint 20-second message counts and the probe scripts, is in
+> `evidence/PROBE-RESULTS.md` in this phase directory.
+>
+> | Claim in this document | Verdict | Reality (measured) |
+> |---|---|---|
+> | USD-M futures has **no** raw per-fill `<symbol>@trade` stream | **FALSE** | `btcusdt@trade` delivered 96 msgs/20s, payload `{e,E,T,s,t,p,q,X,m,st}` with per-fill `t` |
+> | Legacy `/stream` and `/ws` are **permanently decommissioned** (sunset 2026-04-23) | **FALSE** | Legacy `/stream?streams=btcusdt@bookTicker/btcusdt@trade` delivered 1216 bookTicker + 96 trade msgs/20s |
+> | Topology must be **four sockets** (2×`/public` + 2×`/market`) | **FALSE** | `bookTicker`+`trade` share one combined Public connection → **2 sockets**, exactly as CONTEXT.md specified |
+> | Dedup key must change to `(stream, a)` aggregate-trade-ID | **UNNECESSARY** | `(stream, tradeId)` from CONTEXT.md is correct — `t` exists |
+>
+> **The actual routing rule:** streams are routed **by class**, not by decommissioning.
+> `bookTicker` and `trade` are Public-class (served by legacy `/stream`, `/ws` *and* routed `/public`).
+> `aggTrade` is Market-class (served only by `/market`). Subscribing to a stream on the wrong
+> base URL is accepted and then delivers **nothing, with no error** — silent omission is the real hazard,
+> and the daemon must assert first-message-received per stream at startup.
+>
+> **Consequences for planning:** `CLAUDE.md`'s mandate (`trades` dumps + `@trade` stream; aggTrades
+> only as a cross-check) is satisfiable as written and must be followed. `01-CONTEXT.md` needs no
+> amendment. Use routed `/public` for bookTicker+trade (documented and stable) but do not design
+> around a sunset that has not occurred.
+>
+> Everything else in this document — routed URLs existing, `aggTrade` on `/market`, `E`/`T` semantics,
+> polars `partition_by` instability, stack pins, macOS operational guidance — stands.
+
 <user_constraints>
 ## User Constraints (from CONTEXT.md)
 
@@ -67,9 +95,9 @@
 
 ## Summary
 
-Binance's USD-M futures websocket API underwent a routed-endpoint migration: as of **2026-04-23** the legacy unrouted `wss://fstream.binance.com/stream` and `/ws` endpoints were **permanently decommissioned for all stream classes** — verified against the official "Important WebSocket Change Notice" page. The notice describes a transitional window (unmigrated connections limited to Public-only data) that preceded the sunset date; that sunset date has already passed as of this research (2026-09-11), so today the legacy URL should be expected to refuse or immediately close connections outright, not partially serve them. There are now three routed base URLs — `wss://fstream.binance.com/public`, `/market`, `/private` — and **`bookTicker` lives on `/public` while `aggTrade` lives on `/market`**. These are different hosts/paths and cannot be combined into one `?streams=` URL. This directly changes the redundancy topology CONTEXT.md described ("two independent websocket connections to the same combined stream"): the daemon needs **two connection pairs — 2× to `/public` for bookTicker, 2× to `/market` for aggTrade — four sockets total**, not two.
+Binance's USD-M futures websocket API underwent a routed-endpoint migration: as of **2026-04-23** a routed-endpoint scheme was introduced. ~~the legacy unrouted endpoints were permanently decommissioned for all stream classes~~ **[CORRECTED — see EMPIRICAL CORRECTION at top: the legacy endpoints still serve Public-class streams as of 2026-09-11]** — verified against the official "Important WebSocket Change Notice" page. The notice describes a transitional window (unmigrated connections limited to Public-only data) that preceded the sunset date; that sunset date has already passed as of this research (2026-09-11), so today the legacy URL should be expected to refuse or immediately close connections outright, not partially serve them. There are now three routed base URLs — `wss://fstream.binance.com/public`, `/market`, `/private` — and **`bookTicker` lives on `/public` while `aggTrade` lives on `/market`**. These are different hosts/paths and cannot be combined into one `?streams=` URL. This directly changes the redundancy topology CONTEXT.md described ("two independent websocket connections to the same combined stream"): ~~the daemon needs four sockets~~ **[CORRECTED — bookTicker and trade share one combined Public connection; the topology is two sockets, as CONTEXT.md specified. See EMPIRICAL CORRECTION at top.]**
 
-Second, and just as consequential: **USD-M futures has no raw, per-fill `<symbol>@trade` websocket stream.** Verified against three independent official sources (the legacy Aggregate-Trade-Streams doc, the full "Market" stream catalog listing, and the official `binance-futures-connector-python` client, which implements `agg_trade()` but no `trade()` method for UM futures). Only `<symbol>@aggTrade` exists live. This means CONTEXT.md's dedup key `(stream, tradeId)` must become `(stream, a)` — aggregate-trade-ID, not a per-fill trade ID — and it means Pitfall 5 from `.planning/research/PITFALLS.md` (aggTrade vs. trades semantic mismatch, insurance/ADL exclusion) is **structural, not a policy choice**: live capture is forced onto `@aggTrade`; backfill (Phase 3) uses the raw `trades` dataset. The seam between them is unavoidable and must be documented, not engineered away.
+Second: ~~**USD-M futures has no raw, per-fill `<symbol>@trade` websocket stream.**~~ **[CORRECTED — FALSE. `btcusdt@trade` is live and delivers per-fill rows with trade ID `t`. Measured 96 msgs/20s. See EMPIRICAL CORRECTION at top and evidence/PROBE-RESULTS.md.]** The paragraph below is retained only for its aggTrade field-shape detail: Verified against three independent official sources (the legacy Aggregate-Trade-Streams doc, the full "Market" stream catalog listing, and the official `binance-futures-connector-python` client, which implements `agg_trade()` but no `trade()` method for UM futures). Only `<symbol>@aggTrade` exists live. This means CONTEXT.md's dedup key `(stream, tradeId)` must become `(stream, a)` — aggregate-trade-ID, not a per-fill trade ID — and it means Pitfall 5 from `.planning/research/PITFALLS.md` (aggTrade vs. trades semantic mismatch, insurance/ADL exclusion) is **structural, not a policy choice**: live capture is forced onto `@aggTrade`; backfill (Phase 3) uses the raw `trades` dataset. The seam between them is unavoidable and must be documented, not engineered away.
 
 Both streams do carry Binance's dual timestamp fields (`E` event time, `T` transaction time, both milliseconds); the project's existing convention of using `T` as `etime` holds for both bookTicker and aggTrade. The `(etime, seq)` ordering rule from PITFALLS.md #4 remains the correct mitigation for "last row per etime" — this research adds that `seq` must be defined as monotonic **per (symbol, stream, capture-process lineage)**, not per process invocation, or it silently resets on every daemon restart (flagged as an Open Question below, since CONTEXT.md did not resolve persistence-across-restart explicitly).
 
@@ -274,13 +302,13 @@ Binance's server sends its own ping frame every ~3 minutes and disconnects if no
 
 ## Common Pitfalls
 
-### Pitfall A: Building against the decommissioned unrouted websocket URL
+### Pitfall A: ~~Building against the decommissioned unrouted websocket URL~~ **[SUPERSEDED — the legacy URL is not decommissioned; see EMPIRICAL CORRECTION at top. The real pitfall is subscribing to a stream on the wrong-class base URL, which silently delivers nothing.]**
 **What goes wrong:** Code written against `wss://fstream.binance.com/stream?streams=...` or `/ws/...` (the form used throughout most existing Binance tutorials, connector examples, and even this project's own additional-context research prompt) targets an endpoint that is now **fully decommissioned**, not merely degraded. The official change notice describes a *transitional* window in which unmigrated connections would fall back to Public-only data; that transition ended at the stated sunset date of 2026-04-23, which has already passed as of this research (2026-09-11). Today, the expected failure mode on the legacy URL is a refused or immediately-closed connection for **all** stream classes, including bookTicker — not a partially-working connection.
 **Why it happens:** The migration is recent relative to most training data and existing tutorials/SDK examples; the sunset date is easy to read as "future" if the research or code predates it, or easy to miss entirely if a tutorial was written before the notice existed.
 **How to avoid:** Use only the routed base URLs (`/public` for bookTicker, `/market` for aggTrade) from day one; do not write any fallback path to the legacy URL. Verify against live traffic that both streams actually deliver data, not just that the socket opens.
 **Warning signs:** Connection refused, or immediate close, on any `wss://fstream.binance.com/stream` or `/ws` URL — for any stream, not just aggTrade.
 
-### Pitfall B: Assuming a raw `<symbol>@trade` stream exists for USD-M futures
+### Pitfall B: ~~Assuming a raw `<symbol>@trade` stream exists for USD-M futures~~ **[SUPERSEDED — it does exist and is verified live. Retained below only for the aggTrade field list, which is accurate.]**
 **What goes wrong:** Schema, dedup key, and field-map code gets written against `t`/`p`/`q`/`T`/`m` (the raw spot/general trade shape) instead of aggTrade's `a`/`p`/`q`/`nq`/`f`/`l`/`T`/`m`/`st`.
 **Why it happens:** Spot and options both have raw trade streams; futures training-data examples and search results frequently surface the spot payload shape by mistake (confirmed while researching this phase — a search returned `{"s":"BNBBTC",...}`, which is spot, not futures).
 **How to avoid:** Parse only against the verified futures aggTrade field list; treat unknown extra fields (`nq`, `ps`, `st` were all added after the base spec) as pass-through/ignored by the typed schema but still present in the raw archive.
