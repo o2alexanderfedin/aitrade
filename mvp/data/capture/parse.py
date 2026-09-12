@@ -76,18 +76,34 @@ def parse_trade(data: dict, seq: int, rtime_ns: int, source: str = "capture") ->
         raise FrameParseError(f"trade frame missing field: {exc}") from exc
 
 
-def parse_combined_frame(
-    frame: dict, seq: int, rtime_ns: int, source: str = "capture"
-) -> dict:
-    """Dispatch a combined-stream envelope to parse_bookticker or parse_trade."""
+def stream_kind_of(frame: dict) -> str:
+    """Return `"bookTicker"` or `"trade"` based on `frame["stream"]`'s suffix.
+
+    Shared by `parse_combined_frame`, `ws_client.py`, `rotation.py`, and
+    Plan 03's dedup stage — the one place this dispatch logic lives.
+    """
     try:
         stream_name = frame["stream"]
-        data = frame["data"]
     except KeyError as exc:
         raise FrameParseError(f"envelope missing field: {exc}") from exc
 
     if stream_name.endswith("@bookTicker"):
-        return parse_bookticker(data, seq, rtime_ns, source)
+        return "bookTicker"
     if stream_name.endswith("@trade"):
-        return parse_trade(data, seq, rtime_ns, source)
+        return "trade"
     raise FrameParseError(f"unrecognized stream suffix: {stream_name!r}")
+
+
+def parse_combined_frame(
+    frame: dict, seq: int, rtime_ns: int, source: str = "capture"
+) -> dict:
+    """Dispatch a combined-stream envelope to parse_bookticker or parse_trade."""
+    kind = stream_kind_of(frame)
+    try:
+        data = frame["data"]
+    except KeyError as exc:
+        raise FrameParseError(f"envelope missing field: {exc}") from exc
+
+    if kind == "bookTicker":
+        return parse_bookticker(data, seq, rtime_ns, source)
+    return parse_trade(data, seq, rtime_ns, source)
