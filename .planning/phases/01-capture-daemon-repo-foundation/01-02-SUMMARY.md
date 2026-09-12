@@ -357,3 +357,26 @@ FOUND: b539e65 fix(01-02): close SIGTERM/SIGINT shutdown-drop race by cancelling
 Live-daemon evidence verified directly against the filesystem and process table in this session (not re-verifiable after the session ends without re-checking the running PID and file mtimes, per the nature of a live checkpoint) — see Checkpoint Evidence above. The daemon currently running (Run C, PID 29504) is on the post-fix code.
 
 ## Self-Check: PASSED (pending human confirmation of the live checkpoint)
+
+---
+
+## Checkpoint resolution — 2026-09-12 18:56 UTC
+
+**Status: APPROVED.** All four checks verified by the orchestrator independently of the executor, against Run C (PID 29504), which by then had run **11h 30m continuously** with zero errors and zero reconnects.
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Process running | PID 29504 alive, RSS 46→62 MB over 11.5h, caffeinate 29533 holding `-i -s -w` |
+| 2 | Archive advancing | Parquet 202→203 in 35s; newest bookTicker etime lagged now by 31.8s; raw archive 80 MB → 1.0 GB over the run |
+| 3 | Parquet readable | 380,451 bookTicker + 20,263 trade rows at 07:30 UTC; `etime` Int64 with 0 nulls; 0 duplicate `update_id`, 0 duplicate `trade_id`; `seq` unique and contiguous `0..380450` across runs |
+| 4 | Graceful shutdown | User chose to test it on the running (post-`b539e65`) code. `SIGTERM` → exit in **1.545s**; process, caffeinate gone; pidfile removed; **final flush wrote 2 partitions** (one per stream); log ends `pidfile removed` / `daemon shutdown complete`. Relaunched as Run D (PID 85586): `resumed seq bookTicker next=5282073, trade next=403700`. Total gap SIGTERM→`capture pipeline started`: **15.5s**. |
+
+**11.5h yield:** bookTicker seq 380,450 → 5,282,072 (~118/s avg); trade 20,262 → 403,699 (~9.3/s avg). Roughly 2× the 20s sample from planning — the US session was active.
+
+### Findings carried forward
+
+1. **`seq` resume is O(all partitions ever written).** `resume_seq_assigner()` globs `date=*/part-*.parquet` across every partition and reads `seq` from each. 1,261 files → ~14s of the 15.5s gap. At ~2,600 partitions/day this reaches minutes within weeks, and startup time is lost capture. **Routed to Plan 04 Task 1** as a required fix (atomic `seq_state.json` sidecar, newest-date-only fallback, <2s on 5k partitions) with a new must-have truth.
+2. **`uv run` must never launch a long-lived daemon** — it holds `~/.cache/uv/.lock` for the child's lifetime and hangs every other `uv run` on the host. Plan 03's checkpoint command and Plan 04's systemd `ExecStart` both used it; **both corrected** to invoke `./.venv/bin/python3` directly.
+3. Binance's ~24h server-initiated close was **not reached** (11.5h). Remains a deferred operational check in STATE.md; Run D's clock started 18:56 UTC.
+
+**Daemon left running:** Run D, PID **85586**, caffeinate 86301, log `/tmp/capture-daemon-runD.log`.
