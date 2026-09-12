@@ -59,3 +59,29 @@ Scripts: `probe_ws.py` (connectivity matrix, 8s), `probe2.py` (20s message count
 ## Prudent design consequence
 
 Use routed `/public` (not legacy) for bookTicker+trade — it is explicitly documented and the legacy form may yet be retired. But do **not** treat the legacy URL as dead, and do **not** restructure the design around a sunset that has not happened. Assert at startup that every subscribed stream actually delivers a message within N seconds, so a silent wrong-class subscription fails loudly instead of capturing nothing.
+
+---
+
+# Addendum — Assumption A1 (redundancy dedup) tested live
+
+**Probed:** 2026-09-11, after the plan-checker flagged that A1 was load-bearing but untested.
+**Script:** `probe_a1.py`. Two simultaneous connections to the same combined Public URL, connection B staggered +3s (as the plan intends), 45-second window, compared over the overlapping ID range only.
+
+**A1 as stated in 01-RESEARCH.md:** *"two simultaneous connections in a redundant pair actually observe identical `u`/`t` IDs for the same events"* — the dedup design depends on it entirely. If false, every row silently doubles in production.
+
+## Result: **A1 HOLDS**
+
+| Stream | A total | B total | In overlap window | Identical (A∩B) | Only-A | Only-B | Jaccard |
+|---|---|---|---|---|---|---|---|
+| `bookTicker` | 2700 | 2598 | A=2598, B=2598 | **2598** | **0** | **0** | **1.000000** |
+| `trade` | 729 | 719 | A=719, B=719 | **719** | **0** | **0** | **1.000000** |
+
+Dedup by `(stream, id)` would collapse 5196 raw bookTicker rows → 2598 unique, and 1438 raw trade rows → 719 unique. Exactly 2× redundancy with no loss and no divergence.
+
+## What this does and does not prove
+
+**Proves:** over steady traffic, both connections receive the identical event set, and `u` (bookTicker updateId) and `t` (trade ID) are reliable dedup keys. The `(stream, id)` dedup design in Plan 03 is sound. The 2-socket redundancy topology delivers genuine redundancy, not two partial views that would need merging by some other key.
+
+**Does not prove:** behavior across a reconnect, across Binance's ~24h server-initiated close, or under packet loss / degraded network. Those remain the deferred operational checks in `01-VALIDATION.md`. A 45-second steady-state sample is the floor of confidence, not the ceiling.
+
+**Consequence for planning:** `verify_live_connection.py --redundancy-check` should implement exactly this comparison (overlap-window Jaccard on `(stream, id)` sets, asserting > 0.999), so the property is re-checkable on demand rather than assumed — the method is proven to work and is ~40 lines.

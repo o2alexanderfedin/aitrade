@@ -49,7 +49,7 @@ updated: 2026-09-11
 | 1-01-01 | 01 | 1 | DATA-01, DATA-04 | — | N/A | infra | `uv run --directory mvp pytest --collect-only tests` | ❌ creates it | ⬜ pending |
 | 1-01-02 | 01 | 1 | DATA-01 | T-1-01 | Refuses to start on a cloud-synced, unwritable, or low-space `data_root` | unit | `uv run --directory mvp pytest tests/capture/test_config_guard.py -x` | ❌ creates it | ⬜ pending |
 | 1-01-03 | 01 | 1 | DATA-04 | — | Single ms→ns conversion site; `etime` non-null by construction | unit | `uv run --directory mvp pytest tests/capture/test_parse.py -x` | ❌ creates it | ⬜ pending |
-| 1-01-04 | 01 | 1 | DATA-01 | — | N/A | **live** | `uv run --directory mvp python scripts/verify_live_connection.py` | ❌ creates it | ⬜ pending |
+| 1-01-04 | 01 | 1 | DATA-01 | — | N/A | **live** | `uv run --directory mvp python -m scripts.verify_live_connection` | ❌ creates it | ⬜ pending |
 | 1-02-01 | 02 | 2 | DATA-04 | T-1-03 | Atomic write — no partial Parquet at final path | unit | `uv run --directory mvp pytest tests/capture/test_seq_resume.py -x` | ❌ creates it | ⬜ pending |
 | 1-02-02 | 02 | 2 | DATA-01 | T-1-04 | Wrong-class/silent subscription raises within startup timeout, never captured as empty | unit | `uv run --directory mvp pytest tests/capture/test_ws_client_liveness.py -x` | ❌ creates it | ⬜ pending |
 | 1-02-03 | 02 | 2 | DATA-01 | — | Graceful shutdown flushes buffers | integration | full suite | ❌ creates it | ⬜ pending |
@@ -82,7 +82,7 @@ No separate Wave 0. Test infrastructure is created inside Wave 1 (Plan 01):
 
 | Behavior | Requirement | Why Manual | Test Instructions | Gating |
 |----------|-------------|------------|-------------------|--------|
-| Routed `/public` combined stream delivers real BTCUSDT `bookTicker` + `trade` | DATA-01 | Requires live exchange egress; cannot run in CI | `uv run --directory mvp python scripts/verify_live_connection.py` — both streams non-zero | **Yes** — Plan 01 Task 4 |
+| Routed `/public` combined stream delivers real BTCUSDT `bookTicker` + `trade` | DATA-01 | Requires live exchange egress; cannot run in CI | `uv run --directory mvp python -m scripts.verify_live_connection` — both streams non-zero | **Yes** — Plan 01 Task 4 |
 | Two simultaneous connections observe identical `u` / `t` IDs for the same events | DATA-01 | Dedup design depends on it; only provable against real traffic | Same script, `--redundancy-check` | **Yes** — Plan 03 checkpoint |
 | Daemon running continuously and writing real bytes | DATA-01 | Phase goal is a daemon that *is running*, not code that compiles | Plan 02 / 03 / 04 checkpoints | **Yes** |
 | Reconnect handles Binance's server-initiated ~24h close cleanly | DATA-01 | A 24h wait does not fit one execution session | Run daemon ≥24h; gap ledger shows reconnect with no data gap | **No** — deferred to STATE.md Pending Todos |
