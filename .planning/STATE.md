@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "01-03 Task 3 checkpoint: two-connection redundant daemon restarted (PID 8646, caffeinate 8671, log /tmp/capture-daemon-runE.log) with --stagger-seconds 45; conn_B confirmed appearing after stagger and growing; --redundancy-check exit 0, Jaccard 1.000000 both streams; 0 duplicate update_id/trade_id since restart; one explainable trade-stream gap-ledger row (5.6s steady-state lull, not restart-related). Awaiting human confirmation before plan is marked complete."
-last_updated: "2026-09-12T19:29:45.510Z"
+stopped_at: "01-04 Task 4 checkpoint: watchdogged, sidecar-resuming, corrected-gap-ledger-policy redundant daemon restarted (Run E PID 8646 -> Run F PID 11428, caffeinate 11430, log /tmp/capture-daemon-runF.log); seq_state.json sidecar pre-seeded live then self-healed on restart (source=sidecar+1 newer files scanned, both streams); three Plan 03 gap-ledger false positives migrated to ledger_version=1 while daemon was stopped; --redundancy-check Jaccard 1.000000 both streams; both connections growing at comparable rates over 150s; zero new gap-ledger rows (no false positives, no watchdog spam during stagger); Docker image built and smoke-run successfully. This checkpoint gates on ALL FIVE ROADMAP Phase 1 success criteria. Awaiting human confirmation before Plan 04 and Phase 1 are marked complete."
+last_updated: "2026-09-12T20:23:56.779Z"
 last_activity: 2026-09-12
 progress:
   total_phases: 11
   completed_phases: 0
   total_plans: 4
-  completed_plans: 3
-  percent: 75
+  completed_plans: 4
+  percent: 100
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 1 of 11 (Capture Daemon & Repo Foundation)
-Plan: 1 of 4 in current phase
-Status: Ready to execute
+Plan: 4 of 4 in current phase
+Status: All Phase 1 plans executed; Plan 04's final checkpoint (gates on all five ROADMAP Phase 1 success criteria) pending human confirmation
 Last activity: 2026-09-12
 
-Progress: [████████░░] 75%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -55,6 +55,7 @@ Progress: [████████░░] 75%
 | Phase 01 P01 | 7min | 4 tasks | 18 files |
 | Phase 01 P02 | 35min | 3 tasks | 10 files |
 | Phase 01 P03 | ~50min | 2 tasks | 6 files |
+| Phase 01 P04 | ~70min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -82,6 +83,10 @@ Recent decisions affecting current work:
 - [Phase 01]: BoundedDedup uses a TTL-evicted OrderedDict seen-set (not a high-water-mark), so a key the redundant connection delivers late is never wrongly dropped as a duplicate; O(1) amortized front-eviction keeps memory bounded at ~118 msg/s.
 - [Phase 01]: daemon.py creates both producer tasks (A and staggered B) before registering the SIGTERM/SIGINT handler, rather than sleeping between create_task() calls, so a signal arriving during the stagger window still has a real task object to cancel — extends b539e65's cancel-then-set fix from one producer to N.
 - [Phase 01]: Gap ledger (01-03) is reactive only: it records an outage once a subsequent message resumes the stream after silence > gap_threshold_seconds (default 5.0s). A proactive watchdog for total silence (no message ever arriving to trigger this check) is deferred to Plan 04 by design.
+- [Phase 01]: Watchdog is per-connection (conn_ids + "merged"), not per-stream as 01-04-PLAN.md's Task 1 literally specified -- forced by the plan's own later gap-ledger policy correction, which mandates removing every per-stream silence rule.
+- [Phase 01]: seq_state.json sidecar records {seq, part_ns} per stream (not a bare int) so resume_seq_assigner() can open zero partition files when the sidecar covers the newest partition, and self-heal by scanning only genuinely-newer files when it does not -- proven live: a restart against 1,291+97 already-written partitions printed source=sidecar+1 newer files scanned, not a full scan.
+- [Phase 01]: Gap ledger versioned (ledger_version column: 1=Plan 03's defective per-stream policy, 2=Plan 04's connection-silent/merged-silent/trade-id-skip policy) rather than deleting the three Plan 03 false-positive rows, so the historical record of what the daemon actually reported is preserved; Phase 3 DQ reports should filter ledger_version >= 2.
+- [Phase 01]: Docker deploy image ENTRYPOINT invokes the venv python3 interpreter directly, never uv run -- same operational hazard Plan 02 found for local long-lived daemon runs (uv run holds the global uv cache lock for the process's entire lifetime).
 
 ### Pending Todos
 
@@ -106,6 +111,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-12T19:27:59.570Z
-Stopped at: 01-03 Task 3 checkpoint: two-connection redundant daemon restarted (PID 8646, caffeinate 8671, log /tmp/capture-daemon-runE.log) with --stagger-seconds 45; conn_B confirmed appearing after stagger and growing; --redundancy-check exit 0, Jaccard 1.000000 both streams; 0 duplicate update_id/trade_id since restart; one explainable trade-stream gap-ledger row (5.6s steady-state lull, not restart-related). Awaiting human confirmation before plan is marked complete.
-Resume file: .planning/phases/01-capture-daemon-repo-foundation/01-03-SUMMARY.md
+Last session: 2026-09-12T20:23:56.773Z
+Stopped at: 01-04 Task 4 checkpoint: watchdogged, sidecar-resuming, corrected-gap-ledger-policy redundant daemon restarted (Run E PID 8646 -> Run F PID 11428, caffeinate 11430, log /tmp/capture-daemon-runF.log); seq_state.json sidecar pre-seeded live then self-healed on restart (source=sidecar+1 newer files scanned, both streams); three Plan 03 gap-ledger false positives migrated to ledger_version=1 while daemon was stopped; --redundancy-check Jaccard 1.000000 both streams; both connections growing at comparable rates over 150s; zero new gap-ledger rows (no false positives, no watchdog spam during stagger); Docker image built and smoke-run successfully. This checkpoint gates on ALL FIVE ROADMAP Phase 1 success criteria. Awaiting human confirmation before Plan 04 and Phase 1 are marked complete.
+Resume file: .planning/phases/01-capture-daemon-repo-foundation/01-04-SUMMARY.md

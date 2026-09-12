@@ -12,7 +12,7 @@ The roadmap is shaped by one verified fact and two methodology constraints. The 
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Capture Daemon & Repo Foundation** - Schedule-critical redundant L1+trades capture running day 1, repo skeleton under mvp/
+- [x] **Phase 1: Capture Daemon & Repo Foundation** - Schedule-critical redundant L1+trades capture running day 1, repo skeleton under mvp/ (completed 2026-09-12)
 - [ ] **Phase 2: Stage 0 — Living Spec, CI Guardrails & Tracking** - spec.md seeded with corrected policy math, catalogues wired into CI, MLflow foundation
 - [ ] **Phase 3: Data Layer — Backfill, Ingest & Lockbox** - Trades backfill, side correction, manifest-addressed store, DQ reports, mechanical lockbox quarantine
 - [ ] **Phase 4: Feature & Label Engine** - Single numba streaming code path, catalogued L1 features, leakage-proven labels
@@ -43,7 +43,7 @@ Plans:
 - [x] 01-01-PLAN.md — Walking Skeleton: repo scaffold, canonical schema, live one-shot proof against the real exchange
 - [x] 01-02-PLAN.md — Continuous single-connection daemon: atomic Parquet rotation, restart-safe seq, startup liveness assertion, graceful shutdown
 - [x] 01-03-PLAN.md — Redundancy: staggered second connection, bounded dedup, reactive gap ledger
-- [ ] 01-04-PLAN.md — Proactive watchdog, atomic-write hardening test, deploy artifacts (Dockerfile, systemd)
+- [x] 01-04-PLAN.md — Proactive watchdog, atomic-write hardening test, deploy artifacts (Dockerfile, systemd)
 
 ### Phase 2: Stage 0 — Living Spec, CI Guardrails & Tracking
 **Goal**: The living spec, CI enforcement, and experiment-tracking foundation exist so that no untracked or uncatalogued training can ever happen
@@ -174,7 +174,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Capture Daemon & Repo Foundation | 1/4 | In Progress|  |
+| 1. Capture Daemon & Repo Foundation | 4/4 | Checkpoint pending human confirmation | - |
 | 2. Stage 0 — Living Spec, CI Guardrails & Tracking | 0/TBD | Not started | - |
 | 3. Data Layer — Backfill, Ingest & Lockbox | 0/TBD | Not started | - |
 | 4. Feature & Label Engine | 0/TBD | Not started | - |
