@@ -1,3 +1,19 @@
+---
+gsd_state_version: 1.0
+milestone: v1.0
+milestone_name: milestone
+status: executing
+stopped_at: Completed 01-01-PLAN.md (walking skeleton proven live). Plans 02-04 remain, each ending in a blocking human-verify checkpoint.
+last_updated: "2026-09-12T05:49:55.430Z"
+last_activity: 2026-09-12
+progress:
+  total_phases: 11
+  completed_phases: 0
+  total_plans: 4
+  completed_plans: 1
+  percent: 25
+---
+
 # Project State
 
 ## Project Reference
@@ -10,15 +26,16 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 1 of 11 (Capture Daemon & Repo Foundation)
-Plan: 0 of 4 in current phase
-Status: Planned — ready to execute
-Last activity: 2026-09-11 — Phase 1 planned (4 plans, 4 waves); plan-checker blockers fixed and re-verified
+Plan: 1 of 4 in current phase
+Status: Ready to execute
+Last activity: 2026-09-12
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [███░░░░░░░] 25%
 
 ## Performance Metrics
 
 **Velocity:**
+
 - Total plans completed: 0
 - Average duration: -
 - Total execution time: -
@@ -30,10 +47,12 @@ Progress: [░░░░░░░░░░] 0%
 | - | - | - | - |
 
 **Recent Trend:**
+
 - Last 5 plans: -
 - Trend: -
 
 *Updated after each plan completion*
+| Phase 01 P01 | 7min | 4 tasks | 18 files |
 
 ## Accumulated Context
 
@@ -51,6 +70,8 @@ Recent decisions affecting current work:
 - [Phase 1]: Spot L1 **deferred post-MVP** — swap-only capture. Spot `bookTicker` carries no exchange timestamp, so capturing it would force a local-clock exception that weakens the etime-only invariant.
 - [Phase 1]: **Empirically corrected the phase research.** Live probes disproved two doc-derived claims: `btcusdt@trade` DOES exist on USD-M futures (96 msgs/20s, per-fill `t`), and the legacy `/stream` endpoint is NOT decommissioned. Topology is 2 sockets, not 4; `@trade` is the tape per CLAUDE.md, not aggTrade. Evidence in `phases/01-.../evidence/PROBE-RESULTS.md`.
 - [Phase 1]: **Assumption A1 proven live** — two staggered connections observe identical `(stream, id)` sets: Jaccard 1.000000 on both bookTicker and trade, zero divergence. The `(stream, id)` dedup design is sound. Re-checkable via `verify_live_connection.py --redundancy-check`.
+- [Phase 1]: Walking skeleton proven live end-to-end 2026-09-12 — verify_live_connection.py wrote/read one Parquet file against real BTCUSDT traffic (OK: bookTicker=19 trade=1); --redundancy-check re-proved Assumption A1 (Jaccard=1.000000 on both streams).
+- [Phase 1]: argparse --data-root made optional (default=None) instead of required=True, because verify_live_connection.py's --redundancy-check mode is invoked without it; validate_data_root() still enforces the required/no-default rule at call time.
 
 ### Pending Todos
 
@@ -75,6 +96,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-11
-Stopped at: Phase 1 planned and plan-checked (4 plans / 4 waves). Wave 1 (Plan 01-01) is autonomous; Plans 02-04 each end in a blocking human-verify checkpoint against the running daemon.
+Last session: 2026-09-12T05:49:55.423Z
+Stopped at: Completed 01-01-PLAN.md (walking skeleton proven live). Plans 02-04 remain, each ending in a blocking human-verify checkpoint.
 Resume file: None
