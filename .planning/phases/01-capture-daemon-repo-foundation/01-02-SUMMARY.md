@@ -14,7 +14,7 @@ provides:
   - "mvp/data/capture/daemon.py: the continuously-running entrypoint (python -m data.capture.daemon)"
   - "mvp/configs/capture.toml: symbols/rotation_seconds/flush_rows/min_free_gb/startup_timeout_seconds defaults"
   - "mvp/tests/fixtures/fake_ws_server.py: scripted local websockets.serve() fixture, reusable by Plan 03"
-  - "A live capture daemon process (PID 49821) running against the real exchange, writing to /Volumes/ProjectsSSD/aihedgefund/capture — capture uptime has started accruing"
+  - "A live capture daemon process (PID 29504, fixed post-race-fix code, launched via the venv python binary directly) running against the real exchange, writing to /Volumes/ProjectsSSD/aihedgefund/capture — capture uptime has started accruing"
 affects: ["01-03", "01-04"]
 
 # Tech tracking
@@ -27,6 +27,8 @@ tech-stack:
     - "seq restart-resume: read only the seq column back from every persisted partition file, seed the in-memory counter with max+1"
     - "Verbatim-first: RawArchiveWriter.append() called before decode_frame() on every message, so wire bytes remain replayable even if parsing changes later"
     - "Producer failure escalation: a background watcher task awaits the producer and sets shutdown_event the moment it finishes for any reason, so the consumer (which only exits on shutdown_event) is guaranteed to eventually flush and return even if the producer dies at startup before any signal is sent"
+    - "SIGTERM/SIGINT handler cancels the producer task FIRST, then sets shutdown_event, both synchronously with no `await` in between — closes the shutdown-drop race described in Deviations below"
+    - "Launch the daemon via the venv's python binary directly (./.venv/bin/python3 -m data.capture.daemon), never via `uv run`, for any multi-hour+ run — see Deviations"
 
 key-files:
   created:
@@ -44,8 +46,10 @@ key-files:
 
 key-decisions:
   - "No pytest-asyncio/anyio in the dev dependency group (verified via uv.lock before writing any test). Every async test drives its own event loop with asyncio.run(...); the conftest.py scripted_server fixture returns the async-context-manager factory itself rather than an already-entered context, since a sync pytest fixture cannot yield an async CM."
-  - "ConnectionClosed is caught explicitly inside run_connection's per-connection try/except and handled with `continue` on the outer `async for ws in websockets.connect(...)` loop, rather than left to propagate to websockets' own process_exception() classifier — verified live against websockets 16.1.1 source that ConnectionClosed is NOT in that classifier's retryable set (only OSError/TimeoutError/InvalidStatus 5xx are), so letting it propagate unhandled would have made every normal connection close FATAL and killed the reconnect loop entirely. This is a deviation from a literal reading of the plan's action text (Rule 1 — bug the plan's own instruction would have introduced) — see Deviations below."
+  - "ConnectionClosed is caught explicitly inside run_connection's per-connection try/except and handled with `continue` on the outer `async for ws in websockets.connect(...)` loop, rather than left uncaught — an uncaught exception from the loop body propagates directly out of the async-for and abandons the generator, it does NOT get thrown into websockets' own process_exception() classifier (that only sees exceptions from establishing/maintaining the connection inside the generator itself). Leaving it uncaught would exit the reconnect loop entirely on the first normal close. This is a deviation from a literal reading of the plan's action text (Rule 1 — bug the plan's own instruction would have introduced) — see Deviations below."
   - "SeqAssigner.peek() added (read-only, diagnostic-only) so daemon startup can log the resumed next-seq value without touching next()/seed() counter semantics (Rule 2 — missing observability needed to prove restart-resume worked in the checkpoint evidence)."
+  - "SIGTERM/SIGINT handler cancels producer_task before setting shutdown_event (Rule 1 bug fix, commit b539e65) — the original set-event-only handler left a race window where the producer could enqueue frames the shutdown flush never sees. Quantified against Run A's real shutdown: zero rows actually dropped that time, but the code path was genuinely exposed and is now closed."
+  - "Daemon relaunched via ./.venv/bin/python3 directly instead of `uv run` (Run C, superseding Run B) after discovering `uv run`'s supervisor process holds a global ~/.cache/uv/.lock FD for its entire child lifetime, hanging every other uv run invocation on the machine for as long as the daemon runs — an operational hazard, not a data-integrity issue, but real for a multi-day daemon on a dev machine."
 
 requirements-completed: []
 # DATA-01/DATA-04 intentionally NOT marked complete here — Task 4's checkpoint
@@ -54,9 +58,10 @@ requirements-completed: []
 # but the phase's own success criteria explicitly require human sign-off on
 # the live daemon before this plan counts as fully done.
 
-duration: ~35min (tool-call wall time, dominated by ~50s OneDrive-cold-cache
-  polars/.so materialization stalls on early uv run invocations — see
-  Deviations)
+duration: ~75min (tool-call wall time; includes ~50s OneDrive-cold-cache
+  polars/.so materialization stalls, live-daemon evidence-gathering across
+  three runs (A/B/C), and a post-checkpoint bug fix + redeploy found during
+  advisor review — see Deviations)
 completed: 2026-09-12
 ---
 
@@ -83,7 +88,8 @@ completed: 2026-09-12
 1. **Task 1: Rotation consumer (atomic Parquet writer, orphan sweep, seq restart-resume)** — `dba8f22` (feat, 6 tests)
 2. **Task 2: Connection producer (verbatim archive, startup liveness assertion, queue)** — `90d497b` (feat, 4 tests including total-silence)
 3. **Task 3: Daemon entrypoint (wire scaffold, resume, sweep, caffeinate, graceful shutdown)** — `dd7900f` (feat)
-4. **Task 4: Human confirmation checkpoint** — no code commit; evidence gathered below, daemon left running
+3b. **Fix: close SIGTERM/SIGINT shutdown-drop race** — `b539e65` (fix, found via advisor review during Task 4 evidence-gathering; see Deviations)
+4. **Task 4: Human confirmation checkpoint** — no plan-required code commit (the `b539e65` fix above was made in response to reviewing this task's own evidence); mechanical evidence gathered below, daemon left running on the post-fix code
 
 ## Files Created/Modified
 
@@ -224,22 +230,78 @@ $ ps -p 49821
 49821 ??  0:00.90 .../mvp/.venv/bin/python3 -m data.capture.daemon --data-root /Volumes/ProjectsSSD/aihedgefund/capture --symbol BTCUSDT
 ```
 
-**Run B is still running.** PID **49821**, log at `/tmp/capture-daemon.log`, pidfile at `/Volumes/ProjectsSSD/aihedgefund/capture/daemon.pid`. It has NOT been stopped — capture uptime continues to accrue past the end of this execution session, per the executor's checkpoint-handling instruction (every minute this daemon is down is permanently lost L1 history).
+Run B ran on the pre-fix code (`dd7900f`, before the shutdown-drop race in Deviations below was found and fixed). It was stopped deliberately and cleanly — see Run C below.
+
+### Shutdown-drop race quantification against Run A's real shutdown
+
+Before deciding how urgently to act on the race described in Deviations, the actual Run A shutdown was checked for real data loss: concatenated every bookTicker/trade Parquet row with `seq >= 11872`/`>= 465` (Run B's first resumed rows) to find the boundary `rtime_ns`, then decompressed the raw NDJSON archive (which Run A and Run B share, since both use `conn_id="A"` and land on the same UTC date) and counted lines with `rtime_ns` before that boundary:
+
+```
+raw archive lines before boundary: 12337
+expected if zero drop (11872 bookTicker + 465 trade):  12337
+excess: 0
+```
+
+**Zero rows were actually dropped in Run A's shutdown.** The race window existed in the code but the exact unlucky timing needed to hit it did not occur this time. The fix (commit `b539e65`) closes it regardless, since Plan 03's reconnect/redundancy work builds directly on `run_pipeline()`.
+
+### Run B stop -> Run C restart (deploys the fix, avoids a newly-discovered `uv run` hazard)
+
+After finding and fixing the shutdown-drop race, Run B (still running the pre-fix code) was stopped and replaced with a fresh run of the fixed code:
+
+```
+$ kill -TERM 49821
+(waited 16s)
+$ ps -p 49821            [process gone]
+$ ls .../daemon.pid       No such file or directory   [pidfile removed]
+Parquet file count: 197 -> 199   [final partial-buffer flush, same pattern as Run A]
+Log tail: "pidfile removed" / "daemon shutdown complete"
+```
+
+Run C was launched via the **venv's python binary directly**, not `uv run` — see the `uv run` global-lock deviation below for why:
+
+```
+$ nohup ./.venv/bin/python3 -m data.capture.daemon --data-root /Volumes/ProjectsSSD/aihedgefund/capture \
+    --symbol BTCUSDT > /tmp/capture-daemon-runC.log 2>&1 &
+```
+
+Startup log — **seq resumed exactly from Run B's final flush** (accumulated far more rows over Run B's longer uptime):
+```
+data_root validated: /Volumes/ProjectsSSD/aihedgefund/capture
+resumed seq: symbol=BTCUSDT stream=trade next=20263
+resumed seq: symbol=BTCUSDT stream=bookTicker next=365451
+pidfile written: /Volumes/ProjectsSSD/aihedgefund/capture/daemon.pid (pid=29504)
+caffeinate spawned: pid=29533
+capture pipeline started: url=wss://fstream.binance.com/public/stream?streams=btcusdt@bookTicker/btcusdt@trade symbol=BTCUSDT
+```
+
+Raw archive advancing (30s sample), process alive:
+```
+t=0s:   conn_A.ndjson.zst 75,702,838 bytes (00:25)
+t=+30s: conn_A.ndjson.zst 76,771,922 bytes (00:26)
+$ ps -p 29504
+29504 ??  0:01.15 ./.venv/bin/python3 -m data.capture.daemon --data-root /Volumes/ProjectsSSD/aihedgefund/capture --symbol BTCUSDT
+```
+
+Confirmed the `uv run` hazard's other side too: immediately after stopping Run B's `uv run` wrapper, a plain `uv run python -c "print(...)"` that had been hanging for the entire Run B lifetime completed in 0.09s.
+
+**Run C is the daemon left running.** PID **29504**, log at `/tmp/capture-daemon-runC.log`, pidfile at `/Volumes/ProjectsSSD/aihedgefund/capture/daemon.pid`, running the post-fix code (`b539e65`), launched via `.venv/bin/python3` directly (not `uv run`). It has NOT been stopped — capture uptime continues to accrue past the end of this execution session, per the executor's checkpoint-handling instruction (every minute this daemon is down is permanently lost L1 history).
 
 ### Resume signal expected from human
 
-Reply "approved" once the four checks above are independently confirmed, or describe which check failed. Until then, `01-VALIDATION.md`'s task `1-02-04` stays `⬜ pending` and DATA-01 stays "In Progress" in `REQUIREMENTS.md`.
+Reply "approved" once the checks above are independently confirmed against the currently-running **Run C** (PID 29504), or describe which check failed. Until then, `01-VALIDATION.md`'s task `1-02-04` stays `⬜ pending` and DATA-01 stays "In Progress" in `REQUIREMENTS.md`.
 
 ## Deviations from Plan
 
 ### Auto-fixed Issues
 
-**1. [Rule 1 - Bug in the plan's own instruction] `ConnectionClosed` must be caught explicitly, not left to the outer iterator's default classifier**
-- **Found during:** Task 2, writing `run_connection`
-- **Issue:** The plan's action text says "on `websockets.exceptions.ConnectionClosed`, let the outer `async for ws in websockets.connect(...)` iterator's built-in backoff handle reconnection (do not add a custom retry loop)" — read literally, this means not catching `ConnectionClosed` at all inside the loop body. Reading `websockets.asyncio.client.connect.process_exception`'s actual source (v16.1.1) shows it treats only `OSError`, `TimeoutError`, `asyncio.TimeoutError`, and `InvalidStatus` 5xx as retryable; `ConnectionClosed` is not in that set, so an uncaught `ConnectionClosed` propagating to the outer iterator would be classified **fatal** and re-raised, killing the entire reconnect loop on the very first normal connection close (e.g. Binance's ~24h server-initiated close) — the opposite of the plan's own intent ("a single connection drop must not lose a row," 01-CONTEXT.md).
-- **Fix:** Kept the explicit `except websockets.exceptions.ConnectionClosed: continue` inside `run_connection`'s per-attempt try block, continuing the outer `async for ws in websockets.connect(...)` loop directly (no manual sleep/retry-count logic — satisfying "do not add a custom retry loop" while still reconnecting on a closed-but-previously-open connection). If the *next* connection attempt itself fails, the outer iterator's own backoff still applies unchanged.
-- **Files modified:** `mvp/data/capture/ws_client.py`
-- **Verification:** Read `websockets.asyncio.client.connect.process_exception`'s source directly via `inspect.getsource` before deciding; confirmed `StartupLivenessError` (not in the retryable set either) still propagates as fatal and is never swallowed by this same catch (it's a different exception type).
+**1. [Rule 1 - Bug in the plan's own instruction, corrected mechanism] `ConnectionClosed` must be caught explicitly, or the reconnect loop exits entirely on the first normal close**
+- **Found during:** Task 2, writing `run_connection`; mechanism corrected during Task 4 evidence review (advisor caught the original explanation was wrong)
+- **Issue:** The plan's action text says "on `websockets.exceptions.ConnectionClosed`, let the outer `async for ws in websockets.connect(...)` iterator's built-in backoff handle reconnection (do not add a custom retry loop)" — read literally, this means not catching `ConnectionClosed` at all inside the loop body.
+- **Original (wrong) explanation:** I first reasoned that an uncaught `ConnectionClosed` would reach `process_exception`'s retryable/fatal classifier (which does not list `ConnectionClosed` as retryable) and be re-raised as fatal. **This is incorrect.** Re-reading `websockets.asyncio.client.connect.__aiter__`'s source: an exception raised in the `async for ws in connect(...)` loop **body** (e.g. from `ws.recv()`, which is *my* code, not the generator's) propagates directly out of the `async for` statement — Python never throws it back into the generator via `athrow()`, so it never reaches `__aiter__`'s own `try/except Exception as exc: process_exception(exc)` at all. That machinery only classifies exceptions from *establishing/maintaining* the connection inside the generator itself (`__aenter__`/`__aexit__`), never exceptions the consumer raises while using the yielded connection.
+- **Corrected understanding, same fix:** an uncaught `ConnectionClosed` would simply exit my `async for` loop entirely on the very first normal close (e.g. Binance's ~24h server-initiated close) — not "get reclassified as fatal," just abandoned with no further attempt at all. Catching it and calling `continue` invokes `__anext__()` again, which *does* run `__aiter__`'s classified connect/backoff logic for the next attempt. Same fix, correct reason now recorded in `STATE.md`.
+- **Fix:** Kept the explicit `except websockets.exceptions.ConnectionClosed: continue` inside `run_connection`'s per-attempt try block (no manual sleep/retry-count logic — satisfying "do not add a custom retry loop" while still reconnecting on a closed-but-previously-open connection).
+- **Files modified:** `mvp/data/capture/ws_client.py` (code unchanged from Task 2's commit `90d497b`; only the recorded rationale in `STATE.md` was corrected).
+- **Verification:** Re-read `websockets.asyncio.client.connect.__aiter__`'s source directly via `inspect.getsource`; confirmed the loop body's exceptions bypass its `try/except` entirely, and `StartupLivenessError` (also raised in the loop body) propagates the same direct way, unaffected by this same catch (different exception type).
 
 **2. [Rule 3 - blocking issue] `uv run` invocations stall ~50-95s on cold OneDrive-synced cache**
 - **Found during:** Task 2, debugging what looked like an infinite hang on `from data.capture.parse import stream_kind_of`
@@ -247,6 +309,21 @@ Reply "approved" once the four checks above are independently confirmed, or desc
 - **Fix:** No code change. Used generous (90-180s) Bash timeouts for `uv run pytest`/`uv run ruff` from that point on; confirmed the same commands complete in 1-8s on a warm cache. Not something a future plan needs to fix — venv is intentionally not committed and already documented as gitignored precisely because of this OneDrive-sync interaction (SKELETON.md's "Venv location" row).
 - **Files modified:** None.
 - **Verification:** `time (timeout 120 ./.venv/bin/python3 -u minimal_test.py)` completed in 49.5s importing only `orjson` + `data.schema`; a warm-cache rerun of the full suite completed in 1.34s.
+
+**3. [Rule 1 - Bug] SIGTERM/SIGINT handler set `shutdown_event` without cancelling the producer first, opening a shutdown-drop race**
+- **Found during:** Task 4, advisor review of the checkpoint evidence before returning
+- **Issue:** Task 3's action text specifies "cancelling the producer task and performing one final unconditional flush" (cancel-then-flush order). The implementation had this backwards: `loop.add_signal_handler(sig, shutdown_event.set)` only set the event; `run_pipeline()` awaited `consumer_task`'s shutdown-triggered drain+flush *before* ever cancelling `producer_task`. Between the consumer noticing `shutdown_event` and the producer actually being cancelled, the producer could keep receiving and enqueueing frames (bounded by the consumer's ~1s poll interval) that were never seen by the final flush — a silent drop with no detectable gap, since `seq` is assigned by the consumer itself.
+- **Fix:** Moved `producer_task`/`consumer_task` creation before signal-handler registration; the handler now calls `producer_task.cancel()` **then** `shutdown_event.set()`, synchronously with no `await` in between, closing the window to a single asyncio scheduling tick.
+- **Files modified:** `mvp/data/capture/daemon.py`
+- **Verification:** Quantified against Run A's actual (pre-fix) shutdown — see "Shutdown-drop race quantification" above: 0 rows were actually dropped that time, but the code path was genuinely exposed. Full suite still 22/22 passing, ruff clean, daemon imports cleanly. A fake-server integration check that mimics the exact `cancel()`-then-`set()` sequence completed cleanly with every row accounted for. Deployed by restarting the live daemon (Run B -> Run C) rather than leaving the running instance on pre-fix code.
+- **Commit:** `b539e65`
+
+**4. [Rule 3 - blocking issue, operational hazard] Launching the daemon via `uv run` blocks every other `uv run` invocation on the machine for the daemon's entire lifetime**
+- **Found during:** Task 4, while trying to quantify the shutdown-drop race using `uv run python -c ...` — it hung for 5+ minutes with 0% CPU, right after Run B (launched via `nohup uv run python -m data.capture.daemon ...`) had been running for ~40 minutes.
+- **Issue:** `lsof` on `~/.cache/uv/.lock` (uv's global cache lock, not project-specific) showed Run B's `uv run` supervisor process holding an open FD on it. Bypassing `uv run` entirely and invoking `./.venv/bin/python3` directly worked immediately (~7s, matching the known OneDrive-cold-cache cost, not a hang). Confirmed causally: stopping Run B's `uv run` wrapper made a previously-hung `uv run python -c "print(...)"` complete in 0.09s. This is a real operational hazard for a daemon meant to run for days/weeks on a dev machine where the same user runs other `uv`-based tools — not a data-integrity issue for the daemon itself.
+- **Fix:** Relaunched the daemon (Run C) via `./.venv/bin/python3 -m data.capture.daemon` directly, bypassing the `uv run` wrapper. Recorded as a `STATE.md` decision so Plans 03/04 (and any future daemon restart) use the same invocation, not the plan's originally-written `nohup uv run ... &` form.
+- **Files modified:** None (operational/invocation change only, not a code fix). `01-02-PLAN.md`'s own checkpoint text uses the `uv run` form — documented here as superseded for any run expected to last more than a few minutes.
+- **Verification:** See Checkpoint Evidence's Run C section — `uv run python -c "print('uv run works again')"` completed in 0.09s within seconds of stopping Run B.
 
 ## Known Stubs
 
@@ -274,8 +351,9 @@ Verified commits exist in `git log --oneline`:
 FOUND: dba8f22 feat(01-02): add atomic Parquet rotation and seq restart-resume
 FOUND: 90d497b feat(01-02): add connection producer with startup liveness assertion
 FOUND: dd7900f feat(01-02): wire daemon entrypoint (resume, sweep, caffeinate, graceful shutdown)
+FOUND: b539e65 fix(01-02): close SIGTERM/SIGINT shutdown-drop race by cancelling producer first
 ```
 
-Live-daemon evidence verified directly against the filesystem and process table in this session (not re-verifiable after the session ends without re-checking the running PID and file mtimes, per the nature of a live checkpoint) — see Checkpoint Evidence above.
+Live-daemon evidence verified directly against the filesystem and process table in this session (not re-verifiable after the session ends without re-checking the running PID and file mtimes, per the nature of a live checkpoint) — see Checkpoint Evidence above. The daemon currently running (Run C, PID 29504) is on the post-fix code.
 
 ## Self-Check: PASSED (pending human confirmation of the live checkpoint)

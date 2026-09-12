@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "01-02 Task 4 checkpoint: mechanical evidence gathered (Run A short-window graceful-shutdown proof + Run B live, PID 49821, left running against real exchange); awaiting human confirmation before plan is marked complete."
-last_updated: "2026-09-12T06:57:38.493Z"
+stopped_at: "01-02 Task 4 checkpoint: mechanical evidence gathered against Run C (PID 29504, post-fix code b539e65, launched via venv python directly); a real shutdown-drop race was found and fixed during evidence review, quantified as zero actual drops in Run A. Awaiting human confirmation before plan is marked complete."
+last_updated: "2026-09-12T07:28:55.097Z"
 last_activity: 2026-09-12
 progress:
   total_phases: 11
@@ -73,8 +73,11 @@ Recent decisions affecting current work:
 - [Phase 1]: **Assumption A1 proven live** — two staggered connections observe identical `(stream, id)` sets: Jaccard 1.000000 on both bookTicker and trade, zero divergence. The `(stream, id)` dedup design is sound. Re-checkable via `verify_live_connection.py --redundancy-check`.
 - [Phase 1]: Walking skeleton proven live end-to-end 2026-09-12 — verify_live_connection.py wrote/read one Parquet file against real BTCUSDT traffic (OK: bookTicker=19 trade=1); --redundancy-check re-proved Assumption A1 (Jaccard=1.000000 on both streams).
 - [Phase 1]: argparse --data-root made optional (default=None) instead of required=True, because verify_live_connection.py's --redundancy-check mode is invoked without it; validate_data_root() still enforces the required/no-default rule at call time.
-- [Phase 01]: ConnectionClosed is caught explicitly in ws_client.run_connection and handled via continue, rather than left to websockets' own process_exception classifier, because that classifier treats ConnectionClosed as fatal (not retryable) — verified against websockets 16.1.1 source.
+- [Phase 01]: ConnectionClosed is caught explicitly in ws_client.run_connection and handled via continue, rather than left uncaught. Corrected mechanism (verified by re-reading websockets 16.1.1's __aiter__ source): an exception raised in the `async for ws in connect(...)` loop BODY (e.g. from `ws.recv()`) propagates directly out of the async-for statement without ever being thrown into the generator, so it bypasses `process_exception`'s retryable/fatal classification entirely — that classifier only applies to exceptions from establishing/maintaining the connection inside the generator itself. Leaving ConnectionClosed uncaught would therefore exit the reconnect loop entirely (not get reclassified as fatal-and-reraised); catching it and calling `continue` is what invokes `__anext__()` again and re-enters the classified connect/backoff logic for the next attempt.
+- [Phase 01]: The capture daemon must be launched via the venv's python binary directly (e.g. `./.venv/bin/python3 -m data.capture.daemon`), never via `uv run python -m data.capture.daemon`, for any long-lived (multi-hour+) run. Discovered live: `uv run`'s supervisor process holds an open FD on the global `~/.cache/uv/.lock` for its entire child-process lifetime, and while a long-running `uv run`-launched daemon is alive, every OTHER `uv run` invocation anywhere on this machine hangs indefinitely (confirmed: hung >5min waiting, then completed in <0.1s within seconds of killing the `uv run` wrapper). Not a data-integrity issue for the daemon itself, but a real operational hazard for any other uv-based work on the same machine while capture runs for days/weeks.
 - [Phase 01]: No pytest-asyncio/anyio installed; async capture tests drive their own event loop via asyncio.run(), and the scripted_server pytest fixture returns the async-context-manager factory itself rather than an entered context.
+- [Phase 01]: SIGTERM/SIGINT handler now cancels the producer task before setting shutdown_event (fix b539e65), closing a shutdown-drop race the original set-event-only handler left open; quantified against Run A's real shutdown, zero rows were actually dropped that time, but the path was genuinely exposed.
+- [Phase 01]: Launch the capture daemon via ./.venv/bin/python3 directly, never via uv run, for any multi-hour+ run — uv run's supervisor holds a global ~/.cache/uv/.lock FD for its child's entire lifetime, hanging every other uv run invocation on the machine while the daemon runs.
 
 ### Pending Todos
 
@@ -99,6 +102,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-12T06:57:21.617Z
-Stopped at: 01-02 Task 4 checkpoint: mechanical evidence gathered (Run A short-window graceful-shutdown proof + Run B live, PID 49821, left running against real exchange); awaiting human confirmation before plan is marked complete.
+Last session: 2026-09-12T07:28:55.091Z
+Stopped at: 01-02 Task 4 checkpoint: mechanical evidence gathered against Run C (PID 29504, post-fix code b539e65, launched via venv python directly); a real shutdown-drop race was found and fixed during evidence review, quantified as zero actual drops in Run A. Awaiting human confirmation before plan is marked complete.
 Resume file: .planning/phases/01-capture-daemon-repo-foundation/01-02-SUMMARY.md
