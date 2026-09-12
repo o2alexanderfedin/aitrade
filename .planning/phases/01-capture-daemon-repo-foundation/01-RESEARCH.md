@@ -429,19 +429,19 @@ def write_partition_atomic(df: pl.DataFrame, final_path: str) -> None:
 
 **If this table is empty:** N/A — see rows above.
 
-## Open Questions
+## Open Questions (RESOLVED — see planning notes below each)
 
-1. **Does `seq` persist across daemon restarts, or reset to 0?**
+1. **(RESOLVED in Phase 1 Plan 02 Task 1)** ~~Does `seq` persist across daemon restarts, or reset to 0?~~ Resolved: `resume_seq_assigner()` scans the most recent Parquet partition per `(symbol, stream)` at startup and calls `SeqAssigner.seed()` with the observed max — seq now survives a restart, per the original recommendation below.
    - What we know: CONTEXT.md locks in "a monotonic per-stream `seq` is materialised at capture time," but doesn't address restart behavior.
    - What's unclear: whether resuming from `last_seq + 1` (read from the most recent file) is acceptable, or whether a different persistence mechanism (e.g., a tiny SQLite/JSON state file) is preferred.
    - Recommendation: Resume from the last-written value on startup (Pitfall D). This is small enough to be a planner decision rather than a user-discretion item, but flagging it here since CONTEXT.md left it unstated.
 
-2. **Exact rotation cadence for Parquet flush vs. raw NDJSON append.**
+2. **(RESOLVED in Phase 1 Plan 02 Task 3 / `capture.toml`)** ~~Exact rotation cadence for Parquet flush vs. raw NDJSON append.~~ Resolved: `capture.toml`'s `rotation_seconds = 900` (15 min) default plus a `flush_rows = 5000` size-based backstop; raw NDJSON is appended continuously with a periodic zstd frame flush. Matches the recommendation below.
    - What we know: CONTEXT.md explicitly delegates "Parquet rotation cadence, buffer sizing, and write-ahead format" to Claude's discretion.
    - What's unclear: no hard constraint found in research; ARCHITECTURE.md's Component Responsibilities table says "write-ahead JSONL → hourly Parquet rotation" as a typical implementation, not a requirement.
    - Recommendation: Raw NDJSON appended continuously (flush every message or every few hundred ms); Parquet rotation every 5–15 minutes during active development (fast feedback on schema issues), lengthening to hourly once the schema is stable — this is a planning-time parameter, not a research blocker.
 
-3. **`a`-field consecutiveness as a live gap signal — needs first-hour verification.**
+3. **(RESOLVED — MOOT, superseded by the empirical correction at the top of this document)** ~~`a`-field consecutiveness as a live gap signal — needs first-hour verification.~~ Resolved as not-applicable: this question presumed `aggTrade` was the only live trade-side stream. `evidence/PROBE-RESULTS.md` proved the raw `@trade` stream exists and is what CLAUDE.md mandates as the tape; `aggTrade`/`a`-consecutiveness is out of Phase 1 capture scope entirely (Phase 3 cross-check only), so this heuristic is never implemented.
    - What we know: aggTrade excludes insurance-fund/ADL trades from aggregation (verified, HIGH confidence).
    - What's unclear: how often `a` skips in practice on BTCUSDT during normal (non-liquidation-cascade) trading, i.e., whether skips are rare enough to be a useful *soft* signal.
    - Recommendation: Log `a`-gaps as a diagnostic metric from day one without gating anything on it; decide the soft-alarm threshold after a few days of live data (naturally aligned with this being schedule-critical capture that starts immediately regardless).
