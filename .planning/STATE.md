@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "01-02 Task 4 checkpoint: mechanical evidence gathered against Run C (PID 29504, post-fix code b539e65, launched via venv python directly); a real shutdown-drop race was found and fixed during evidence review, quantified as zero actual drops in Run A. Awaiting human confirmation before plan is marked complete."
-last_updated: "2026-09-12T07:28:55.097Z"
+stopped_at: "01-03 Task 3 checkpoint: two-connection redundant daemon restarted (PID 8646, caffeinate 8671, log /tmp/capture-daemon-runE.log) with --stagger-seconds 45; conn_B confirmed appearing after stagger and growing; --redundancy-check exit 0, Jaccard 1.000000 both streams; 0 duplicate update_id/trade_id since restart; one explainable trade-stream gap-ledger row (5.6s steady-state lull, not restart-related). Awaiting human confirmation before plan is marked complete."
+last_updated: "2026-09-12T19:29:45.510Z"
 last_activity: 2026-09-12
 progress:
   total_phases: 11
   completed_phases: 0
   total_plans: 4
-  completed_plans: 2
-  percent: 50
+  completed_plans: 3
+  percent: 75
 ---
 
 # Project State
@@ -30,7 +30,7 @@ Plan: 1 of 4 in current phase
 Status: Ready to execute
 Last activity: 2026-09-12
 
-Progress: [█████░░░░░] 50%
+Progress: [████████░░] 75%
 
 ## Performance Metrics
 
@@ -54,6 +54,7 @@ Progress: [█████░░░░░] 50%
 *Updated after each plan completion*
 | Phase 01 P01 | 7min | 4 tasks | 18 files |
 | Phase 01 P02 | 35min | 3 tasks | 10 files |
+| Phase 01 P03 | ~50min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -78,6 +79,9 @@ Recent decisions affecting current work:
 - [Phase 01]: No pytest-asyncio/anyio installed; async capture tests drive their own event loop via asyncio.run(), and the scripted_server pytest fixture returns the async-context-manager factory itself rather than an entered context.
 - [Phase 01]: SIGTERM/SIGINT handler now cancels the producer task before setting shutdown_event (fix b539e65), closing a shutdown-drop race the original set-event-only handler left open; quantified against Run A's real shutdown, zero rows were actually dropped that time, but the path was genuinely exposed.
 - [Phase 01]: Launch the capture daemon via ./.venv/bin/python3 directly, never via uv run, for any multi-hour+ run — uv run's supervisor holds a global ~/.cache/uv/.lock FD for its child's entire lifetime, hanging every other uv run invocation on the machine while the daemon runs.
+- [Phase 01]: BoundedDedup uses a TTL-evicted OrderedDict seen-set (not a high-water-mark), so a key the redundant connection delivers late is never wrongly dropped as a duplicate; O(1) amortized front-eviction keeps memory bounded at ~118 msg/s.
+- [Phase 01]: daemon.py creates both producer tasks (A and staggered B) before registering the SIGTERM/SIGINT handler, rather than sleeping between create_task() calls, so a signal arriving during the stagger window still has a real task object to cancel — extends b539e65's cancel-then-set fix from one producer to N.
+- [Phase 01]: Gap ledger (01-03) is reactive only: it records an outage once a subsequent message resumes the stream after silence > gap_threshold_seconds (default 5.0s). A proactive watchdog for total silence (no message ever arriving to trigger this check) is deferred to Plan 04 by design.
 
 ### Pending Todos
 
@@ -102,6 +106,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-12T07:28:55.091Z
-Stopped at: 01-02 Task 4 checkpoint: mechanical evidence gathered against Run C (PID 29504, post-fix code b539e65, launched via venv python directly); a real shutdown-drop race was found and fixed during evidence review, quantified as zero actual drops in Run A. Awaiting human confirmation before plan is marked complete.
-Resume file: .planning/phases/01-capture-daemon-repo-foundation/01-02-SUMMARY.md
+Last session: 2026-09-12T19:27:59.570Z
+Stopped at: 01-03 Task 3 checkpoint: two-connection redundant daemon restarted (PID 8646, caffeinate 8671, log /tmp/capture-daemon-runE.log) with --stagger-seconds 45; conn_B confirmed appearing after stagger and growing; --redundancy-check exit 0, Jaccard 1.000000 both streams; 0 duplicate update_id/trade_id since restart; one explainable trade-stream gap-ledger row (5.6s steady-state lull, not restart-related). Awaiting human confirmation before plan is marked complete.
+Resume file: .planning/phases/01-capture-daemon-repo-foundation/01-03-SUMMARY.md
