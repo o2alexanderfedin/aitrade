@@ -16,12 +16,21 @@ sibling path followed by an atomic `Path.replace()`.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import polars as pl
 
+from data.capture.parse import FrameParseError, parse_combined_frame, stream_kind_of
+from data.schema import BOOKTICKER_SCHEMA, TRADE_SCHEMA
+
+if TYPE_CHECKING:
+    from data.capture.seq import SeqAssigner
+
 ORPHAN_TMP_MIN_AGE_SECONDS = 10.0
+QUEUE_POLL_TIMEOUT_SECONDS = 1.0
 
 
 def partition_dir(data_root: Path, symbol: str, stream: str) -> Path:
@@ -90,3 +99,81 @@ def sweep_orphan_tmp_files(data_root: Path) -> list[Path]:
         deleted.append(tmp_file)
 
     return deleted
+
+
+async def consume(
+    queue: asyncio.Queue,
+    assigner: "SeqAssigner",
+    data_root: Path,
+    symbol: str,
+    flush_rows: int,
+    rotation_seconds: float,
+    shutdown_event: asyncio.Event,
+) -> None:
+    """Drain `queue`, parse frames into canonical rows, and flush per-stream
+    buffers to atomic Parquet partitions.
+
+    Dequeue -> *(Plan 03 inserts a bounded dedup stage exactly here)* ->
+    `seq.next()` -> `parse_combined_frame()` -> per-stream row buffer ->
+    flush. Flushes a stream's buffer when it reaches `flush_rows`, when
+    `rotation_seconds` have elapsed since its last flush, or when
+    `shutdown_event` fires (final unconditional flush of both buffers,
+    draining any remaining queued items first so no in-flight row is
+    silently dropped).
+
+    Polls the queue with a bounded timeout rather than blocking forever on
+    `await queue.get()`, so a quiet stream still rotates on
+    `rotation_seconds` and SIGTERM/SIGINT is still noticed promptly.
+    """
+    schemas = {"bookTicker": BOOKTICKER_SCHEMA, "trade": TRADE_SCHEMA}
+    buffers: dict[str, list[dict]] = {"bookTicker": [], "trade": []}
+    last_flush: dict[str, float] = {
+        "bookTicker": time.monotonic(),
+        "trade": time.monotonic(),
+    }
+
+    def flush_stream(stream: str) -> None:
+        rows = buffers[stream]
+        if not rows:
+            last_flush[stream] = time.monotonic()
+            return
+        write_partition_atomic(rows, schemas[stream], data_root, symbol, stream)
+        buffers[stream] = []
+        last_flush[stream] = time.monotonic()
+
+    def ingest(conn_id: str, rtime_ns: int, frame: dict) -> None:
+        try:
+            kind = stream_kind_of(frame)
+            row = parse_combined_frame(frame, assigner.next(symbol, kind), rtime_ns)
+        except FrameParseError:
+            return
+        buffers[kind].append(row)
+
+    while True:
+        try:
+            conn_id, rtime_ns, frame = await asyncio.wait_for(
+                queue.get(), timeout=QUEUE_POLL_TIMEOUT_SECONDS
+            )
+        except asyncio.TimeoutError:
+            pass
+        else:
+            ingest(conn_id, rtime_ns, frame)
+            for stream in ("bookTicker", "trade"):
+                if len(buffers[stream]) >= flush_rows:
+                    flush_stream(stream)
+
+        if shutdown_event.is_set():
+            while True:
+                try:
+                    conn_id, rtime_ns, frame = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+                ingest(conn_id, rtime_ns, frame)
+            flush_stream("bookTicker")
+            flush_stream("trade")
+            return
+
+        now = time.monotonic()
+        for stream in ("bookTicker", "trade"):
+            if now - last_flush[stream] >= rotation_seconds:
+                flush_stream(stream)

@@ -27,6 +27,14 @@ class SeqAssigner:
         self._counters[key] = value
         return value
 
+    def peek(self, symbol: str, stream: str) -> int:
+        """Return what `.next()` would return next, without consuming it.
+
+        Diagnostic-only (e.g. daemon startup logging of resumed seq
+        counters) — never used on the hot ingest path.
+        """
+        return self._counters.get((symbol, stream), -1) + 1
+
     def seed(self, symbol: str, stream: str, last_value: int) -> None:
         """Seed the counter so the next `.next()` call returns `last_value + 1`.
 

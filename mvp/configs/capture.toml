@@ -1,0 +1,12 @@
+# Capture daemon defaults (Plan 02).
+#
+# `data_root` is intentionally NOT a key in this file. Per 01-CONTEXT.md, it
+# has no default and must come from `--data-root` or the `CAPTURE_DATA_ROOT`
+# env var — never a config-file default that could be silently reused
+# against the wrong volume.
+
+symbols = ["BTCUSDT"]
+rotation_seconds = 900
+flush_rows = 5000
+min_free_gb = 50.0
+startup_timeout_seconds = 10.0
