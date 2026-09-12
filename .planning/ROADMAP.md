@@ -41,7 +41,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 Plans:
 - [x] 01-01-PLAN.md — Walking Skeleton: repo scaffold, canonical schema, live one-shot proof against the real exchange
-- [ ] 01-02-PLAN.md — Continuous single-connection daemon: atomic Parquet rotation, restart-safe seq, startup liveness assertion, graceful shutdown
+- [x] 01-02-PLAN.md — Continuous single-connection daemon: atomic Parquet rotation, restart-safe seq, startup liveness assertion, graceful shutdown
 - [ ] 01-03-PLAN.md — Redundancy: staggered second connection, bounded dedup, reactive gap ledger
 - [ ] 01-04-PLAN.md — Proactive watchdog, atomic-write hardening test, deploy artifacts (Dockerfile, systemd)
 

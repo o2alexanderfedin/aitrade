@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-01-PLAN.md (walking skeleton proven live). Plans 02-04 remain, each ending in a blocking human-verify checkpoint.
-last_updated: "2026-09-12T05:49:55.430Z"
+stopped_at: "01-02 Task 4 checkpoint: mechanical evidence gathered (Run A short-window graceful-shutdown proof + Run B live, PID 49821, left running against real exchange); awaiting human confirmation before plan is marked complete."
+last_updated: "2026-09-12T06:57:38.493Z"
 last_activity: 2026-09-12
 progress:
   total_phases: 11
   completed_phases: 0
   total_plans: 4
-  completed_plans: 1
-  percent: 25
+  completed_plans: 2
+  percent: 50
 ---
 
 # Project State
@@ -30,7 +30,7 @@ Plan: 1 of 4 in current phase
 Status: Ready to execute
 Last activity: 2026-09-12
 
-Progress: [███░░░░░░░] 25%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -53,6 +53,7 @@ Progress: [███░░░░░░░] 25%
 
 *Updated after each plan completion*
 | Phase 01 P01 | 7min | 4 tasks | 18 files |
+| Phase 01 P02 | 35min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,8 @@ Recent decisions affecting current work:
 - [Phase 1]: **Assumption A1 proven live** — two staggered connections observe identical `(stream, id)` sets: Jaccard 1.000000 on both bookTicker and trade, zero divergence. The `(stream, id)` dedup design is sound. Re-checkable via `verify_live_connection.py --redundancy-check`.
 - [Phase 1]: Walking skeleton proven live end-to-end 2026-09-12 — verify_live_connection.py wrote/read one Parquet file against real BTCUSDT traffic (OK: bookTicker=19 trade=1); --redundancy-check re-proved Assumption A1 (Jaccard=1.000000 on both streams).
 - [Phase 1]: argparse --data-root made optional (default=None) instead of required=True, because verify_live_connection.py's --redundancy-check mode is invoked without it; validate_data_root() still enforces the required/no-default rule at call time.
+- [Phase 01]: ConnectionClosed is caught explicitly in ws_client.run_connection and handled via continue, rather than left to websockets' own process_exception classifier, because that classifier treats ConnectionClosed as fatal (not retryable) — verified against websockets 16.1.1 source.
+- [Phase 01]: No pytest-asyncio/anyio installed; async capture tests drive their own event loop via asyncio.run(), and the scripted_server pytest fixture returns the async-context-manager factory itself rather than an entered context.
 
 ### Pending Todos
 
@@ -96,6 +99,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-12T05:49:55.423Z
-Stopped at: Completed 01-01-PLAN.md (walking skeleton proven live). Plans 02-04 remain, each ending in a blocking human-verify checkpoint.
-Resume file: None
+Last session: 2026-09-12T06:57:21.617Z
+Stopped at: 01-02 Task 4 checkpoint: mechanical evidence gathered (Run A short-window graceful-shutdown proof + Run B live, PID 49821, left running against real exchange); awaiting human confirmation before plan is marked complete.
+Resume file: .planning/phases/01-capture-daemon-repo-foundation/01-02-SUMMARY.md
