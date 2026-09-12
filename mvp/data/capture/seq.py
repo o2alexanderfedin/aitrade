@@ -90,6 +90,7 @@ def resume_seq_assigner(
 
         scan_seq: int | None = None
         newest_part_ns = sidecar_part_ns
+        candidates: list[Path] = []
 
         stream_dir = partition_dir(data_root, symbol, stream)
         if stream_dir.exists():
@@ -123,6 +124,17 @@ def resume_seq_assigner(
 
         resumed = max(candidate_values)
         assigner.seed(symbol, stream, resumed)
+
+        if scan_seq is None:
+            source = "sidecar"
+        elif sidecar_seq is None:
+            source = f"scan(newest-date, {len(candidates)} files)"
+        else:
+            source = f"sidecar+{len(candidates)} newer files scanned"
+        print(
+            f"seq resume source: symbol={symbol} stream={stream} source={source}",
+            flush=True,
+        )
 
         # Self-heal: the scan found data the sidecar didn't already cover
         # (sidecar absent/stale) -- persist the corrected value so the next
