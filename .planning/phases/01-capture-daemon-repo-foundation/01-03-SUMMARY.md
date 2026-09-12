@@ -273,3 +273,25 @@ FOUND: 0e57896 feat(01-03): wire dedup/gap-ledger stage and staggered second con
 Live-daemon evidence verified directly against the filesystem and process table in this session (not re-verifiable after the session ends without re-checking the running PID and file mtimes, per the nature of a live checkpoint) — see Checkpoint Evidence above. The daemon currently running (Run E, PID 8646) is on the two-connection code.
 
 ## Self-Check: PASSED (pending human confirmation of the live checkpoint)
+
+---
+
+## Checkpoint resolution — 2026-09-12 19:35 UTC
+
+**Status: APPROVED** (user decision: approve, fix gap-ledger policy in Plan 04). All checks verified by the orchestrator independently of the executor, against Run E (PID 8646).
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Both connections growing | `conn_A` 1.17 GB (append across runs, by design), `conn_B` 26.7 MB, both advancing; log: `launching connection B after 45.0s stagger` |
+| 2 | **Gating** `--redundancy-check` | exit 0, Jaccard 1.000000 on both streams — third independent confirmation of A1 |
+| 3 | Tests | 37 passed; ruff clean; zero log errors |
+| 4 | Gap ledger | **Mechanism correct, policy defective.** Two rows in 17 min, both `trade` silence 5.6s/5.7s. `trade_id` contiguous across both windows (8072993860→865, 8072996071→077) → exchange emitted no trades, **zero data lost**. bookTicker flowed throughout. Trade inter-arrival: p99 1.36s, p999 3.2s, max 5.67s → ~170 false outages/day at a 5s per-stream threshold. |
+
+RSS 46 → 110 → 77 MB across samples: TTL eviction working, not a leak.
+
+### Findings carried forward
+
+1. **Gap-ledger policy** — per-stream silence conflates market lulls with capture outages. **Routed to Plan 04 Task 1** (commit `fa0c0d7`) with a new must-have: three signals (`connection-silent` per `conn_id` on any-stream silence; `merged-silent` when both connections are silent; `trade-id-skip` when the exchange's own sequence proves loss), per-stream rule removed. The two existing false-positive rows must be migrated or versioned so Phase 3 DQ reports do not inherit them.
+2. **Phase 2 CI note** — `dedup.py:53` and `rotation.py:163` contain `1_000_000_000` (seconds→ns for config values). The ms→ns invariant holds (`parse.py:31` is the only site) but the Stage 0 CI rule must use the precise regex `1_000_000([^_0-9]|$)`, not the substring.
+
+**Daemon left running:** Run E, PID **8646**, caffeinate 8671, log `/tmp/capture-daemon-runE.log`, two connections active.
