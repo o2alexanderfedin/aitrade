@@ -21,7 +21,15 @@ restart-safe, REDUNDANT two-connection capture process:
    docstring.
 7. SIGTERM/SIGINT handlers — cancel BOTH producer tasks, then set
    `shutdown_event`, which drives one final unconditional flush in
-   `rotation.consume()` before exit.
+   `rotation.consume()` before exit, and also lets `Watchdog.run()` exit
+   promptly (it polls `shutdown_event` between ticks).
+8. A third concurrent task, `Watchdog.run()` (Plan 04) — ticks every
+   `--watchdog-interval-seconds`, sharing the SAME `last_seen_state` dict
+   and `GapLedger` instance `consume()` uses, so a connection that goes
+   totally silent and never sends another frame (which `consume()`'s
+   reactive check structurally cannot detect on its own) is still caught,
+   and free disk space is checked continuously rather than only at
+   startup.
 
 Both producer tasks are created up front (task B wrapped in a coroutine
 that sleeps `stagger_seconds` before connecting) rather than the daemon's
@@ -47,9 +55,11 @@ import tomllib
 from pathlib import Path
 
 from data.capture.config import DataRootError, validate_data_root
+from data.capture.gap_ledger import GapLedger
 from data.capture.rotation import consume, sweep_orphan_tmp_files
 from data.capture.seq import SeqAssigner, resume_seq_assigner
 from data.capture.streams import combined_public_stream_url
+from data.capture.watchdog import Watchdog
 from data.capture.ws_client import StartupLivenessError, run_connection
 
 DEFAULT_CONFIG_PATH = "configs/capture.toml"
@@ -100,6 +110,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "loss' the moment both connections' scheduled 24h resets "
             "coincide."
         ),
+    )
+    parser.add_argument(
+        "--stall-threshold-seconds",
+        type=float,
+        default=config.get("stall_threshold_seconds", 30.0),
+        help="Watchdog: seconds of total per-connection/merged silence before an alarm fires.",
+    )
+    parser.add_argument(
+        "--watchdog-interval-seconds",
+        type=float,
+        default=config.get("watchdog_interval_seconds", 30.0),
+        help="Watchdog: how often to tick (stall check + free-space check).",
     )
     args = parser.parse_args(argv)
 
@@ -191,17 +213,25 @@ async def run_pipeline(
     producer_tasks: list[asyncio.Task],
     consumer_task: asyncio.Task,
     shutdown_event: asyncio.Event,
+    watchdog_task: asyncio.Task | None = None,
 ) -> None:
-    """Run all producers + the consumer concurrently; escalate any
-    producer's completion (e.g. `StartupLivenessError`, or a normal
-    return which is not expected — producers run forever until cancelled
-    or they raise) into a shutdown+flush, then re-raise the first error.
+    """Run all producers + the consumer + the watchdog concurrently;
+    escalate any producer's completion (e.g. `StartupLivenessError`, or a
+    normal return which is not expected — producers run forever until
+    cancelled or they raise) into a shutdown+flush, then re-raise the
+    first error.
 
     `consumer_task` (rotation.consume) only returns once `shutdown_event`
     is set, so this also handles the case where no producer explicitly
     triggers shutdown itself (a signal handler does) by watching every
     producer task and setting `shutdown_event` the moment ANY of them
     finishes for any reason.
+
+    `watchdog_task` (`Watchdog.run()`, Plan 04) is cancelled and awaited
+    alongside the producers once the consumer's final flush completes, so
+    its own exceptions are always retrieved (never "never retrieved" at
+    garbage-collection time) and it never outlives the pipeline it
+    monitors.
     """
 
     async def _escalate_producer_completion() -> None:
@@ -213,12 +243,15 @@ async def run_pipeline(
 
     await consumer_task
 
-    for task in producer_tasks:
+    tasks_to_cancel = list(producer_tasks)
+    if watchdog_task is not None:
+        tasks_to_cancel.append(watchdog_task)
+    for task in tasks_to_cancel:
         if not task.done():
             task.cancel()
 
     producer_error: Exception | None = None
-    for task in producer_tasks:
+    for task in tasks_to_cancel:
         try:
             await task
         except asyncio.CancelledError:
@@ -264,6 +297,14 @@ async def run_daemon(args: argparse.Namespace) -> None:
     queue: asyncio.Queue = asyncio.Queue(maxsize=QUEUE_MAXSIZE)
     shutdown_event = asyncio.Event()
 
+    # Shared between consume() and the watchdog (Plan 04) -- constructed
+    # ONCE here so both observe/record into the SAME liveness state and
+    # gap ledger, rather than consume() building its own local GapLedger
+    # with no way for daemon.py to hand the same instance to the watchdog
+    # (the gap Plan 03 left; see rotation.py's consume() docstring).
+    last_seen_state: dict[str, int] = {}
+    gap_ledger = GapLedger(data_root)
+
     url = combined_public_stream_url(args.symbol)
     archive_dir = data_root / "raw"
 
@@ -299,6 +340,23 @@ async def run_daemon(args: argparse.Namespace) -> None:
             args.flush_rows,
             args.rotation_seconds,
             shutdown_event,
+            last_seen_state=last_seen_state,
+            gap_ledger=gap_ledger,
+        )
+    )
+
+    watchdog = Watchdog(
+        last_seen_state,
+        gap_ledger,
+        data_root,
+        conn_ids=["A", "B"],
+        stall_threshold_seconds=args.stall_threshold_seconds,
+        min_free_gb=args.min_free_gb,
+    )
+    watchdog_task = asyncio.create_task(
+        watchdog.run(
+            interval_seconds=args.watchdog_interval_seconds,
+            shutdown_event=shutdown_event,
         )
     )
 
@@ -319,7 +377,7 @@ async def run_daemon(args: argparse.Namespace) -> None:
     )
 
     try:
-        await run_pipeline(producer_tasks, consumer_task, shutdown_event)
+        await run_pipeline(producer_tasks, consumer_task, shutdown_event, watchdog_task)
     finally:
         if pidfile.exists():
             pidfile.unlink()

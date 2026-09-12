@@ -10,3 +10,8 @@ rotation_seconds = 900
 flush_rows = 5000
 min_free_gb = 50.0
 startup_timeout_seconds = 10.0
+# Plan 04: proactive watchdog defaults (periodic stall alarm, independent
+# of whether any frame ever arrives to trigger rotation.py's reactive
+# connection-silent/merged-silent checks).
+stall_threshold_seconds = 30.0
+watchdog_interval_seconds = 30.0
