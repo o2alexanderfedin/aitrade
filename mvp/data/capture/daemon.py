@@ -1,7 +1,7 @@
 """Capture daemon entrypoint: `python -m data.capture.daemon`.
 
-Wires together every Plan 01/02 piece into a continuously-running,
-restart-safe, single-connection capture process:
+Wires together every Plan 01/02/03 piece into a continuously-running,
+restart-safe, REDUNDANT two-connection capture process:
 
 1. `validate_data_root()` — refuse to run against a missing/unwritable/
    cloud-synced/low-space `data_root`.
@@ -13,10 +13,26 @@ restart-safe, single-connection capture process:
    `data_root`/symbol while a live PID already holds it.
 5. `caffeinate` (macOS only) — hold a sleep-prevention assertion for the
    daemon's lifetime.
-6. One shared bounded `asyncio.Queue` — producer/consumer pipeline shape
-   locked in `rotation.py`'s module docstring.
-7. SIGTERM/SIGINT handlers — set `shutdown_event`, which drives one final
-   unconditional flush in `rotation.consume()` before exit.
+6. One shared bounded `asyncio.Queue` — TWO producer tasks
+   (`run_connection(..., conn_id="A", ...)` and, staggered by
+   `--stagger-seconds`, `conn_id="B"`) feeding one consumer
+   (`rotation.consume()`), which merges/dedups/gap-detects both
+   connections' output — pipeline shape locked in `rotation.py`'s module
+   docstring.
+7. SIGTERM/SIGINT handlers — cancel BOTH producer tasks, then set
+   `shutdown_event`, which drives one final unconditional flush in
+   `rotation.consume()` before exit.
+
+Both producer tasks are created up front (task B wrapped in a coroutine
+that sleeps `stagger_seconds` before connecting) rather than the daemon's
+main coroutine itself sleeping between launching A and B. This is a
+deliberate deviation from a literal "await asyncio.sleep(...) between
+launches" reading: if task B did not exist as a task until after the
+sleep, a SIGTERM arriving during the stagger window would have nothing
+to cancel for B, reopening the exact shutdown-drop race `b539e65` closed
+for a single producer. Creating both tasks before registering the signal
+handler keeps "cancel every producer, then set shutdown_event" correct
+regardless of where in the stagger window the signal arrives.
 """
 
 from __future__ import annotations
@@ -72,6 +88,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=float,
         default=config["startup_timeout_seconds"],
     )
+    parser.add_argument(
+        "--stagger-seconds",
+        type=float,
+        default=45.0,
+        help=(
+            "Delay before launching the second (conn_id='B') connection. "
+            "Binance force-closes every connection at ~24h; two connections "
+            "opened in the same second would also drop in the same second, "
+            "which would violate 'a single connection drop without data "
+            "loss' the moment both connections' scheduled 24h resets "
+            "coincide."
+        ),
+    )
     args = parser.parse_args(argv)
 
     if not args.data_root:
@@ -124,42 +153,79 @@ def spawn_caffeinate() -> subprocess.Popen | None:
     return subprocess.Popen(["caffeinate", "-i", "-s", "-w", str(os.getpid())])
 
 
-async def run_pipeline(
-    producer_task: asyncio.Task, consumer_task: asyncio.Task, shutdown_event: asyncio.Event
-) -> None:
-    """Run producer+consumer concurrently; escalate a producer failure
-    (e.g. `StartupLivenessError`) into a shutdown+flush, then re-raise it.
+async def _run_connection_staggered(delay_seconds: float, *args, **kwargs) -> None:
+    """Sleep `delay_seconds` (the connection's own coroutine, not the
+    caller's), then run `run_connection(*args, **kwargs)`.
 
-    `consumer_task` (rotation.consume) only returns once `shutdown_event` is
-    set, so this also handles the case where the producer never explicitly
-    triggers shutdown itself (a signal handler does) by watching the
-    producer task and setting `shutdown_event` the moment it finishes for
-    any reason (success is not expected — it runs forever until cancelled
-    or it raises).
+    Wrapping the delay inside the producer's own coroutine — rather than
+    the daemon's main coroutine sleeping between `create_task()` calls —
+    means the task object for connection B exists immediately, so the
+    signal handler can cancel it even if SIGTERM arrives during the
+    stagger window itself (see this module's docstring).
+    """
+    if delay_seconds > 0:
+        await asyncio.sleep(delay_seconds)
+    print(
+        f"launching connection {kwargs.get('conn_id')} after "
+        f"{delay_seconds}s stagger",
+        flush=True,
+    )
+    await run_connection(*args, **kwargs)
+
+
+def request_shutdown(
+    producer_tasks: list[asyncio.Task], shutdown_event: asyncio.Event
+) -> None:
+    """Cancel every producer task, then set `shutdown_event` — both
+    synchronously with no `await` in between (commit `b539e65`'s fix,
+    extended here from one producer to N). Factored out of the signal
+    handler closure so it is directly callable from a test proving
+    cancel-then-set loses no in-flight row with two producers."""
+    for task in producer_tasks:
+        if not task.done():
+            task.cancel()
+    shutdown_event.set()
+
+
+async def run_pipeline(
+    producer_tasks: list[asyncio.Task],
+    consumer_task: asyncio.Task,
+    shutdown_event: asyncio.Event,
+) -> None:
+    """Run all producers + the consumer concurrently; escalate any
+    producer's completion (e.g. `StartupLivenessError`, or a normal
+    return which is not expected — producers run forever until cancelled
+    or they raise) into a shutdown+flush, then re-raise the first error.
+
+    `consumer_task` (rotation.consume) only returns once `shutdown_event`
+    is set, so this also handles the case where no producer explicitly
+    triggers shutdown itself (a signal handler does) by watching every
+    producer task and setting `shutdown_event` the moment ANY of them
+    finishes for any reason.
     """
 
     async def _escalate_producer_completion() -> None:
-        try:
-            await producer_task
-        except (asyncio.CancelledError, Exception):
-            pass
-        finally:
-            shutdown_event.set()
+        if producer_tasks:
+            await asyncio.wait(producer_tasks, return_when=asyncio.FIRST_COMPLETED)
+        shutdown_event.set()
 
     watcher = asyncio.create_task(_escalate_producer_completion())
 
     await consumer_task
 
-    if not producer_task.done():
-        producer_task.cancel()
+    for task in producer_tasks:
+        if not task.done():
+            task.cancel()
 
     producer_error: Exception | None = None
-    try:
-        await producer_task
-    except asyncio.CancelledError:
-        pass
-    except Exception as exc:  # noqa: BLE001 - surfaced to caller below
-        producer_error = exc
+    for task in producer_tasks:
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:  # noqa: BLE001 - surfaced to caller below
+            if producer_error is None:
+                producer_error = exc
 
     watcher.cancel()
     try:
@@ -201,7 +267,7 @@ async def run_daemon(args: argparse.Namespace) -> None:
     url = combined_public_stream_url(args.symbol)
     archive_dir = data_root / "raw"
 
-    producer_task = asyncio.create_task(
+    producer_task_a = asyncio.create_task(
         run_connection(
             url,
             queue,
@@ -211,6 +277,19 @@ async def run_daemon(args: argparse.Namespace) -> None:
             startup_timeout=args.startup_timeout_seconds,
         )
     )
+    producer_task_b = asyncio.create_task(
+        _run_connection_staggered(
+            args.stagger_seconds,
+            url,
+            queue,
+            conn_id="B",
+            archive_dir=archive_dir,
+            expected_streams=EXPECTED_STREAMS,
+            startup_timeout=args.startup_timeout_seconds,
+        )
+    )
+    producer_tasks = [producer_task_a, producer_task_b]
+
     consumer_task = asyncio.create_task(
         consume(
             queue,
@@ -223,28 +302,24 @@ async def run_daemon(args: argparse.Namespace) -> None:
         )
     )
 
-    def _handle_shutdown_signal() -> None:
-        # Cancel the producer FIRST, then set shutdown_event, both
-        # synchronously in this callback with no `await` in between — so
-        # by the time the event loop next resumes any task, the producer
-        # can no longer reach its `await queue.put(...)` again. Setting
-        # shutdown_event only (without cancelling the producer here) would
-        # leave a window — up to the consumer's ~1s poll timeout — during
-        # which the producer keeps receiving and enqueueing frames that
-        # `consume()`'s final flush never sees, since it only drains what
-        # is already queued once it notices shutdown_event.
-        if not producer_task.done():
-            producer_task.cancel()
-        shutdown_event.set()
-
+    # Both producer tasks already exist by this point (task B is a
+    # coroutine that sleeps internally, not a not-yet-created task) — see
+    # this module's docstring for why that ordering matters for the
+    # signal handler below.
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(sig, _handle_shutdown_signal)
+        loop.add_signal_handler(
+            sig, lambda: request_shutdown(producer_tasks, shutdown_event)
+        )
 
-    print(f"capture pipeline started: url={url} symbol={args.symbol}", flush=True)
+    print(
+        f"capture pipeline started: url={url} symbol={args.symbol} "
+        f"stagger_seconds={args.stagger_seconds}",
+        flush=True,
+    )
 
     try:
-        await run_pipeline(producer_task, consumer_task, shutdown_event)
+        await run_pipeline(producer_tasks, consumer_task, shutdown_event)
     finally:
         if pidfile.exists():
             pidfile.unlink()
