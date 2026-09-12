@@ -198,10 +198,6 @@ async def run_daemon(args: argparse.Namespace) -> None:
     queue: asyncio.Queue = asyncio.Queue(maxsize=QUEUE_MAXSIZE)
     shutdown_event = asyncio.Event()
 
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(sig, shutdown_event.set)
-
     url = combined_public_stream_url(args.symbol)
     archive_dir = data_root / "raw"
 
@@ -226,6 +222,24 @@ async def run_daemon(args: argparse.Namespace) -> None:
             shutdown_event,
         )
     )
+
+    def _handle_shutdown_signal() -> None:
+        # Cancel the producer FIRST, then set shutdown_event, both
+        # synchronously in this callback with no `await` in between — so
+        # by the time the event loop next resumes any task, the producer
+        # can no longer reach its `await queue.put(...)` again. Setting
+        # shutdown_event only (without cancelling the producer here) would
+        # leave a window — up to the consumer's ~1s poll timeout — during
+        # which the producer keeps receiving and enqueueing frames that
+        # `consume()`'s final flush never sees, since it only drains what
+        # is already queued once it notices shutdown_event.
+        if not producer_task.done():
+            producer_task.cancel()
+        shutdown_event.set()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, _handle_shutdown_signal)
 
     print(f"capture pipeline started: url={url} symbol={args.symbol}", flush=True)
 
