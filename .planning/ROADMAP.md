@@ -37,7 +37,13 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. All captured timestamps are int64 nanoseconds since epoch with `etime` as the clock and a monotonic per-stream `seq` column written at capture time
   4. Repo skeleton exists under `mvp/` with uv lockfile honoring the numba/numpy/llvmlite pin; nothing MVP-related lives outside `mvp/`
   5. The Tardis.dev buy-vs-wait-vs-two-regime decision is forced, made, and recorded
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Walking Skeleton: repo scaffold, canonical schema, live one-shot proof against the real exchange
+- [ ] 01-02-PLAN.md — Continuous single-connection daemon: atomic Parquet rotation, restart-safe seq, startup liveness assertion, graceful shutdown
+- [ ] 01-03-PLAN.md — Redundancy: staggered second connection, bounded dedup, reactive gap ledger
+- [ ] 01-04-PLAN.md — Proactive watchdog, atomic-write hardening test, deploy artifacts (Dockerfile, systemd)
 
 ### Phase 2: Stage 0 — Living Spec, CI Guardrails & Tracking
 **Goal**: The living spec, CI enforcement, and experiment-tracking foundation exist so that no untracked or uncatalogued training can ever happen
@@ -168,7 +174,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Capture Daemon & Repo Foundation | 0/TBD | Not started | - |
+| 1. Capture Daemon & Repo Foundation | 0/4 | Planned | - |
 | 2. Stage 0 — Living Spec, CI Guardrails & Tracking | 0/TBD | Not started | - |
 | 3. Data Layer — Backfill, Ingest & Lockbox | 0/TBD | Not started | - |
 | 4. Feature & Label Engine | 0/TBD | Not started | - |
