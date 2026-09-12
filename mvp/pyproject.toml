@@ -1,0 +1,31 @@
+[project]
+name = "mvp"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "numba==0.65.*",
+    "numpy==2.4.*",
+    "orjson==3.11.*",
+    "polars==1.41.*",
+    "websockets==16.*",
+    "zstandard==0.25.*",
+]
+
+[dependency-groups]
+dev = [
+    "hypothesis==6.*",
+    "pytest==9.*",
+    "pytest-cov>=7.1.0",
+    "ruff==0.15.*",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff.lint]
+extend-select = ["TID251"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"pandas".msg = "pandas is banned project-wide per CLAUDE.md; use polars"
