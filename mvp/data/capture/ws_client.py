@@ -107,7 +107,8 @@ async def run_connection(
 
     Never returns on success (auto-reconnects forever via the websockets
     async-iterator pattern) except by raising `StartupLivenessError` on a
-    silent or late subscription, or by task cancellation.
+    silent or late subscription on the FIRST connection attempt, or by
+    task cancellation.
     """
     assert_secure_url(url)
     archive_writer = RawArchiveWriter(archive_dir, conn_id)

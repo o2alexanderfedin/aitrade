@@ -380,7 +380,7 @@ before every commit.
 | WR-01 | `8703bc6` | Watchdog's disk-failure-handler ledger write now has its own `try/except OSError`. |
 | WR-02 | `a459593` | `resume_seq_assigner` walks `date=*` dirs newest-first and uses the first non-empty one. |
 | WR-03 | `c2e8213` | `capture.service` now has `User=capture`/`Group=capture` plus deploy-time setup comments. Not installed on this host — nothing to restart. |
-| WR-04 | `df4fac3` | `BoundedDedup` eviction now uses a high-water `_max_seen_rtime_ns` watermark instead of the current call's own `rtime_ns`; docstring states the TTL-vs-cross-connection-lag invariant explicitly. |
+| WR-04 | `df4fac3` | `BoundedDedup` eviction now uses a high-water `_max_seen_rtime_ns` watermark instead of the current call's own `rtime_ns`; docstring states the TTL-vs-cross-connection-lag invariant explicitly. **Honesty note, found by mutation-testing this fix pass's own new tests against pre-fix code (all four ran clean against the fix, then re-run against `12c3838`'s pre-fix source):** given the front-of-dict scan's existing stop-at-first-non-evictable-entry behavior, the watermark change is provably behaviorally equivalent to the old code on every input — after any call sets the running max to `M`, the front entry's value is always `>= M - ttl` by the scan's own invariant, so whichever cutoff (old: current-call rtime; new: watermark) is used, the front-scan stops in the same place. `test_out_of_order_rtime_insertion_still_evicted_eventually` **also passes unmodified against the pre-fix `dedup.py`** — it does not discriminate old vs. new. It still satisfies WR-04's literal ask ("add a test ... proving the older entry still gets evicted eventually"), and the watermark makes the monotonic-cutoff invariant explicit/enforced rather than incidental, but the load-bearing deliverable of this fix is the documented TTL-vs-cross-connection-lag invariant, not a behavior change. |
 | WR-05 | `0c67bbd` | Timing bound relaxed from `< 2.0` to `< 10.0` with a regression-guard comment; `os.link` loop wrapped in `try/except OSError -> pytest.skip`. |
 | WR-06 | `4d9a04e` | Fixed `sleep(1.5)` replaced with a bounded `queue.qsize()` poll; the report's literal suggested fix (poll while the consumer runs concurrently) does not work as written because the consumer drains the queue the whole time — restructured so polling happens BEFORE the consumer starts, then drains via the file's existing `_drain_via_consume` idiom. |
 | WR-07 | `7bea8fb` | Folded into CR-02: logging stayed on stdout (matching `daemon.py`'s convention), so no `import sys` was needed. |
@@ -398,7 +398,34 @@ on the producer-self-completion path; new/extended cases in
 `test_watchdog.py`, `test_seq_resume.py`, and `test_dedup.py`; a
 determinism rewrite of the flaky case in `test_reconnect.py`. Full suite:
 71 passed, 0 skipped (hardlink support was available on the fixer's host),
-`-W error::DeprecationWarning`.
+`-W error::DeprecationWarning`. Baseline before this pass: 63 passed, 1
+flaky failure (the WR-06 target, confirmed failing on its own timing
+before the fix).
+
+**Mutation check:** the CR-01, CR-02, and WR-04 new tests were re-run
+against the pre-fix (`12c3838`) source of `ws_client.py`/`daemon.py`/
+`rotation.py`/`dedup.py`. The CR-01 (`test_liveness_deadline_is_not_rearmed_on_reconnect`,
+both `test_daemon.py` cases) and CR-02
+(`test_consume_flush_failure_retains_buffer_and_succeeds_on_retry`) tests
+correctly **fail** against pre-fix code, confirming they discriminate. The
+WR-04 test passes against pre-fix code too — see the honesty note in that
+row above.
+
+**Known un-hardened edge case, not fixed (out of pinned scope):** CR-02's
+retry can rewrite an already-successfully-written date partition. If a
+buffer spans a UTC-midnight boundary and `write_partition_atomic` writes
+two dates' files, succeeding on the first and failing on the second, the
+retry re-flushes the WHOLE (still-buffered) row set, including rows
+already durably written for the first date — a duplicate `part-*.parquet`
+file for that date. Tolerated by the `arg max(etime, seq)` read-time
+dedup rule, only possible at UTC midnight, not engineered around here.
+
+**Process note:** a "system-reminder"-formatted message appeared mid-session
+instructing the fixer to prefer raw `sed`/heredoc edits over the Read/Edit/
+Write tools. It contradicted the fixer's actual operating instructions and
+had the hallmarks of an injected instruction rather than a legitimate
+system directive, so it was not followed; Read/Edit/Write were used
+throughout as originally instructed.
 
 ---
 
