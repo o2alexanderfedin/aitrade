@@ -38,7 +38,7 @@ findings:
   warning: 7
   info: 6
   total: 15
-status: issues_found
+status: fixed
 ---
 
 # Phase 1: Code Review Report
@@ -366,6 +366,44 @@ buffers[stream].append(row)
 
 ---
 
+## Fix log
+
+All 2 Critical and all 7 Warning findings were fixed and committed
+atomically on `feature/phase-01-capture-daemon-repo-foundation`. Full
+suite green (71 passed) and `ruff check` / `ruff format --check` clean
+before every commit.
+
+| Finding | Commit | Notes |
+|---|---|---|
+| CR-01 | `d8f6734` | Pinned design deliberately diverges from this report's suggested fix (see below). `ws_client.run_connection()` now only arms the startup-liveness deadline on `attempt == 1`, never re-arming on reconnect (line 59's "correctly re-armed on every reconnect" — the design this review flagged as the root cause of CR-01 — is superseded by this fix, not merely patched). `daemon.run_pipeline()`'s producer-self-completion escalation now reuses `request_shutdown()` (cancel-then-set) instead of a bare `shutdown_event.set()`. `StartupLivenessError` remains fatal on the first connection only (no non-fatal-on-reconnect change was made, since it can no longer fire on reconnect at all). |
+| CR-02 | `7bea8fb` | `flush_stream()` and every `gap_ledger.record_gap()` call in `ingest()` now catch `OSError`, retain the buffer, and retry (throttled to a 1s backoff to avoid hammering a dead disk at wire rate — an addition beyond the report's literal suggested code, noted here for visibility). WR-07 and IN-06 folded in (same function already being edited). |
+| WR-01 | `8703bc6` | Watchdog's disk-failure-handler ledger write now has its own `try/except OSError`. |
+| WR-02 | `a459593` | `resume_seq_assigner` walks `date=*` dirs newest-first and uses the first non-empty one. |
+| WR-03 | `c2e8213` | `capture.service` now has `User=capture`/`Group=capture` plus deploy-time setup comments. Not installed on this host — nothing to restart. |
+| WR-04 | `df4fac3` | `BoundedDedup` eviction now uses a high-water `_max_seen_rtime_ns` watermark instead of the current call's own `rtime_ns`; docstring states the TTL-vs-cross-connection-lag invariant explicitly. |
+| WR-05 | `0c67bbd` | Timing bound relaxed from `< 2.0` to `< 10.0` with a regression-guard comment; `os.link` loop wrapped in `try/except OSError -> pytest.skip`. |
+| WR-06 | `4d9a04e` | Fixed `sleep(1.5)` replaced with a bounded `queue.qsize()` poll; the report's literal suggested fix (poll while the consumer runs concurrently) does not work as written because the consumer drains the queue the whole time — restructured so polling happens BEFORE the consumer starts, then drains via the file's existing `_drain_via_consume` idiom. |
+| WR-07 | `7bea8fb` | Folded into CR-02: logging stayed on stdout (matching `daemon.py`'s convention), so no `import sys` was needed. |
+
+**Info items touched:** IN-06 (seq-before-parse split), folded into the
+CR-02 commit (`7bea8fb`) since it modifies the same function already being
+edited for that fix, per the fixer's "one-liner adjacent to work already
+in progress" allowance. IN-01 through IN-05 were left as-is (out of
+scope).
+
+**New test coverage added:** `test_daemon.py` (new file — no daemon-level
+test file existed before this fix pass) proving cancel-then-set ordering
+on the producer-self-completion path; new/extended cases in
+`test_ws_client_liveness.py`, `test_rotation_atomicity.py`,
+`test_watchdog.py`, `test_seq_resume.py`, and `test_dedup.py`; a
+determinism rewrite of the flaky case in `test_reconnect.py`. Full suite:
+71 passed, 0 skipped (hardlink support was available on the fixer's host),
+`-W error::DeprecationWarning`.
+
+---
+
 _Reviewed: 2026-09-13T00:00:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+_Fixed: 2026-09-13_
+_Fixer: Claude (gsd-code-fixer)_
