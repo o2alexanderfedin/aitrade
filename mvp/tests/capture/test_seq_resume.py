@@ -268,15 +268,21 @@ def test_resume_seq_assigner_stale_sidecar_takes_max_of_sidecar_and_scan(
     assert healed["bookTicker"]["seq"] == 9
 
 
-def test_resume_seq_assigner_5000_partitions_with_sidecar_under_2_seconds(
+def test_resume_seq_assigner_5000_partitions_with_sidecar_under_10_seconds(
     tmp_path: Path,
 ) -> None:
     """Scalability acceptance: a store with 5,000 partition files for one
-    stream, plus a sidecar covering the newest of them, resumes in well
-    under 2 seconds -- because the covering sidecar means zero files are
-    opened, regardless of how many partitions exist on disk (closes the
-    O(all-partitions-ever) hazard found live in Plan 02's checkpoint,
-    where 1,261 files cost ~14s of daemon downtime)."""
+    stream, plus a sidecar covering the newest of them, resumes without the
+    O(all-partitions-ever) hazard found live in Plan 02's checkpoint (1,261
+    files cost ~14s of daemon downtime) -- because the covering sidecar
+    means zero files are opened, regardless of how many partitions exist on
+    disk.
+
+    WR-05 (01-REVIEW.md): the bound is a REGRESSION GUARD against that
+    O(all-partitions) behavior recurring, not a tight SLA -- 10s leaves
+    generous headroom for CI/host load so this does not flake independent
+    of any real regression, while still failing hard if the covering-
+    sidecar fast path ever regresses back to opening every file."""
     event_ms = int(datetime(2026, 9, 12, tzinfo=timezone.utc).timestamp() * 1000)
     rows = [_bookticker_row(0, event_ms)]
     written = write_partition_atomic(
@@ -286,10 +292,13 @@ def test_resume_seq_assigner_5000_partitions_with_sidecar_under_2_seconds(
     part_dir = template.parent
     last_ns = part_ns_of(template)
 
-    for _ in range(1, 5000):
-        last_ns += 1
-        clone = part_dir / f"part-{last_ns}.parquet"
-        os.link(template, clone)  # instant -- no parquet-write cost, just a filename
+    try:
+        for _ in range(1, 5000):
+            last_ns += 1
+            clone = part_dir / f"part-{last_ns}.parquet"
+            os.link(template, clone)  # instant -- no parquet-write cost
+    except OSError:
+        pytest.skip("filesystem lacks hardlink support")
 
     write_seq_state_atomic(
         tmp_path, "BTCUSDT", {"bookTicker": {"seq": 0, "part_ns": last_ns}}
@@ -300,5 +309,5 @@ def test_resume_seq_assigner_5000_partitions_with_sidecar_under_2_seconds(
     resume_seq_assigner(assigner, tmp_path, "BTCUSDT", ["bookTicker", "trade"])
     elapsed = time.monotonic() - start
 
-    assert elapsed < 2.0, f"resume took {elapsed:.2f}s with 5,000 partitions on disk"
+    assert elapsed < 10.0, f"resume took {elapsed:.2f}s with 5,000 partitions on disk"
     assert assigner.next("BTCUSDT", "bookTicker") == 1
