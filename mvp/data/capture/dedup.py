@@ -47,14 +47,40 @@ class BoundedDedup:
     which makes front-of-dict eviction (`popitem(last=False)`) correct and
     O(1) amortized per evicted entry — important at ~118 msg/s, where an
     O(n) full-dict scan on every call would not keep up over a multi-day run.
+
+    Invariant (WR-04, 01-REVIEW.md): `ttl_seconds` must exceed the
+    worst-case lag between the two producer connections' delivery of the
+    SAME logical event, not just typical jitter. `rtime_ns` is
+    `time.time_ns()` recorded independently by each connection at the
+    moment its own `ws.recv()` returns, and both connections enqueue onto
+    one shared queue — nothing guarantees connection A's and B's items
+    interleave in strictly increasing `rtime_ns` insertion order (only that
+    each single connection's own stream is monotonic). If one connection
+    genuinely lags (TCP stall then burst-delivers), eviction is keyed off a
+    high-water `_max_seen_rtime_ns` watermark (the max `rtime_ns` observed
+    across ANY call so far, not the current call's own value), so a
+    momentarily out-of-order/small `rtime_ns` cannot make the effective
+    cutoff regress and strand an older, already-evictable entry behind a
+    still-fresh one forever — it is evicted the next time the front-of-dict
+    scan reaches it, bounded by one TTL window's worth of delay. The
+    front-of-dict scan itself still stops at the first entry that is not
+    (yet) evictable under the CURRENT watermark, to keep this O(1)
+    amortized per call — an out-of-order entry behind that one is evicted
+    once the entry in front of it ages out, not immediately.
     """
 
     def __init__(self, ttl_seconds: float = 120.0) -> None:
         self._ttl_ns = int(ttl_seconds * 1_000_000_000)
         self._seen: OrderedDict[tuple[str, int], int] = OrderedDict()
+        self._max_seen_rtime_ns: int | None = None
 
     def _evict_older_than(self, current_rtime_ns: int) -> None:
-        cutoff = current_rtime_ns - self._ttl_ns
+        if (
+            self._max_seen_rtime_ns is None
+            or current_rtime_ns > self._max_seen_rtime_ns
+        ):
+            self._max_seen_rtime_ns = current_rtime_ns
+        cutoff = self._max_seen_rtime_ns - self._ttl_ns
         while self._seen:
             oldest_key = next(iter(self._seen))
             if self._seen[oldest_key] >= cutoff:

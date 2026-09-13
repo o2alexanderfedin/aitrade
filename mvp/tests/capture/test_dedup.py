@@ -65,6 +65,39 @@ def test_seen_set_is_bounded_and_evicts_aged_entries() -> None:
     assert len(dedup._seen) < burst_size
 
 
+def test_out_of_order_rtime_insertion_still_evicted_eventually() -> None:
+    """WR-04 (01-REVIEW.md): eviction is keyed off a high-water
+    `_max_seen_rtime_ns` watermark, not the current call's own `rtime_ns` --
+    a momentarily out-of-order (smaller) `rtime_ns` must not strand an
+    older entry behind a still-fresh one forever. k2 is inserted with a
+    SMALLER rtime than k1, already inserted -- out of insertion order."""
+    ttl_seconds = 120.0
+    dedup = BoundedDedup(ttl_seconds=ttl_seconds)
+
+    dedup.is_duplicate("bookTicker", 1, rtime_ns=200_000_000_000)  # k1 @ 200s
+    dedup.is_duplicate(
+        "bookTicker", 2, rtime_ns=50_000_000_000
+    )  # k2 @ 50s (out of order)
+    dedup.is_duplicate("bookTicker", 3, rtime_ns=250_000_000_000)  # k3 @ 250s
+
+    # Neither k1 nor k2 is evictable yet under a 120s TTL relative to the
+    # watermark (250s - 120s = 130s cutoff; k1@200s >= cutoff), so both must
+    # still be present -- in particular k2, the out-of-order entry, has NOT
+    # been dropped early.
+    assert ("bookTicker", 1) in dedup._seen
+    assert ("bookTicker", 2) in dedup._seen
+
+    # A later call raises the watermark far enough (330s - 120s = 210s
+    # cutoff) that both k1@200s and k2@50s are now stale and must be
+    # evicted -- the out-of-order entry is not stuck behind k1 forever.
+    dedup.is_duplicate("bookTicker", 4, rtime_ns=330_000_000_000)  # k4 @ 330s
+
+    assert ("bookTicker", 1) not in dedup._seen
+    assert ("bookTicker", 2) not in dedup._seen
+    assert ("bookTicker", 3) in dedup._seen
+    assert ("bookTicker", 4) in dedup._seen
+
+
 def test_duplicate_frames_from_two_connections_deep_copy_safe() -> None:
     """Sanity: mutating a copy of a shared fixture frame must not corrupt
     the original — guards against accidental fixture aliasing bugs in
