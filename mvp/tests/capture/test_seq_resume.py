@@ -205,6 +205,36 @@ def test_resume_seq_assigner_sidecar_absent_falls_back_to_newest_date_scan(
     assert healed["bookTicker"]["seq"] == 17
 
 
+def test_resume_seq_assigner_empty_newest_date_dir_falls_back_to_older_dir_with_data(
+    tmp_path: Path,
+) -> None:
+    """WR-02 (01-REVIEW.md): `write_partition_atomic()` does
+    `part_dir.mkdir(parents=True, exist_ok=True)` before the first
+    successful `write_parquet`/`.replace()`. A crash between those two
+    steps leaves an empty `date=<today>` directory behind. If that empty
+    directory is the NEWEST `date=*` dir and the sidecar is absent, resume
+    must still find the real data in an OLDER, non-empty `date=*` dir --
+    not silently start at 0, which would violate 'resume is never lower
+    than what is actually on disk'."""
+    event_ms = int(datetime(2026, 9, 12, tzinfo=timezone.utc).timestamp() * 1000)
+    rows = [_bookticker_row(seq, event_ms + seq) for seq in range(18)]  # seq 0..17
+    write_partition_atomic(rows, BOOKTICKER_SCHEMA, tmp_path, "BTCUSDT", "bookTicker")
+
+    stream_dir = partition_dir(tmp_path, "BTCUSDT", "bookTicker")
+    # Simulate the crash-orphaned empty newest date dir: 2026-09-13 is
+    # lexicographically (and chronologically) newer than the real data's
+    # 2026-09-12, and date_dirs is sorted newest-last.
+    (stream_dir / "date=2026-09-13").mkdir(parents=True)
+
+    assert not (tmp_path / "seq_state.json").exists()
+
+    assigner = SeqAssigner()
+    resume_seq_assigner(assigner, tmp_path, "BTCUSDT", ["bookTicker", "trade"])
+
+    assert assigner.next("BTCUSDT", "bookTicker") == 18
+    assert assigner.next("BTCUSDT", "trade") == 0
+
+
 def test_resume_seq_assigner_stale_sidecar_takes_max_of_sidecar_and_scan(
     tmp_path: Path,
 ) -> None:

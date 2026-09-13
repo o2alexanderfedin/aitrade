@@ -100,12 +100,24 @@ def resume_seq_assigner(
                 if p.is_dir() and p.name.startswith("date=")
             )
             if date_dirs:
-                newest_dir = date_dirs[-1]
-                part_files = sorted(
-                    p
-                    for p in newest_dir.glob("part-*.parquet")
-                    if p.suffix == ".parquet"
-                )
+                # WR-02 (01-REVIEW.md): the newest `date=*` dir can be empty
+                # -- write_partition_atomic() does `mkdir(parents=True,
+                # exist_ok=True)` before the first `write_parquet`/
+                # `.replace()`, so a crash between those two steps leaves an
+                # empty directory behind. Picking `date_dirs[-1]`
+                # unconditionally would then wrongly resume at 0 even
+                # though older dates hold real, higher-seq data. Walk
+                # newest-first and use the first dir that actually contains
+                # partition files.
+                part_files: list[Path] = []
+                for candidate_dir in reversed(date_dirs):
+                    part_files = sorted(
+                        p
+                        for p in candidate_dir.glob("part-*.parquet")
+                        if p.suffix == ".parquet"
+                    )
+                    if part_files:
+                        break
                 candidates = (
                     [p for p in part_files if part_ns_of(p) > sidecar_part_ns]
                     if sidecar_part_ns is not None
