@@ -53,6 +53,16 @@ if TYPE_CHECKING:
 
 ORPHAN_TMP_MIN_AGE_SECONDS = 10.0
 QUEUE_POLL_TIMEOUT_SECONDS = 1.0
+# CR-02 (01-REVIEW.md): after a flush failure, throttle retries to this
+# cadence rather than re-attempting on every subsequent dequeued item (which
+# would otherwise hammer a dead disk at the live wire rate, ~118 msg/s) --
+# it also matches the consumer's own queue-poll cadence, so it costs nothing
+# extra on the happy path.
+FLUSH_RETRY_BACKOFF_SECONDS = 1.0
+# Loud-but-not-fatal watermark: past this many buffered rows, print an
+# escalating warning on every failed retry (still without discarding
+# anything -- see consume()'s flush_stream docstring note).
+FLUSH_BUFFER_WARN_MULTIPLE = 10
 
 
 def partition_dir(data_root: Path, symbol: str, stream: str) -> Path:
@@ -297,23 +307,70 @@ async def consume(
         last_seen_state = {}
     last_trade: dict[str, int | None] = {"id": None, "rtime": None}
     gap_threshold_ns = int(gap_threshold_seconds * 1_000_000_000)
+    # CR-02: monotonic "do not attempt another flush for this stream before
+    # this time" gate, set on every failed flush attempt. Bare 0.0 default
+    # means the very first attempt for a stream is never throttled.
+    next_retry_at: dict[str, float] = {"bookTicker": 0.0, "trade": 0.0}
+
+    def _flush_due(stream: str) -> bool:
+        return time.monotonic() >= next_retry_at[stream]
 
     def flush_stream(stream: str) -> None:
         rows = buffers[stream]
         if not rows:
             last_flush[stream] = time.monotonic()
             return
-        written = write_partition_atomic(
-            rows, schemas[stream], data_root, symbol, stream
-        )
+        try:
+            written = write_partition_atomic(
+                rows, schemas[stream], data_root, symbol, stream
+            )
+        except OSError as exc:
+            # CR-02 (01-REVIEW.md): a transient write error must not crash
+            # the consumer or discard already-deduped, already-sequenced
+            # rows sitting only in memory -- retain the buffer, throttle the
+            # next attempt, and let a subsequent flush trigger retry.
+            next_retry_at[stream] = time.monotonic() + FLUSH_RETRY_BACKOFF_SECONDS
+            print(
+                f"ERROR: flush failed for stream={stream} "
+                f"({len(rows)} rows retained for retry): {exc}",
+                flush=True,
+            )
+            if len(rows) > FLUSH_BUFFER_WARN_MULTIPLE * flush_rows:
+                print(
+                    f"WARNING: stream={stream} buffer has grown to {len(rows)} "
+                    f"rows (> {FLUSH_BUFFER_WARN_MULTIPLE}x flush_rows={flush_rows}) "
+                    "after repeated flush failures -- volume may be gone; rows "
+                    "are still retained in memory, not discarded",
+                    flush=True,
+                )
+            return
         buffers[stream] = []
         last_flush[stream] = time.monotonic()
         if written:
             last_part_ns = max(part_ns_of(p) for p in written)
             last_seq = assigner.peek(symbol, stream) - 1
-            write_seq_state_atomic(
-                data_root, symbol, {stream: {"seq": last_seq, "part_ns": last_part_ns}}
-            )
+            try:
+                write_seq_state_atomic(
+                    data_root,
+                    symbol,
+                    {stream: {"seq": last_seq, "part_ns": last_part_ns}},
+                )
+            except OSError as exc:
+                # Parquet is already durable; the sidecar self-heals via
+                # seq.py's newest-date scan fallback on the next restart, so
+                # this is loud-but-non-fatal too.
+                print(
+                    f"ERROR: seq_state.json write failed for stream={stream}: {exc}",
+                    flush=True,
+                )
+
+    def _safe_record_gap(**kwargs: object) -> None:
+        # CR-02: a gap-ledger write failure must never crash the consumer --
+        # this path exists to RECORD an outage, not cause a worse one.
+        try:
+            gap_ledger.record_gap(**kwargs)
+        except OSError as exc:
+            print(f"ERROR: gap ledger write failed: {exc}", flush=True)
 
     def ingest(conn_id: str, rtime_ns: int, frame: dict) -> None:
         # Connection-liveness bookkeeping happens BEFORE dedup, on every raw
@@ -324,7 +381,7 @@ async def consume(
         prior_conn = last_seen_state.get(conn_id)
         if prior_merged is not None and rtime_ns - prior_merged > gap_threshold_ns:
             gap_seconds = (rtime_ns - prior_merged) / 1e9
-            gap_ledger.record_gap(
+            _safe_record_gap(
                 stream="__connection__",
                 conn_id="merged",
                 gap_start_rtime=prior_merged,
@@ -336,7 +393,7 @@ async def consume(
             )
         elif prior_conn is not None and rtime_ns - prior_conn > gap_threshold_ns:
             gap_seconds = (rtime_ns - prior_conn) / 1e9
-            gap_ledger.record_gap(
+            _safe_record_gap(
                 stream="__connection__",
                 conn_id=conn_id,
                 gap_start_rtime=prior_conn,
@@ -368,7 +425,7 @@ async def consume(
                     diff = trade_id - prior_id
                     if diff > 1:
                         missing = diff - 1
-                        gap_ledger.record_gap(
+                        _safe_record_gap(
                             stream="trade",
                             conn_id="merged",
                             gap_start_rtime=last_trade["rtime"],
@@ -390,9 +447,20 @@ async def consume(
                     last_trade["id"] = trade_id
                     last_trade["rtime"] = rtime_ns
 
+        # IN-06 (01-REVIEW.md, folded into this CR-02 edit since it's the
+        # same function): compute seq separately from the parse call so a
+        # FrameParseError this late in the pipeline (post-dedup, post-
+        # liveness, post-archive) is observable instead of silently
+        # vanishing with no log line and no gap-ledger entry.
+        seq_value = assigner.next(symbol, stream)
         try:
-            row = parse_combined_frame(frame, assigner.next(symbol, stream), rtime_ns)
-        except FrameParseError:
+            row = parse_combined_frame(frame, seq_value, rtime_ns)
+        except FrameParseError as exc:
+            print(
+                f"WARNING: dropped frame post-dedup, seq={seq_value} "
+                f"stream={stream}: {exc}",
+                flush=True,
+            )
             return
         buffers[stream].append(row)
 
@@ -406,7 +474,7 @@ async def consume(
         else:
             ingest(conn_id, rtime_ns, frame)
             for stream in ("bookTicker", "trade"):
-                if len(buffers[stream]) >= flush_rows:
+                if len(buffers[stream]) >= flush_rows and _flush_due(stream):
                     flush_stream(stream)
 
         if shutdown_event.is_set():
@@ -422,5 +490,5 @@ async def consume(
 
         now = time.monotonic()
         for stream in ("bookTicker", "trade"):
-            if now - last_flush[stream] >= rotation_seconds:
+            if now - last_flush[stream] >= rotation_seconds and _flush_due(stream):
                 flush_stream(stream)
