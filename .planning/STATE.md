@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 
 Phase: 1 of 11 (Capture Daemon & Repo Foundation) — COMPLETE
 Plan: 4 of 4 complete
-Status: Phase 1 approved 2026-09-13; verifier + code review + merge pending, then Phase 2
-Last activity: 2026-09-13 — Phase 1 final checkpoint approved; 3 post-approval fixes committed (hermetic watchdog tests, reconnect logging, ruff format)
+Status: Phase 1 COMPLETE — verified (20/20), code-reviewed (2 critical + 7 warning fixed), merged to develop at f6c5319 and pushed. Next: Phase 2
+Last activity: 2026-09-13 — Phase 1 merged to develop (55 commits). Capture daemon Run F (PID 11428) running on pre-review code; ~24h Binance close observed forensically at ~20:11 UTC, then daemon restarts onto reviewed code.
 
 Progress: [██████████] 100%
 
@@ -72,6 +72,9 @@ Recent decisions affecting current work:
 - [Phase 1]: Capture host — this Mac, `data_root` on `/Volumes/ProjectsSSD` (901 GiB free, outside OneDrive sync). Internal volume has only 17 GiB free at 96%; repo itself is inside a OneDrive sync root. `data_root` guard refuses both by construction.
 - [Phase 1]: Spot L1 **deferred post-MVP** — swap-only capture. Spot `bookTicker` carries no exchange timestamp, so capturing it would force a local-clock exception that weakens the etime-only invariant.
 - [Phase 1]: **Empirically corrected the phase research.** Live probes disproved two doc-derived claims: `btcusdt@trade` DOES exist on USD-M futures (96 msgs/20s, per-fill `t`), and the legacy `/stream` endpoint is NOT decommissioned. Topology is 2 sockets, not 4; `@trade` is the tape per CLAUDE.md, not aggTrade. Evidence in `phases/01-.../evidence/PROBE-RESULTS.md`.
+- [Phase 1, code review]: **Startup liveness arms on first connect only.** Re-arming on reconnect (my own earlier instruction) conflated a config-bug detector with runtime health; at Binance's ~24h close a >10s trade lull would have killed the daemon. Runtime silence is the watchdog's job. Fixed in d8f6734.
+- [Phase 1, code review]: **Flush failures retain the buffer and retry; memory growth beats data loss** for irreplaceable capture. Fixed in 7bea8fb.
+- [Phase 1, ops]: **Never launch a long-lived process via `uv run`** — it holds `~/.cache/uv/.lock` for the child's lifetime and hangs every other `uv run` on the host. Use `./.venv/bin/python3` directly.
 - [Phase 1]: **Assumption A1 proven live** — two staggered connections observe identical `(stream, id)` sets: Jaccard 1.000000 on both bookTicker and trade, zero divergence. The `(stream, id)` dedup design is sound. Re-checkable via `verify_live_connection.py --redundancy-check`.
 - [Phase 1]: Walking skeleton proven live end-to-end 2026-09-12 — verify_live_connection.py wrote/read one Parquet file against real BTCUSDT traffic (OK: bookTicker=19 trade=1); --redundancy-check re-proved Assumption A1 (Jaccard=1.000000 on both streams).
 - [Phase 1]: argparse --data-root made optional (default=None) instead of required=True, because verify_live_connection.py's --redundancy-check mode is invoked without it; validate_data_root() still enforces the required/no-default rule at call time.
