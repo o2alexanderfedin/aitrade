@@ -183,8 +183,6 @@ def test_connection_a_drop_mid_delivery_b_continues_zero_missing_keys(
             scripted_server(connection_scripts=[script_b]) as port_b,
         ):
             queue: asyncio.Queue = asyncio.Queue()
-            assigner = SeqAssigner()
-            shutdown_event = asyncio.Event()
 
             task_a = asyncio.create_task(
                 run_connection(
@@ -206,23 +204,19 @@ def test_connection_a_drop_mid_delivery_b_continues_zero_missing_keys(
                     startup_timeout=2.0,
                 )
             )
-            consumer_task = asyncio.create_task(
-                consume(
-                    queue,
-                    assigner,
-                    tmp_path,
-                    "BTCUSDT",
-                    flush_rows=1000,
-                    rotation_seconds=1000.0,
-                    shutdown_event=shutdown_event,
-                )
-            )
 
-            # Give A's drop+reconnect and B's uninterrupted delivery time
-            # to complete on localhost (no backoff delay applies to a
-            # ConnectionClosed caught and `continue`d inside the loop
-            # body — see ws_client.py's docstring).
-            await asyncio.sleep(1.5)
+            # WR-06 (01-REVIEW.md): poll for every RAW frame both
+            # connections are scripted to deliver (6 from A across its
+            # drop+reconnect, 6 from B uninterrupted -- dedup happens in
+            # consume(), not here) instead of a fixed sleep, which can be
+            # too short under host load and too long otherwise. No
+            # consumer is running yet, so qsize() grows monotonically and
+            # is not racing a concurrent drain.
+            for _ in range(200):
+                if queue.qsize() >= 12:
+                    break
+                await asyncio.sleep(0.05)
+            assert queue.qsize() >= 12, f"expected 12 raw frames, got {queue.qsize()}"
 
             for task in (task_a, task_b):
                 if not task.done():
@@ -231,8 +225,11 @@ def test_connection_a_drop_mid_delivery_b_continues_zero_missing_keys(
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
 
-            shutdown_event.set()
-            await consumer_task
+            # Drain everything already queued through consume(), matching
+            # this module's _drain_via_consume idiom (pre-set shutdown_event
+            # so consume() drains via get_nowait() and performs one final
+            # unconditional flush, then returns).
+            await _drain_via_consume(queue, tmp_path)
 
         update_ids = _read_parquet_ids(tmp_path, "BTCUSDT", "bookTicker", "update_id")
         trade_ids = _read_parquet_ids(tmp_path, "BTCUSDT", "trade", "trade_id")
