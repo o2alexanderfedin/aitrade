@@ -16,7 +16,7 @@ Requirements for MVP exit. Each maps to roadmap phases. Source of truth: `mvp.md
 
 ### Data — Capture, Backfill, Quality
 
-- [ ] **DATA-01**: Redundant capture daemon records Binance Swap (and Spot if feasible) L1 + trades to Parquet with a gap ledger, running from Phase 1 onward (L1 history is not backfillable — verified)
+- [x] **DATA-01**: Redundant capture daemon records Binance Swap (and Spot if feasible) L1 + trades to Parquet with a gap ledger, running from Phase 1 onward (L1 history is not backfillable — verified)
 - [ ] **DATA-02**: Trades backfilled from data.binance.vision with per-dataset unit registry handling format heterogeneity (spot ms→µs switch at 2025-01-01, futures ms, header differences)
 - [ ] **DATA-03**: Trade-side backfill preprocessing classifies legacy `tradeSide = 0` rows by nearest L1 quote; corrected side stored alongside raw (`tradeSide_raw`, `tradeSide_corrected`)
 - [x] **DATA-04**: All timestamps stored as int64 nanoseconds since epoch; `etime` is the only clock (documented local-clock exception for spot L1 if that route is chosen)
@@ -130,7 +130,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SPEC-02 | Phase 2 | Pending |
 | SPEC-03 | Phase 2 | Pending |
 | SPEC-04 | Phase 2 | Pending |
-| DATA-01 | Phase 1 | In Progress (walking skeleton proven live in Plan 01; redundancy/gap-ledger/continuous-daemon in Plans 02-04) |
+| DATA-01 | Phase 1 | Complete |
 | DATA-02 | Phase 3 | Pending |
 | DATA-03 | Phase 3 | Pending |
 | DATA-04 | Phase 1 | Complete |

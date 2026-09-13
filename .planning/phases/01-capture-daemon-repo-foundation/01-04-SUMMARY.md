@@ -387,3 +387,21 @@ Live-daemon evidence verified directly against the filesystem and process table 
 ---
 *Phase: 01-capture-daemon-repo-foundation*
 *Completed: 2026-09-12 (checkpoint pending human confirmation)*
+
+---
+
+## Checkpoint resolution — 2026-09-13 18:05 UTC
+
+**Status: APPROVED — Phase 1 complete.** User approved after all five ROADMAP success criteria were verified by the orchestrator independently against Run F (PID 11428), which by then had run **21h 43m continuously**: 6.7 GB captured, zero errors, zero `ledger_version>=2` rows (no real outages under the corrected policy), raw archive rolled to `date=2026-09-13` at 00:00 UTC in production.
+
+### Post-approval fixes landed before merge (all on the feature branch)
+
+| Commit | What | Why |
+|---|---|---|
+| `601c3ff` | Watchdog tests made hermetic (autouse `disk_usage` patch) | **Pre-existing defect:** 5 stall-only tests used real free space on `tmp_path`; passed on 09-12 at 17 GiB free, failed on 09-13 at 15 GiB with no code change. Verified failing at HEAD with all other changes stashed. |
+| `cdc7ae3` | Connection establish/close-reconnect logging in `ws_client.py` + test | **Blind spot:** reconnects were silent. A clean reconnect under the 5s threshold left no trace, making the deferred ≥24h check unverifiable. Uses non-deprecated `exc.rcvd`; suite passes with `-W error::DeprecationWarning`. |
+| `0d7a045` | `ruff format` on 10 files | **Pre-existing drift:** executors ran `ruff check` but never `ruff format`; CLAUDE.md mandates both and Phase 2's CI would have failed on first run. |
+
+**Run F deliberately NOT restarted** onto the logging code: it is ~2h from Binance's ~24h forced close. That event is observed forensically on Run F first (rtime gaps in `conn_A`/`conn_B` raw archives, gap ledger, seq continuity), then the daemon is restarted so all future reconnects are logged.
+
+Final suite: **64 passed**, ruff check + format clean.
