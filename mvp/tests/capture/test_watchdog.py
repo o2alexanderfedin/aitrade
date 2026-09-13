@@ -34,9 +34,10 @@ def _healthy_disk_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     The three disk-specific tests below re-patch `disk_usage` in-body and are
     unaffected by this default.
     """
-    plenty = _DiskUsage(total=1_000_000_000_000, used=1_000_000_000, free=900_000_000_000)
+    plenty = _DiskUsage(
+        total=1_000_000_000_000, used=1_000_000_000, free=900_000_000_000
+    )
     monkeypatch.setattr(shutil, "disk_usage", lambda _path: plenty)
-
 
 
 def test_stall_beyond_threshold_records_one_row_then_does_not_duplicate(
@@ -52,7 +53,11 @@ def test_stall_beyond_threshold_records_one_row_then_does_not_duplicate(
     last_seen_state = {"A": now_ns - 40_000_000_000, "B": now_ns, "merged": now_ns}
     ledger = GapLedger(tmp_path)
     watchdog = Watchdog(
-        last_seen_state, ledger, tmp_path, conn_ids=["A", "B"], stall_threshold_seconds=30.0
+        last_seen_state,
+        ledger,
+        tmp_path,
+        conn_ids=["A", "B"],
+        stall_threshold_seconds=30.0,
     )
 
     watchdog._tick()
@@ -80,7 +85,11 @@ def test_both_connections_stalled_records_only_merged_not_per_connection(
     }
     ledger = GapLedger(tmp_path)
     watchdog = Watchdog(
-        last_seen_state, ledger, tmp_path, conn_ids=["A", "B"], stall_threshold_seconds=30.0
+        last_seen_state,
+        ledger,
+        tmp_path,
+        conn_ids=["A", "B"],
+        stall_threshold_seconds=30.0,
     )
 
     watchdog._tick()
@@ -104,7 +113,11 @@ def test_stall_resolves_then_recurs_records_two_rows(tmp_path: Path) -> None:
     }
     ledger = GapLedger(tmp_path)
     watchdog = Watchdog(
-        last_seen_state, ledger, tmp_path, conn_ids=["A", "B"], stall_threshold_seconds=30.0
+        last_seen_state,
+        ledger,
+        tmp_path,
+        conn_ids=["A", "B"],
+        stall_threshold_seconds=30.0,
     )
 
     watchdog._tick()
@@ -127,10 +140,18 @@ def test_stall_resolves_then_recurs_records_two_rows(tmp_path: Path) -> None:
 
 def test_both_streams_seen_recently_records_zero_rows(tmp_path: Path) -> None:
     now_ns = time.time_ns()
-    last_seen_state = {"A": now_ns - 500_000_000, "B": now_ns - 200_000_000, "merged": now_ns - 200_000_000}
+    last_seen_state = {
+        "A": now_ns - 500_000_000,
+        "B": now_ns - 200_000_000,
+        "merged": now_ns - 200_000_000,
+    }
     ledger = GapLedger(tmp_path)
     watchdog = Watchdog(
-        last_seen_state, ledger, tmp_path, conn_ids=["A", "B"], stall_threshold_seconds=30.0
+        last_seen_state,
+        ledger,
+        tmp_path,
+        conn_ids=["A", "B"],
+        stall_threshold_seconds=30.0,
     )
 
     watchdog._tick()
@@ -146,7 +167,11 @@ def test_connection_not_yet_started_is_not_alarmed(tmp_path: Path) -> None:
     last_seen_state = {"A": now_ns, "merged": now_ns}  # "B" deliberately absent
     ledger = GapLedger(tmp_path)
     watchdog = Watchdog(
-        last_seen_state, ledger, tmp_path, conn_ids=["A", "B"], stall_threshold_seconds=30.0
+        last_seen_state,
+        ledger,
+        tmp_path,
+        conn_ids=["A", "B"],
+        stall_threshold_seconds=30.0,
     )
 
     watchdog._tick()
@@ -164,7 +189,9 @@ def test_low_free_space_records_one_row_with_free_in_cause(
         last_seen_state, ledger, tmp_path, conn_ids=["A", "B"], min_free_gb=50.0
     )
 
-    fake_usage = _DiskUsage(total=1_000_000_000_000, used=999_000_000_000, free=1_000_000_000)
+    fake_usage = _DiskUsage(
+        total=1_000_000_000_000, used=999_000_000_000, free=1_000_000_000
+    )
     monkeypatch.setattr(shutil, "disk_usage", lambda _path: fake_usage)
 
     watchdog._tick()
@@ -186,7 +213,9 @@ def test_sufficient_free_space_records_zero_rows(
         last_seen_state, ledger, tmp_path, conn_ids=["A", "B"], min_free_gb=50.0
     )
 
-    fake_usage = _DiskUsage(total=1_000_000_000_000, used=1_000_000_000, free=900_000_000_000)
+    fake_usage = _DiskUsage(
+        total=1_000_000_000_000, used=1_000_000_000, free=900_000_000_000
+    )
     monkeypatch.setattr(shutil, "disk_usage", lambda _path: fake_usage)
 
     watchdog._tick()
@@ -223,10 +252,18 @@ def test_run_single_iteration_with_preset_shutdown_event_ticks_exactly_once(
     """run() with a pre-set shutdown_event and interval_seconds=0 executes
     exactly one tick then returns immediately -- no real sleeping."""
     now_ns = time.time_ns()
-    last_seen_state = {"A": now_ns - 40_000_000_000, "B": now_ns - 40_000_000_000, "merged": now_ns - 40_000_000_000}
+    last_seen_state = {
+        "A": now_ns - 40_000_000_000,
+        "B": now_ns - 40_000_000_000,
+        "merged": now_ns - 40_000_000_000,
+    }
     ledger = GapLedger(tmp_path)
     watchdog = Watchdog(
-        last_seen_state, ledger, tmp_path, conn_ids=["A", "B"], stall_threshold_seconds=30.0
+        last_seen_state,
+        ledger,
+        tmp_path,
+        conn_ids=["A", "B"],
+        stall_threshold_seconds=30.0,
     )
     shutdown_event = asyncio.Event()
     shutdown_event.set()

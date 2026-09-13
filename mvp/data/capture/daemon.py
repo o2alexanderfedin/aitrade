@@ -78,9 +78,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     pre_args, _ = pre_parser.parse_known_args(argv)
     config = load_config(Path(pre_args.config))
 
-    parser = argparse.ArgumentParser(
-        description="Binance USD-M futures capture daemon"
-    )
+    parser = argparse.ArgumentParser(description="Binance USD-M futures capture daemon")
     parser.add_argument(
         "--data-root",
         default=os.environ.get("CAPTURE_DATA_ROOT"),
@@ -188,8 +186,7 @@ async def _run_connection_staggered(delay_seconds: float, *args, **kwargs) -> No
     if delay_seconds > 0:
         await asyncio.sleep(delay_seconds)
     print(
-        f"launching connection {kwargs.get('conn_id')} after "
-        f"{delay_seconds}s stagger",
+        f"launching connection {kwargs.get('conn_id')} after {delay_seconds}s stagger",
         flush=True,
     )
     await run_connection(*args, **kwargs)

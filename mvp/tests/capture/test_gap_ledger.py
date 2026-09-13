@@ -136,7 +136,9 @@ def test_read_all_backfills_ledger_version_1_on_a_legacy_file_missing_the_column
 
     from data.capture.gap_ledger import GAP_LEDGER_SCHEMA
 
-    legacy_schema = {k: v for k, v in GAP_LEDGER_SCHEMA.items() if k != "ledger_version"}
+    legacy_schema = {
+        k: v for k, v in GAP_LEDGER_SCHEMA.items() if k != "ledger_version"
+    }
     legacy_df = pl.DataFrame(
         {
             "stream": ["trade"],
@@ -166,7 +168,9 @@ def test_record_gap_appends_cleanly_onto_a_legacy_file_missing_ledger_version(
 
     from data.capture.gap_ledger import GAP_LEDGER_SCHEMA
 
-    legacy_schema = {k: v for k, v in GAP_LEDGER_SCHEMA.items() if k != "ledger_version"}
+    legacy_schema = {
+        k: v for k, v in GAP_LEDGER_SCHEMA.items() if k != "ledger_version"
+    }
     legacy_df = pl.DataFrame(
         {
             "stream": ["trade"],
@@ -207,7 +211,9 @@ def test_trade_silent_while_bookticker_flows_is_not_recorded(tmp_path: Path) -> 
         queue: asyncio.Queue = asyncio.Queue()
         await queue.put(("A", 0, _trade(1)))
         # bookTicker keeps flowing on conn A every 2s while trade is silent.
-        for i, t in enumerate((2_000_000_000, 4_000_000_000, 6_000_000_000, 8_000_000_000)):
+        for i, t in enumerate(
+            (2_000_000_000, 4_000_000_000, 6_000_000_000, 8_000_000_000)
+        ):
             await queue.put(("A", t, _bookticker(100 + i)))
 
         await _drain_via_consume(queue, tmp_path, gap_threshold_seconds=5.0)

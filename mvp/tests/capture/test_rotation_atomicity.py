@@ -53,7 +53,9 @@ def test_replace_failure_propagates_and_leaves_no_final_file(
     with monkeypatch.context() as m:
         m.setattr(Path, "replace", _boom)
         with pytest.raises(OSError, match="simulated crash"):
-            write_partition_atomic(rows, BOOKTICKER_SCHEMA, tmp_path, "BTCUSDT", "bookTicker")
+            write_partition_atomic(
+                rows, BOOKTICKER_SCHEMA, tmp_path, "BTCUSDT", "bookTicker"
+            )
 
     stream_dir = partition_dir(tmp_path, "BTCUSDT", "bookTicker")
     final_files = list(stream_dir.glob("**/*.parquet"))
@@ -79,7 +81,9 @@ def test_pl_read_parquet_glob_sees_nothing_before_any_sweep_runs(
     with monkeypatch.context() as m:
         m.setattr(Path, "replace", _boom)
         with pytest.raises(OSError):
-            write_partition_atomic(rows, BOOKTICKER_SCHEMA, tmp_path, "BTCUSDT", "bookTicker")
+            write_partition_atomic(
+                rows, BOOKTICKER_SCHEMA, tmp_path, "BTCUSDT", "bookTicker"
+            )
 
     stream_dir = partition_dir(tmp_path, "BTCUSDT", "bookTicker")
     final_glob = list(stream_dir.glob("**/*.parquet"))
@@ -108,7 +112,9 @@ def test_sweep_removes_orphaned_tmp_and_subsequent_write_is_clean(
     with monkeypatch.context() as m:
         m.setattr(Path, "replace", _boom)
         with pytest.raises(OSError):
-            write_partition_atomic(rows, BOOKTICKER_SCHEMA, tmp_path, "BTCUSDT", "bookTicker")
+            write_partition_atomic(
+                rows, BOOKTICKER_SCHEMA, tmp_path, "BTCUSDT", "bookTicker"
+            )
 
     stream_dir = partition_dir(tmp_path, "BTCUSDT", "bookTicker")
     orphan = next(iter(stream_dir.glob("**/*.parquet.tmp")))
@@ -120,7 +126,9 @@ def test_sweep_removes_orphaned_tmp_and_subsequent_write_is_clean(
     assert not orphan.exists()
 
     # Path.replace is back to normal now (monkeypatch context exited).
-    written = write_partition_atomic(rows, BOOKTICKER_SCHEMA, tmp_path, "BTCUSDT", "bookTicker")
+    written = write_partition_atomic(
+        rows, BOOKTICKER_SCHEMA, tmp_path, "BTCUSDT", "bookTicker"
+    )
     assert len(written) == 1
     final_path = written[0]
     assert final_path.exists()
@@ -130,7 +138,9 @@ def test_sweep_removes_orphaned_tmp_and_subsequent_write_is_clean(
     assert set(df["seq"].to_list()) == {0, 1, 2}
 
 
-def test_real_process_death_mid_write_leaves_no_partial_final_file(tmp_path: Path) -> None:
+def test_real_process_death_mid_write_leaves_no_partial_final_file(
+    tmp_path: Path,
+) -> None:
     """Not a monkeypatch: a real child process is killed via os._exit
     (bypassing every `finally`/`atexit` hook) immediately after
     write_parquet completes but before Path.replace runs, proving the
@@ -189,11 +199,15 @@ rotation.write_partition_atomic([row], BOOKTICKER_SCHEMA, Path({str(tmp_path)!r}
         text=True,
         timeout=30,
     )
-    assert result.returncode == 137, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    assert result.returncode == 137, (
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
 
     stream_dir = partition_dir(tmp_path, "BTCUSDT", "bookTicker")
     final_files = list(stream_dir.glob("**/*.parquet"))
     assert final_files == [], "a partial file leaked through a real process death"
 
     tmp_files = list(stream_dir.glob("**/*.parquet.tmp"))
-    assert len(tmp_files) == 1, "the .tmp file should exist, orphaned, ready for the next startup's sweep"
+    assert len(tmp_files) == 1, (
+        "the .tmp file should exist, orphaned, ready for the next startup's sweep"
+    )

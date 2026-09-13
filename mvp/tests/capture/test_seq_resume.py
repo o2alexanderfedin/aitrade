@@ -50,10 +50,14 @@ def _trade_row(seq: int, event_ms: int) -> dict:
 
 
 def test_write_partition_atomic_single_date(tmp_path: Path) -> None:
-    event_ms = int(datetime(2026, 9, 12, 12, 0, 0, tzinfo=timezone.utc).timestamp() * 1000)
+    event_ms = int(
+        datetime(2026, 9, 12, 12, 0, 0, tzinfo=timezone.utc).timestamp() * 1000
+    )
     rows = [_bookticker_row(0, event_ms), _bookticker_row(1, event_ms + 1)]
 
-    written = write_partition_atomic(rows, BOOKTICKER_SCHEMA, tmp_path, "BTCUSDT", "bookTicker")
+    written = write_partition_atomic(
+        rows, BOOKTICKER_SCHEMA, tmp_path, "BTCUSDT", "bookTicker"
+    )
 
     assert len(written) == 1
     path = written[0]
@@ -94,13 +98,20 @@ def test_write_partition_atomic_midnight_straddle(tmp_path: Path) -> None:
 
 
 def test_write_partition_atomic_empty_rows_returns_empty(tmp_path: Path) -> None:
-    assert write_partition_atomic([], BOOKTICKER_SCHEMA, tmp_path, "BTCUSDT", "bookTicker") == []
+    assert (
+        write_partition_atomic([], BOOKTICKER_SCHEMA, tmp_path, "BTCUSDT", "bookTicker")
+        == []
+    )
 
 
-def test_sweep_orphan_tmp_files_removes_stray_tmp_leaves_real_file(tmp_path: Path) -> None:
+def test_sweep_orphan_tmp_files_removes_stray_tmp_leaves_real_file(
+    tmp_path: Path,
+) -> None:
     event_ms = int(datetime(2026, 9, 12, tzinfo=timezone.utc).timestamp() * 1000)
     rows = [_bookticker_row(0, event_ms)]
-    written = write_partition_atomic(rows, BOOKTICKER_SCHEMA, tmp_path, "BTCUSDT", "bookTicker")
+    written = write_partition_atomic(
+        rows, BOOKTICKER_SCHEMA, tmp_path, "BTCUSDT", "bookTicker"
+    )
     real_path = written[0]
 
     stray_tmp = real_path.parent / "part-999999999999999999.parquet.tmp"
@@ -145,15 +156,21 @@ def test_resume_seq_assigner_sidecar_present_and_covers_disk_opens_zero_files(
     never opens a partition file at all."""
     event_ms = int(datetime(2026, 9, 12, tzinfo=timezone.utc).timestamp() * 1000)
     rows = [_bookticker_row(seq, event_ms + seq) for seq in range(18)]  # seq 0..17
-    written = write_partition_atomic(rows, BOOKTICKER_SCHEMA, tmp_path, "BTCUSDT", "bookTicker")
+    written = write_partition_atomic(
+        rows, BOOKTICKER_SCHEMA, tmp_path, "BTCUSDT", "bookTicker"
+    )
     write_seq_state_atomic(
-        tmp_path, "BTCUSDT", {"bookTicker": {"seq": 17, "part_ns": part_ns_of(written[0])}}
+        tmp_path,
+        "BTCUSDT",
+        {"bookTicker": {"seq": 17, "part_ns": part_ns_of(written[0])}},
     )
 
     import data.capture.seq as seq_module
 
     def _boom(*args, **kwargs):
-        raise AssertionError("resume_seq_assigner opened a partition file despite a covering sidecar")
+        raise AssertionError(
+            "resume_seq_assigner opened a partition file despite a covering sidecar"
+        )
 
     monkeypatch.setattr(seq_module.pl, "scan_parquet", _boom)
 
@@ -198,9 +215,13 @@ def test_resume_seq_assigner_stale_sidecar_takes_max_of_sidecar_and_scan(
     event_ms = int(datetime(2026, 9, 12, tzinfo=timezone.utc).timestamp() * 1000)
 
     rows1 = [_bookticker_row(seq, event_ms + seq) for seq in range(5)]  # seq 0..4
-    written1 = write_partition_atomic(rows1, BOOKTICKER_SCHEMA, tmp_path, "BTCUSDT", "bookTicker")
+    written1 = write_partition_atomic(
+        rows1, BOOKTICKER_SCHEMA, tmp_path, "BTCUSDT", "bookTicker"
+    )
     write_seq_state_atomic(
-        tmp_path, "BTCUSDT", {"bookTicker": {"seq": 4, "part_ns": part_ns_of(written1[0])}}
+        tmp_path,
+        "BTCUSDT",
+        {"bookTicker": {"seq": 4, "part_ns": part_ns_of(written1[0])}},
     )
 
     time.sleep(0.001)  # ensure a distinct part-<ns> filename for the 2nd flush
@@ -228,7 +249,9 @@ def test_resume_seq_assigner_5000_partitions_with_sidecar_under_2_seconds(
     where 1,261 files cost ~14s of daemon downtime)."""
     event_ms = int(datetime(2026, 9, 12, tzinfo=timezone.utc).timestamp() * 1000)
     rows = [_bookticker_row(0, event_ms)]
-    written = write_partition_atomic(rows, BOOKTICKER_SCHEMA, tmp_path, "BTCUSDT", "bookTicker")
+    written = write_partition_atomic(
+        rows, BOOKTICKER_SCHEMA, tmp_path, "BTCUSDT", "bookTicker"
+    )
     template = written[0]
     part_dir = template.parent
     last_ns = part_ns_of(template)
@@ -238,7 +261,9 @@ def test_resume_seq_assigner_5000_partitions_with_sidecar_under_2_seconds(
         clone = part_dir / f"part-{last_ns}.parquet"
         os.link(template, clone)  # instant -- no parquet-write cost, just a filename
 
-    write_seq_state_atomic(tmp_path, "BTCUSDT", {"bookTicker": {"seq": 0, "part_ns": last_ns}})
+    write_seq_state_atomic(
+        tmp_path, "BTCUSDT", {"bookTicker": {"seq": 0, "part_ns": last_ns}}
+    )
 
     assigner = SeqAssigner()
     start = time.monotonic()

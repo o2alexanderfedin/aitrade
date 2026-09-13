@@ -303,7 +303,9 @@ async def consume(
         if not rows:
             last_flush[stream] = time.monotonic()
             return
-        written = write_partition_atomic(rows, schemas[stream], data_root, symbol, stream)
+        written = write_partition_atomic(
+            rows, schemas[stream], data_root, symbol, stream
+        )
         buffers[stream] = []
         last_flush[stream] = time.monotonic()
         if written:

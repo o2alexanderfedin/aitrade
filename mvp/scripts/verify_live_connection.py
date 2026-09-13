@@ -167,9 +167,7 @@ async def run_normal_mode(args: argparse.Namespace) -> int:
     if args.dump_fixtures:
         dump_path = Path(args.dump_fixtures)
         dump_path.write_text(
-            json.dumps(
-                {"bookticker": first_bt_envelope, "trade": first_trade_envelope}
-            )
+            json.dumps({"bookticker": first_bt_envelope, "trade": first_trade_envelope})
         )
 
     print(
@@ -202,7 +200,9 @@ async def collect_ids(
                 row = parse_combined_frame(frame, seq=0, rtime_ns=time.time_ns())
             except (FrameParseError, KeyError, orjson.JSONDecodeError):
                 continue
-            key_id = row["update_id"] if row["stream"] == "bookTicker" else row["trade_id"]
+            key_id = (
+                row["update_id"] if row["stream"] == "bookTicker" else row["trade_id"]
+            )
             ids[conn_id].add((row["stream"], key_id))
 
 
@@ -240,7 +240,10 @@ async def run_redundancy_check(args: argparse.Namespace) -> int:
             all_pass = False
 
     if not all_pass:
-        print("redundancy check FAILED: Jaccard <= 0.999 for one or more streams", file=sys.stderr)
+        print(
+            "redundancy check FAILED: Jaccard <= 0.999 for one or more streams",
+            file=sys.stderr,
+        )
         return 1
     return 0
 

@@ -67,9 +67,12 @@ class RawArchiveWriter:
     def append(self, raw: bytes | str, rtime_ns: int) -> None:
         self._open_for_today()
         raw_str = raw if isinstance(raw, str) else raw.decode()
-        line = orjson.dumps(
-            {"rtime_ns": rtime_ns, "conn_id": self._conn_id, "raw": raw_str}
-        ) + b"\n"
+        line = (
+            orjson.dumps(
+                {"rtime_ns": rtime_ns, "conn_id": self._conn_id, "raw": raw_str}
+            )
+            + b"\n"
+        )
         cctx = zstandard.ZstdCompressor()
         with cctx.stream_writer(self._fh, closefd=False) as writer:
             writer.write(line)

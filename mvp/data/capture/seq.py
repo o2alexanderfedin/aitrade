@@ -95,7 +95,9 @@ def resume_seq_assigner(
         stream_dir = partition_dir(data_root, symbol, stream)
         if stream_dir.exists():
             date_dirs = sorted(
-                p for p in stream_dir.iterdir() if p.is_dir() and p.name.startswith("date=")
+                p
+                for p in stream_dir.iterdir()
+                if p.is_dir() and p.name.startswith("date=")
             )
             if date_dirs:
                 newest_dir = date_dirs[-1]
@@ -112,7 +114,11 @@ def resume_seq_assigner(
 
                 if candidates:
                     lazy_frames = [pl.scan_parquet(p) for p in candidates]
-                    lf = lazy_frames[0] if len(lazy_frames) == 1 else pl.concat(lazy_frames)
+                    lf = (
+                        lazy_frames[0]
+                        if len(lazy_frames) == 1
+                        else pl.concat(lazy_frames)
+                    )
                     result = lf.select(pl.col("seq").max().alias("m")).collect()
                     if result.height and result["m"][0] is not None:
                         scan_seq = int(result["m"][0])

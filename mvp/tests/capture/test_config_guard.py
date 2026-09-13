@@ -13,9 +13,7 @@ def test_empty_data_root_raises_required():
 
 def test_cloud_storage_path_raises_before_existence_check():
     with pytest.raises(DataRootError, match="CloudStorage"):
-        validate_data_root(
-            "/Users/x/Library/CloudStorage/OneDrive-Personal/fake"
-        )
+        validate_data_root("/Users/x/Library/CloudStorage/OneDrive-Personal/fake")
 
 
 def test_missing_path_raises_does_not_exist(tmp_path):
