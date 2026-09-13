@@ -8,9 +8,19 @@ Startup liveness invariant (PROBE-RESULTS.md finding 3): a wrong-class
 subscription is accepted by the server and then silently delivers nothing,
 forever, with no error. `run_connection` asserts every stream in
 `expected_streams` delivers at least one frame within `startup_timeout`
-seconds of connecting — including the case where ZERO frames ever arrive.
-The deadline is on the wait itself (`asyncio.wait_for`), not on a loop
-iteration that presupposes a prior message.
+seconds of the FIRST connection — including the case where ZERO frames ever
+arrive. The deadline is on the wait itself (`asyncio.wait_for`), not on a
+loop iteration that presupposes a prior message.
+
+The liveness assertion is deliberately NOT re-armed on a reconnect
+(`attempt >= 2`): it exists to catch a wrong-class subscription, which is a
+configuration bug that can only manifest on the very first connection — the
+URL is already proven live once the first connection has passed liveness.
+A slow frame after a reconnect is ordinary market-lull jitter (measured
+p999 inter-arrival 3.2s, max 5.67s in evidence/PROBE-RESULTS.md), which a
+fixed startup deadline would eventually and spuriously trip on some
+reconnect over a multi-day run. That case is the watchdog's job
+(`connection-silent`, a logged ledger row, not a fatal exception).
 """
 
 from __future__ import annotations
@@ -113,7 +123,11 @@ async def run_connection(
             # disconnected" — which makes Binance's ~24h forced close, and
             # the deferred >=24h reconnect check, unverifiable.
             print(f"connection {conn_id}: established attempt={attempt}", flush=True)
-            pending = set(expected_streams)
+            # Only the FIRST connection arms the startup-liveness deadline
+            # (see module docstring) — a reconnect (attempt >= 2) leaves
+            # `pending` empty so the branch below goes straight to a plain
+            # `ws.recv()`, never re-arming `asyncio.wait_for`.
+            pending = set(expected_streams) if attempt == 1 else set()
             deadline = time.monotonic() + startup_timeout
             try:
                 while True:

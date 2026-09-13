@@ -21,6 +21,18 @@ from tests.fixtures.fake_ws_server import DEFAULT_SCRIPT, ScriptedFrame
 from tests.fixtures.payloads import SAMPLE_BOOKTICKER_FRAME, SAMPLE_TRADE_FRAME
 
 
+def _bookticker(u: int) -> dict:
+    env = {**SAMPLE_BOOKTICKER_FRAME, "data": {**SAMPLE_BOOKTICKER_FRAME["data"]}}
+    env["data"]["u"] = u
+    return env
+
+
+def _trade(t: int) -> dict:
+    env = {**SAMPLE_TRADE_FRAME, "data": {**SAMPLE_TRADE_FRAME["data"]}}
+    env["data"]["t"] = t
+    return env
+
+
 def _read_archive_lines(archive_dir: Path, conn_id: str) -> list[dict]:
     today = time.strftime("%Y-%m-%d", time.gmtime())
     path = archive_dir / f"date={today}" / f"conn_{conn_id}.ndjson.zst"
@@ -105,6 +117,72 @@ def test_total_silence_raises_startup_liveness_error_within_timeout(
                 )
             elapsed = time.monotonic() - start
             assert elapsed < 2.0
+
+    asyncio.run(scenario())
+
+
+def test_liveness_deadline_is_not_rearmed_on_reconnect(
+    tmp_path: Path, scripted_server
+) -> None:
+    """CR-01 (01-REVIEW.md): the startup-liveness deadline exists to catch a
+    wrong-class subscription, which can only be a first-connection problem —
+    it must NOT be re-armed on a reconnect. First connection delivers both
+    streams normally (proving the URL is good) and then drops; the second
+    connection withholds `trade` entirely and spreads its `bookTicker`
+    frames past `startup_timeout` — under the old (buggy) re-arming
+    behavior this raises `StartupLivenessError`; under the fixed behavior
+    `run_connection` must keep receiving `bookTicker` frames and never
+    raise."""
+    startup_timeout = 0.5
+    script_1 = [
+        ScriptedFrame(envelope=_bookticker(1)),
+        ScriptedFrame(envelope=_trade(1)),
+    ]
+    # No trade frames at all in this script, and the cumulative delay
+    # (4 * 0.2s = 0.8s) exceeds startup_timeout -- the old code would
+    # raise StartupLivenessError naming "trade" partway through this.
+    script_2 = [
+        ScriptedFrame(envelope=_bookticker(2), delay_seconds=0.2),
+        ScriptedFrame(envelope=_bookticker(3), delay_seconds=0.2),
+        ScriptedFrame(envelope=_bookticker(4), delay_seconds=0.2),
+        ScriptedFrame(envelope=_bookticker(5), delay_seconds=0.2),
+    ]
+
+    async def scenario() -> None:
+        async with scripted_server(connection_scripts=[script_1, script_2]) as port:
+            queue: asyncio.Queue = asyncio.Queue()
+            task = asyncio.create_task(
+                run_connection(
+                    f"ws://127.0.0.1:{port}",
+                    queue,
+                    conn_id="A",
+                    archive_dir=tmp_path,
+                    expected_streams={"bookTicker", "trade"},
+                    startup_timeout=startup_timeout,
+                )
+            )
+            # Poll bounded well past script_2's cumulative delay so a hang
+            # or a spurious raise both fail fast rather than hanging the
+            # suite.
+            for _ in range(100):
+                if queue.qsize() >= 6:  # 2 from script_1 + 4 from script_2
+                    break
+                if task.done():
+                    break
+                await asyncio.sleep(0.05)
+
+            # The discriminating assertion: run_connection must still be
+            # running (it must NOT have raised StartupLivenessError on the
+            # reconnect's withheld "trade" stream).
+            assert not task.done(), (
+                f"run_connection finished unexpectedly: "
+                f"{task.exception() if task.done() else None}"
+            )
+            assert queue.qsize() >= 6
+
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
 
     asyncio.run(scenario())
 

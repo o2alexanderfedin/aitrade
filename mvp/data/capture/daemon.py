@@ -213,16 +213,21 @@ async def run_pipeline(
     watchdog_task: asyncio.Task | None = None,
 ) -> None:
     """Run all producers + the consumer + the watchdog concurrently;
-    escalate any producer's completion (e.g. `StartupLivenessError`, or a
-    normal return which is not expected — producers run forever until
-    cancelled or they raise) into a shutdown+flush, then re-raise the
-    first error.
+    escalate any producer's completion (only expected today via
+    `StartupLivenessError` on the FIRST connection attempt, or a genuinely
+    unexpected exception/return — producers otherwise run forever until
+    cancelled) into a shutdown+flush, then re-raise the first error.
 
     `consumer_task` (rotation.consume) only returns once `shutdown_event`
     is set, so this also handles the case where no producer explicitly
     triggers shutdown itself (a signal handler does) by watching every
     producer task and setting `shutdown_event` the moment ANY of them
-    finishes for any reason.
+    finishes for any reason. The escalation path cancels every OTHER
+    producer synchronously (via `request_shutdown`, no `await` in between)
+    BEFORE `shutdown_event` is set — the same cancel-then-set ordering
+    `b539e65` established for the signal-handler path — so the still-live
+    sibling cannot slip one more item into the queue after the consumer's
+    final snapshot (CR-01, 01-REVIEW.md).
 
     `watchdog_task` (`Watchdog.run()`, Plan 04) is cancelled and awaited
     alongside the producers once the consumer's final flush completes, so
@@ -233,8 +238,31 @@ async def run_pipeline(
 
     async def _escalate_producer_completion() -> None:
         if producer_tasks:
-            await asyncio.wait(producer_tasks, return_when=asyncio.FIRST_COMPLETED)
-        shutdown_event.set()
+            done, _pending = await asyncio.wait(
+                producer_tasks, return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in done:
+                name = task.get_name()
+                if task.cancelled():
+                    print(
+                        f"producer {name} completed: cancelled",
+                        flush=True,
+                    )
+                else:
+                    exc = task.exception()
+                    detail = repr(exc) if exc is not None else "returned"
+                    print(
+                        f"producer {name} completed: {detail}",
+                        flush=True,
+                    )
+        # Reuse the already-correct cancel-then-set helper (commit b539e65)
+        # instead of a bare `shutdown_event.set()` -- this cancels every
+        # OTHER still-running producer synchronously, with no `await` in
+        # between, before the consumer observes shutdown and takes its
+        # final snapshot. Without this, a still-live sibling producer's
+        # `queue.put()` can slip an item into a queue nobody will ever
+        # drain again (see CR-01 in 01-REVIEW.md).
+        request_shutdown(producer_tasks, shutdown_event)
 
     watcher = asyncio.create_task(_escalate_producer_completion())
 
@@ -313,7 +341,8 @@ async def run_daemon(args: argparse.Namespace) -> None:
             archive_dir=archive_dir,
             expected_streams=EXPECTED_STREAMS,
             startup_timeout=args.startup_timeout_seconds,
-        )
+        ),
+        name="producer-A",
     )
     producer_task_b = asyncio.create_task(
         _run_connection_staggered(
@@ -324,7 +353,8 @@ async def run_daemon(args: argparse.Namespace) -> None:
             archive_dir=archive_dir,
             expected_streams=EXPECTED_STREAMS,
             startup_timeout=args.startup_timeout_seconds,
-        )
+        ),
+        name="producer-B",
     )
     producer_tasks = [producer_task_a, producer_task_b]
 
