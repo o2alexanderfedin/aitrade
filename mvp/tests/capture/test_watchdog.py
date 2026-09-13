@@ -246,6 +246,36 @@ def test_disk_usage_raising_oserror_is_recorded_not_fatal(
     assert "free space check failed" in df.row(0, named=True)["cause"]
 
 
+def test_disk_usage_and_ledger_write_both_raising_oserror_is_recorded_not_fatal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """WR-01 (01-REVIEW.md): if the volume is genuinely gone, the ledger
+    write the OSError handler itself performs (same data_root) will
+    plausibly ALSO raise OSError. That second failure must not propagate
+    out of `_tick()` either -- it must be caught and printed, not crash the
+    watchdog task."""
+    now_ns = time.time_ns()
+    last_seen_state = {"A": now_ns, "B": now_ns, "merged": now_ns}
+    ledger = GapLedger(tmp_path)
+    watchdog = Watchdog(last_seen_state, ledger, tmp_path, conn_ids=["A", "B"])
+
+    def _disk_boom(_path):
+        raise OSError("volume unmounted")
+
+    def _ledger_boom(*args, **kwargs):
+        raise OSError("ledger write also failed: volume unmounted")
+
+    monkeypatch.setattr(shutil, "disk_usage", _disk_boom)
+    monkeypatch.setattr(ledger, "record_gap", _ledger_boom)
+
+    watchdog._tick()  # must not raise, even though BOTH writes fail
+
+    # Both failed -- no row could possibly have been recorded, and a second
+    # tick must not re-raise either (the alarm-latch still gets set).
+    assert ledger.read_all().height == 0
+    watchdog._tick()
+
+
 def test_run_single_iteration_with_preset_shutdown_event_ticks_exactly_once(
     tmp_path: Path,
 ) -> None:

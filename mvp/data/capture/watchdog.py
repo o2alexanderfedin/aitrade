@@ -128,13 +128,27 @@ class Watchdog:
             # disappears mid-run. Record it and keep looping -- a dead
             # watchdog task is worse than a noisy one.
             if not self._low_space_alarmed:
-                self.gap_ledger.record_gap(
-                    stream="__disk__",
-                    conn_id="watchdog",
-                    gap_start_rtime=now_ns,
-                    gap_end_rtime=now_ns,
-                    cause=f"free space check failed: {exc}",
-                )
+                # WR-01 (01-REVIEW.md): if the volume is genuinely gone,
+                # this ledger write (which lives under the SAME data_root)
+                # will almost certainly also raise OSError. That one must
+                # not be allowed to propagate and silently kill the
+                # watchdog task -- print instead so the "volume unmounted"
+                # signal still surfaces somewhere.
+                try:
+                    self.gap_ledger.record_gap(
+                        stream="__disk__",
+                        conn_id="watchdog",
+                        gap_start_rtime=now_ns,
+                        gap_end_rtime=now_ns,
+                        cause=f"free space check failed: {exc}",
+                    )
+                except OSError as ledger_exc:
+                    print(
+                        f"WATCHDOG: disk_usage failed ({exc}) AND gap ledger "
+                        f"write also failed ({ledger_exc}) -- volume likely "
+                        "gone",
+                        flush=True,
+                    )
                 self._low_space_alarmed = True
             return
 
