@@ -98,8 +98,18 @@ async def run_connection(
     """
     assert_secure_url(url)
     archive_writer = RawArchiveWriter(archive_dir, conn_id)
+    attempt = 0
     try:
         async for ws in websockets.connect(url, ping_interval=20, ping_timeout=20):
+            attempt += 1
+            established_at = time.monotonic()
+            # Observability contract (test_ws_client_reconnect_logging.py):
+            # every established connection and every close-then-reconnect is
+            # one stdout line naming conn_id. Without this, a clean reconnect
+            # under the gap threshold is indistinguishable from "never
+            # disconnected" — which makes Binance's ~24h forced close, and
+            # the deferred >=24h reconnect check, unverifiable.
+            print(f"connection {conn_id}: established attempt={attempt}", flush=True)
             pending = set(expected_streams)
             deadline = time.monotonic() + startup_timeout
             try:
@@ -132,7 +142,19 @@ async def run_connection(
                         continue
                     pending.discard(kind)
                     await queue.put((conn_id, rtime_ns, frame))
-            except websockets.exceptions.ConnectionClosed:
+            except websockets.exceptions.ConnectionClosed as exc:
+                uptime = time.monotonic() - established_at
+                # `rcvd` is the peer's close frame; it is None when the TCP
+                # connection dropped without one (network fault, RST). A
+                # Binance ~24h forced close arrives as a proper frame
+                # (typically 1001), so the two cases stay distinguishable.
+                code = exc.rcvd.code if exc.rcvd is not None else None
+                reason = exc.rcvd.reason if exc.rcvd is not None else ""
+                print(
+                    f"connection {conn_id}: closed code={code} "
+                    f"reason={reason!r} after {uptime:.1f}s — reconnecting",
+                    flush=True,
+                )
                 continue
     finally:
         archive_writer.close()
