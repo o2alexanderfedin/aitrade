@@ -21,6 +21,24 @@ from data.capture.watchdog import Watchdog
 _DiskUsage = namedtuple("_DiskUsage", ["total", "used", "free"])
 
 
+@pytest.fixture(autouse=True)
+def _healthy_disk_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Isolate every test from the host's real free space.
+
+    The watchdog checks `shutil.disk_usage(data_root)` on every tick and
+    records a `__disk__` ledger row when free < min_free_gb (50 GiB default).
+    `tmp_path` lives on the developer's internal volume, so the stall-only
+    tests silently gained an extra ledger row the moment that volume dipped
+    below 50 GiB — they passed on 2026-09-12 and failed on 2026-09-13 with no
+    code change. Tests must not depend on how full the developer's laptop is.
+    The three disk-specific tests below re-patch `disk_usage` in-body and are
+    unaffected by this default.
+    """
+    plenty = _DiskUsage(total=1_000_000_000_000, used=1_000_000_000, free=900_000_000_000)
+    monkeypatch.setattr(shutil, "disk_usage", lambda _path: plenty)
+
+
+
 def test_stall_beyond_threshold_records_one_row_then_does_not_duplicate(
     tmp_path: Path,
 ) -> None:
