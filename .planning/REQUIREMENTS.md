@@ -9,10 +9,10 @@ Requirements for MVP exit. Each maps to roadmap phases. Source of truth: `mvp.md
 
 ### Stage 0 — Living Spec & Conventions
 
-- [ ] **SPEC-01**: spec.md exists in seed form with feature and label catalogues in machine-readable format (structured entries CI can parse, not prose tables)
+- [x] **SPEC-01**: spec.md exists in seed form with feature and label catalogues in machine-readable format (structured entries CI can parse, not prose tables)
 - [ ] **SPEC-02**: CI validates that every feature/label used in training has a catalogue entry, and rejects `import pandas` and `latest` data references
-- [ ] **SPEC-03**: mvp.md decision-rule pseudocode dimensional bug fixed (`mid * (1 + pred)` vs price level) and spec.md amended same-day with: spot-L1 clock exception, trades-backfill side-exactness
-- [ ] **SPEC-04**: Sharpe annualization convention, MLflow tag schema, and numba no-globals lint rule pre-declared in spec.md before any run
+- [x] **SPEC-03**: mvp.md decision-rule pseudocode dimensional bug fixed (`mid * (1 + pred)` vs price level) and spec.md amended same-day with: spot-L1 clock exception, trades-backfill side-exactness
+- [x] **SPEC-04**: Sharpe annualization convention, MLflow tag schema, and numba no-globals lint rule pre-declared in spec.md before any run
 
 ### Data — Capture, Backfill, Quality
 
@@ -126,10 +126,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SPEC-01 | Phase 2 | Pending |
+| SPEC-01 | Phase 2 | Complete |
 | SPEC-02 | Phase 2 | Pending |
-| SPEC-03 | Phase 2 | Pending |
-| SPEC-04 | Phase 2 | Pending |
+| SPEC-03 | Phase 2 | Complete |
+| SPEC-04 | Phase 2 | Complete |
 | DATA-01 | Phase 1 | Complete |
 | DATA-02 | Phase 3 | Pending |
 | DATA-03 | Phase 3 | Pending |

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "01-04 Task 4 checkpoint: watchdogged, sidecar-resuming, corrected-gap-ledger-policy redundant daemon restarted (Run E PID 8646 -> Run F PID 11428, caffeinate 11430, log /tmp/capture-daemon-runF.log); seq_state.json sidecar pre-seeded live then self-healed on restart (source=sidecar+1 newer files scanned, both streams); three Plan 03 gap-ledger false positives migrated to ledger_version=1 while daemon was stopped; --redundancy-check Jaccard 1.000000 both streams; both connections growing at comparable rates over 150s; zero new gap-ledger rows (no false positives, no watchdog spam during stagger); Docker image built and smoke-run successfully. This checkpoint gates on ALL FIVE ROADMAP Phase 1 success criteria. Awaiting human confirmation before Plan 04 and Phase 1 are marked complete."
-last_updated: "2026-09-12T20:23:56.779Z"
-last_activity: 2026-09-12
+stopped_at: Completed 02-01-PLAN.md
+last_updated: "2026-09-14T02:14:44.406Z"
+last_activity: 2026-09-14
 progress:
   total_phases: 11
-  completed_phases: 0
-  total_plans: 4
-  completed_plans: 4
-  percent: 100
+  completed_phases: 1
+  total_plans: 8
+  completed_plans: 5
+  percent: 63
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-10)
 
 **Core value:** A reproducible, leakage-proof two-stage pipeline achieving Net P&L > 0 and annualized Sharpe > 5 on a locked held-out walk-forward window under stated simplifications — produced by a workflow where agentic iteration verifiably improves the model.
-**Current focus:** Phase 1 — Capture Daemon & Repo Foundation
+**Current focus:** Phase 2 — Stage 0: Living Spec, CI Guardrails & Tracking
 
 ## Current Position
 
-Phase: 1 of 11 (Capture Daemon & Repo Foundation) — COMPLETE
-Plan: 4 of 4 complete
-Status: Phase 1 COMPLETE — verified (20/20), code-reviewed (2 critical + 7 warning fixed), merged to develop at f6c5319 and pushed. Next: Phase 2
-Last activity: 2026-09-14 — Phase 2 discussed + researched. **24h forensic result: Binance did NOT force-close** — Run F reached 1d 4h 36m on the same sockets with zero per-connection gap >2.2s all day (18.58M frames each, redundancy exact). Daemon restarted as Run G (PID 10771) onto reviewed code from the SSD clone after the OneDrive dehydration incident.
+Phase: 2 of 11 (Stage 0: Living Spec, CI Guardrails & Tracking) — EXECUTING
+Plan: 2 of 4
+Status: Ready to execute
+Last activity: 2026-09-14
 
-Progress: [██████████] 100%
+Progress: [██████░░░░] 63%
 
 ## Performance Metrics
 
@@ -56,6 +56,7 @@ Progress: [██████████] 100%
 | Phase 01 P02 | 35min | 3 tasks | 10 files |
 | Phase 01 P03 | ~50min | 2 tasks | 6 files |
 | Phase 01 P04 | ~70min | 3 tasks | 13 files |
+| Phase 02 P01 | 10min | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -90,6 +91,9 @@ Recent decisions affecting current work:
 - [Phase 01]: seq_state.json sidecar records {seq, part_ns} per stream (not a bare int) so resume_seq_assigner() can open zero partition files when the sidecar covers the newest partition, and self-heal by scanning only genuinely-newer files when it does not -- proven live: a restart against 1,291+97 already-written partitions printed source=sidecar+1 newer files scanned, not a full scan.
 - [Phase 01]: Gap ledger versioned (ledger_version column: 1=Plan 03's defective per-stream policy, 2=Plan 04's connection-silent/merged-silent/trade-id-skip policy) rather than deleting the three Plan 03 false-positive rows, so the historical record of what the daemon actually reported is preserved; Phase 3 DQ reports should filter ledger_version >= 2.
 - [Phase 01]: Docker deploy image ENTRYPOINT invokes the venv python3 interpreter directly, never uv run -- same operational hazard Plan 02 found for local long-lived daemon runs (uv run holds the global uv cache lock for the process's entire lifetime).
+- [Phase 2]: Catalogue markers wrap the entire table (header+separator+rows), not just the rows -- a marker line placed inside an existing GFM table breaks table continuation on GitHub (GFM sec 4.10).
+- [Phase 2]: mvp/tests/spec/__init__.py must not exist -- it collides with the real mvp/spec package under pytest's rootdir package-inference import, silently shadowing spec.catalogue with ModuleNotFoundError.
+- [Phase 2]: diff_definition_changes(old, new, field='definition') defaults to the features comparison key; every label call site passes field='computation' explicitly since labels have no definition key.
 
 ### Pending Todos
 
@@ -116,6 +120,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-12T20:23:56.773Z
-Stopped at: 01-04 Task 4 checkpoint: watchdogged, sidecar-resuming, corrected-gap-ledger-policy redundant daemon restarted (Run E PID 8646 -> Run F PID 11428, caffeinate 11430, log /tmp/capture-daemon-runF.log); seq_state.json sidecar pre-seeded live then self-healed on restart (source=sidecar+1 newer files scanned, both streams); three Plan 03 gap-ledger false positives migrated to ledger_version=1 while daemon was stopped; --redundancy-check Jaccard 1.000000 both streams; both connections growing at comparable rates over 150s; zero new gap-ledger rows (no false positives, no watchdog spam during stagger); Docker image built and smoke-run successfully. This checkpoint gates on ALL FIVE ROADMAP Phase 1 success criteria. Awaiting human confirmation before Plan 04 and Phase 1 are marked complete.
-Resume file: .planning/phases/01-capture-daemon-repo-foundation/01-04-SUMMARY.md
+Last session: 2026-09-14T02:14:44.391Z
+Stopped at: Completed 02-01-PLAN.md
+Resume file: None
