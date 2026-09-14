@@ -8,6 +8,7 @@ file). check_spec_diff.* git-ref tests build a scratch git repo under `tmp_path`
 dependence on this checkout's actual HEAD/history.
 """
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -179,10 +180,22 @@ def test_render_spec_against_real_repo_state_is_idempotent_on_second_run():
 # --- check_spec_diff.py ---
 
 
+#: Isolate every scratch-repo git invocation from the invoking machine's own
+#: git config (global gpgsign/hooksPath/templateDir etc, any of which could
+#: hang on a GPG prompt or run an unexpected hook against a "hermetic" test
+#: scratch repo -- the same hermeticity gap Phase 1's disk-state lesson
+#: exists to avoid).
+_GIT_ENV = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+
+
+def _git(args: list[str], cwd: Path) -> None:
+    subprocess.run(["git", *args], cwd=cwd, check=True, env=_GIT_ENV)
+
+
 def _init_scratch_repo(tmp_path: Path) -> Path:
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "config", "user.email", "t@t"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)
+    _git(["init", "-q"], cwd=tmp_path)
+    _git(["config", "user.email", "t@t"], cwd=tmp_path)
+    _git(["config", "user.name", "t"], cwd=tmp_path)
     return tmp_path
 
 
@@ -192,12 +205,12 @@ def test_git_show_toml_returns_parsed_dict_for_resolvable_ref(tmp_path):
     toml_dir.mkdir(parents=True)
     toml_path = toml_dir / "features.toml"
     toml_path.write_text('[mid]\ndefinition = "old"\n')
-    subprocess.run(["git", "add", "."], cwd=repo, check=True)
-    subprocess.run(["git", "commit", "-q", "-m", "old"], cwd=repo, check=True)
+    _git(["add", "."], cwd=repo)
+    _git(["commit", "-q", "-m", "old"], cwd=repo)
 
     toml_path.write_text('[mid]\ndefinition = "new"\n')
-    subprocess.run(["git", "add", "."], cwd=repo, check=True)
-    subprocess.run(["git", "commit", "-q", "-m", "new"], cwd=repo, check=True)
+    _git(["add", "."], cwd=repo)
+    _git(["commit", "-q", "-m", "new"], cwd=repo)
 
     old = git_show_toml("HEAD~1", "mvp/spec/features.toml", repo)
     assert old == {"mid": {"definition": "old"}}
@@ -207,8 +220,8 @@ def test_git_show_toml_returns_none_when_ref_does_not_resolve(tmp_path):
     repo = _init_scratch_repo(tmp_path)
     (repo / "mvp" / "spec").mkdir(parents=True)
     (repo / "mvp" / "spec" / "features.toml").write_text('[mid]\ndefinition = "x"\n')
-    subprocess.run(["git", "add", "."], cwd=repo, check=True)
-    subprocess.run(["git", "commit", "-q", "-m", "only commit"], cwd=repo, check=True)
+    _git(["add", "."], cwd=repo)
+    _git(["commit", "-q", "-m", "only commit"], cwd=repo)
 
     # No parent commit exists yet -- HEAD~1 must not resolve.
     result = git_show_toml("HEAD~1", "mvp/spec/features.toml", repo)
@@ -261,8 +274,8 @@ def test_main_warns_and_exits_zero_when_base_ref_unresolvable(
 
 
 def _commit(repo: Path, message: str) -> None:
-    subprocess.run(["git", "add", "."], cwd=repo, check=True)
-    subprocess.run(["git", "commit", "-q", "-m", message], cwd=repo, check=True)
+    _git(["add", "."], cwd=repo)
+    _git(["commit", "-q", "-m", message], cwd=repo)
 
 
 def test_diff_removed_names_flags_deleted_entry():
@@ -313,7 +326,7 @@ def test_default_base_ref_resolves_to_merge_base_with_develop(tmp_path):
     repo = _init_scratch_repo(tmp_path)
     (repo / "f.txt").write_text("base\n")
     _commit(repo, "base")
-    subprocess.run(["git", "branch", "develop"], cwd=repo, check=True)
+    _git(["branch", "develop"], cwd=repo)
 
     (repo / "f.txt").write_text("commit1\n")
     _commit(repo, "commit 1")
@@ -328,5 +341,6 @@ def test_default_base_ref_resolves_to_merge_base_with_develop(tmp_path):
         cwd=repo,
         capture_output=True,
         text=True,
+        env=_GIT_ENV,
     ).stdout.strip()
     assert base_ref == expected
