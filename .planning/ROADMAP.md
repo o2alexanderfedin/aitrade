@@ -13,7 +13,7 @@ The roadmap is shaped by one verified fact and two methodology constraints. The 
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Capture Daemon & Repo Foundation** - Schedule-critical redundant L1+trades capture running day 1, repo skeleton under mvp/ (completed 2026-09-12)
-- [ ] **Phase 2: Stage 0 — Living Spec, CI Guardrails & Tracking** - spec.md seeded with corrected policy math, catalogues wired into CI, MLflow foundation
+- [x] **Phase 2: Stage 0 — Living Spec, CI Guardrails & Tracking** - spec.md seeded with corrected policy math, catalogues wired into CI, MLflow foundation
 - [ ] **Phase 3: Data Layer — Backfill, Ingest & Lockbox** - Trades backfill, side correction, manifest-addressed store, DQ reports, mechanical lockbox quarantine
 - [ ] **Phase 4: Feature & Label Engine** - Single numba streaming code path, catalogued L1 features, leakage-proven labels
 - [ ] **Phase 5: Fold Harness & Overfitting Controls** - 5-segment walk-forward with embargo, OOF fallback, selection-bias budget, negative-result log
@@ -181,7 +181,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Capture Daemon & Repo Foundation | 4/4 | Complete | 2026-09-13 |
-| 2. Stage 0 — Living Spec, CI Guardrails & Tracking | 3/4 | In Progress | - |
+| 2. Stage 0 — Living Spec, CI Guardrails & Tracking | 4/4 | Complete | 2026-09-14 |
 | 3. Data Layer — Backfill, Ingest & Lockbox | 0/TBD | Not started | - |
 | 4. Feature & Label Engine | 0/TBD | Not started | - |
 | 5. Fold Harness & Overfitting Controls | 0/TBD | Not started | - |

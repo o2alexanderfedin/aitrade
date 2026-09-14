@@ -65,7 +65,7 @@ Requirements for MVP exit. Each maps to roadmap phases. Source of truth: `mvp.md
 
 ### Tracking & Reproducibility
 
-- [ ] **TRACK-01**: MLflow with SQL (SQLite) backend; run manifest records code hash + data hash + seed + env hash for every run
+- [x] **TRACK-01**: MLflow with SQL (SQLite) backend; run manifest records code hash + data hash + seed + env hash for every run
 - [x] **TRACK-02**: Environment pinned (numba/numpy/llvmlite compatibility matrix, Python 3.13, uv-managed); CI enforces pins
 
 ### Version Gates
@@ -161,7 +161,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MON-01 | Phase 9 | Pending |
 | MON-02 | Phase 9 | Pending |
 | MON-03 | Phase 9 | Pending |
-| TRACK-01 | Phase 2 | Pending |
+| TRACK-01 | Phase 2 | Complete |
 | TRACK-02 | Phase 2 | Complete |
 | GATE-01 | Phase 8 | Pending |
 | GATE-02 | Phase 9 | Pending |
