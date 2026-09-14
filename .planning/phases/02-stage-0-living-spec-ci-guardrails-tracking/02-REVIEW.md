@@ -389,16 +389,40 @@ noted.
 | WR-08 (allowlist scan scope / hardcoded pytest dirs) | -- | `79de939` (same commit as WR-05) |
 | WR-09 (nested-scope local masks outer global read) | `9a3f0f3` | `532dedd` (same commit as CR-05/CR-06) |
 
-Verification after all fixes: `170` tests passing
+**Post-fix advisor review** caught two residual issues, fixed in follow-up
+commits before this branch was considered done:
+
+| Issue | Commit |
+|---|---|
+| CR-08 regression: `_default_base_ref` resolving to `merge-base(HEAD, develop)` silently no-ops the whole definition/removal check when run *on* develop itself (merge-base == HEAD) -- fixed by falling back to `HEAD~1` in that one case, matching pre-fix behavior there | `c0d5ee2` |
+| Stale `check_latest_ban.py` module docstring, still describing the pre-CR-03/WR-08 Call-arg/BinOp-restricted, directory-allowlisted scan | `1fea2c1` |
+| CR-01 residual: `_catalogue_aliases` filtered on `node.module`, missing a relative import (`from .catalogue import get_feature as gf`) | `e844080` |
+| CR-02 residual: `get_feature(**kw)` (no positional arg, no literal `name=` keyword) still skipped instead of flagged non-literal | `e844080` |
+| CR-06 residual: a module-level `for x in ...:` loop variable or `with ... as f:` target wasn't collected as a candidate global | `e844080` |
+
+Verification after all fixes: `175` tests passing
 (`./mvp/.venv/bin/python3 -m pytest mvp/tests -q -W error::DeprecationWarning`),
 `pre-commit run --all-files` 10/10 green, `.pre-commit-config.yaml` and
 `.github/workflows/ci.yml` entry/run command sets verified byte-identical
 after the `--locked` edit.
 
-No fix required weakening any check; where a finding asked for broader
-detection (CR-03/CR-04's regex, CR-07's AST rewrite, WR-08's denylist scan),
-the new scan scope was run against the real repo tree before committing and
-produced zero new false positives.
+No fix required weakening any check; every broadened-scope change (CR-03/
+CR-04's regex, CR-07's AST rewrite, WR-08's denylist scan, and the follow-up
+gap closures above) was run against the real repo tree before committing and
+produced zero new false positives. `check_spec_diff` currently prints a WARN
+and skips its definition-drift check on this branch (the resolved merge-base
+predates this phase's TOML catalogue files, so `git show` can't resolve
+them) -- that is the documented "skip, warn, never fail" path, not a defect;
+it will start actively checking as soon as this branch merges and a later
+PR's merge-base postdates the catalogue's introduction.
+
+**Known remaining gap, documented rather than fixed:** the seconds-to-ns
+allowlist in `check_ms_to_ns_site.py` is keyed per-file
+(`ALLOWLISTED_SEC_TO_NS_SITES`), so a *second* seconds-to-ns site added
+inside an already-allowlisted file (e.g. a second conversion inside
+`rotation.py`) would not be separately flagged. This matches the check's
+design (one allowlist entry per legitimate *purpose*, not per exact site) and
+was not called out as a finding by the review; noted here for completeness.
 
 ---
 
