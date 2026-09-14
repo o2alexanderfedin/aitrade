@@ -71,6 +71,22 @@ def test_assert_pins_raises_on_injected_pandas(tmp_path):
         assert_pins(lock)
 
 
+def test_assert_pins_checks_every_duplicate_named_entry_not_just_last(tmp_path):
+    """A pin violation on the first of two same-named entries (platform/marker
+    fork) must not be silently overwritten by the second, passing entry."""
+    bad = GOOD_LOCK + '\n[[package]]\nname = "numba"\nversion = "0.64.0"\n'
+    lock = _write_lock(tmp_path, bad)
+    with pytest.raises(AssertionError, match="numba"):
+        assert_pins(lock)
+
+
+def test_assert_pins_raises_cleanly_on_versionless_entry(tmp_path):
+    bad = '\n[[package]]\nname = "numba"\n'
+    lock = _write_lock(tmp_path, bad)
+    with pytest.raises(AssertionError, match="numba"):
+        assert_pins(lock)
+
+
 def test_assert_pins_raises_on_missing_pinned_package(tmp_path):
     bad = """
 [[package]]

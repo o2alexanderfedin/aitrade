@@ -43,26 +43,40 @@ def assert_pins(lock_path: Path) -> None:
     """Raise AssertionError naming the offending package/version on any pin
     drift or on the presence of a banned package (pandas), at any version.
     A pinned package missing from the lockfile entirely is also a failure.
+
+    Collects every `[[package]]` entry's version per name (not just the last
+    one) -- `uv.lock` can legitimately contain multiple entries for the same
+    package name when resolution forks by platform/marker/index, and a pin
+    violation on an earlier entry must not be silently overwritten by a later
+    one. A lockfile entry missing its own `version` key raises a clean
+    AssertionError naming the package, not an unhandled KeyError.
     """
     with open(lock_path, "rb") as f:
         data = tomllib.load(f)
 
-    versions = {pkg["name"]: pkg["version"] for pkg in data.get("package", [])}
+    versions_by_name: dict[str, list[str]] = {}
+    for pkg in data.get("package", []):
+        name = pkg["name"]
+        if "version" not in pkg:
+            raise AssertionError(f"{name} has a lockfile entry with no 'version' key")
+        versions_by_name.setdefault(name, []).append(pkg["version"])
 
     for name, prefix in PINNED_PREFIXES.items():
-        version = versions.get(name)
-        if version is None:
+        entries = versions_by_name.get(name)
+        if not entries:
             raise AssertionError(f"{name} is missing from the lockfile entirely")
-        if not _matches_prefix(version, prefix):
-            raise AssertionError(
-                f"{name} version {version!r} does not match pinned prefix {prefix!r}.*"
-            )
+        for version in entries:
+            if not _matches_prefix(version, prefix):
+                raise AssertionError(
+                    f"{name} version {version!r} does not match pinned prefix "
+                    f"{prefix!r}.*"
+                )
 
     for name in BANNED_PACKAGES:
-        if name in versions:
+        if name in versions_by_name:
             raise AssertionError(
-                f"{name} {versions[name]!r} is present in the lockfile but is "
-                "banned project-wide"
+                f"{name} {versions_by_name[name]!r} is present in the lockfile "
+                "but is banned project-wide"
             )
 
 
