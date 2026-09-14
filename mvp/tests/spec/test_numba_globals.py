@@ -6,8 +6,6 @@ Hermetic: every fixture is an in-memory source string passed to `scan_source`
 `main()`'s repo-wide scan).
 """
 
-import pytest
-
 from tools.check_numba_globals import Violation, is_njit_decorated, main, scan_source
 
 FIXTURE = """
@@ -106,7 +104,6 @@ def test_is_njit_decorated_helper():
     assert is_njit_decorated(fn2) is False
 
 
-@pytest.mark.xfail(strict=True, reason="CR-05: renamed njit import bypasses detection")
 def test_aliased_njit_import_decorator_is_detected():
     source = """
 from numba import njit as compiled
@@ -123,7 +120,6 @@ def kernel(x):
     assert "leaky" in violations[0].message
 
 
-@pytest.mark.xfail(strict=True, reason="CR-05: bare @jit (no args) bypasses detection")
 def test_bare_jit_no_args_decorator_is_detected():
     source = """
 from numba import jit
@@ -140,9 +136,6 @@ def kernel(x):
     assert "leaky" in violations[0].message
 
 
-@pytest.mark.xfail(
-    strict=True, reason="CR-06: module global assigned inside try/except is missed"
-)
 def test_global_assigned_inside_try_except_is_flagged():
     source = """
 from numba import njit
@@ -162,10 +155,6 @@ def kernel(x):
     assert "lookup" in violations[0].message
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="WR-09: nested-function param shadowing masks an outer-scope global read",
-)
 def test_nested_function_param_does_not_mask_outer_global_read():
     source = """
 from numba import njit
