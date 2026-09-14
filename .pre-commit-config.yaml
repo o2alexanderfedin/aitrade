@@ -1,0 +1,77 @@
+# Sanctioned exception to the mvp/ containment rule (Phase 2 Plan 04): this
+# file must live at the repo root for pre-commit to discover it.
+#
+# Every hook below is `repo: local`, `language: system`, and runs a command
+# that already carries its own `--directory mvp` targeting -- run FROM THE
+# REPO ROOT, never `cd mvp && ...`. This makes every command string here
+# byte-identical to the corresponding `run:` step in
+# `.github/workflows/ci.yml`, satisfying this plan's "identical check set in
+# both callers" requirement mechanically, not by convention.
+#
+# Deliberately does NOT use the official astral ruff pre-commit integration
+# hook: a second, independently-pinned ruff version is an entire class of
+# version drift this project doesn't need (02-RESEARCH.md Pitfall 2, option
+# (a)). `uv run --directory mvp ruff ...` always runs the exact `ruff==0.15.*`
+# resolved in `mvp/uv.lock`, identically to CI.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run --directory mvp ruff check .
+        language: system
+        pass_filenames: false
+
+      - id: ruff-format
+        name: ruff format --check
+        entry: uv run --directory mvp ruff format --check .
+        language: system
+        pass_filenames: false
+
+      - id: lockfile-check
+        name: uv lock --check
+        entry: uv --directory mvp lock --check
+        language: system
+        pass_filenames: false
+
+      - id: pin-assertion
+        name: check_pin_versions
+        entry: uv run --directory mvp python -m tools.check_pin_versions
+        language: system
+        pass_filenames: false
+
+      - id: ms-to-ns-site
+        name: check_ms_to_ns_site
+        entry: uv run --directory mvp python -m tools.check_ms_to_ns_site
+        language: system
+        pass_filenames: false
+
+      - id: catalogue-completeness
+        name: check_catalogue_completeness
+        entry: uv run --directory mvp python -m tools.check_catalogue_completeness
+        language: system
+        pass_filenames: false
+
+      - id: latest-ban
+        name: check_latest_ban
+        entry: uv run --directory mvp python -m tools.check_latest_ban
+        language: system
+        pass_filenames: false
+
+      - id: numba-globals
+        name: check_numba_globals
+        entry: uv run --directory mvp python -m tools.check_numba_globals
+        language: system
+        pass_filenames: false
+
+      - id: spec-diff
+        name: check_spec_diff
+        entry: uv run --directory mvp python -m tools.check_spec_diff
+        language: system
+        pass_filenames: false
+
+      - id: pytest
+        name: pytest (spec, tracking, capture, leakage)
+        entry: uv run --directory mvp pytest tests/spec tests/tracking tests/capture tests/leakage -x -q
+        language: system
+        pass_filenames: false

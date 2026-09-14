@@ -1,0 +1,61 @@
+# Sanctioned exception to the mvp/ containment rule (Phase 2 Plan 04): this
+# file must live at .github/workflows/ci.yml by GitHub Actions convention.
+#
+# Every `run:` step below uses the exact same command string as the
+# corresponding hook's `entry:` in `.pre-commit-config.yaml` -- no per-step
+# working directory override key anywhere, since every command already
+# carries its own `--directory mvp` targeting. This is what makes the
+# executed text byte-identical between the two callers.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  guardrails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          version: "0.11.6"
+
+      - name: uv sync
+        run: uv sync --locked --directory mvp
+
+      - name: ruff check
+        run: uv run --directory mvp ruff check .
+
+      - name: ruff format --check
+        run: uv run --directory mvp ruff format --check .
+
+      - name: uv lock --check
+        run: uv --directory mvp lock --check
+
+      - name: check_pin_versions
+        run: uv run --directory mvp python -m tools.check_pin_versions
+
+      - name: check_ms_to_ns_site
+        run: uv run --directory mvp python -m tools.check_ms_to_ns_site
+
+      - name: check_catalogue_completeness
+        run: uv run --directory mvp python -m tools.check_catalogue_completeness
+
+      - name: check_latest_ban
+        run: uv run --directory mvp python -m tools.check_latest_ban
+
+      - name: check_numba_globals
+        run: uv run --directory mvp python -m tools.check_numba_globals
+
+      - name: check_spec_diff
+        run: uv run --directory mvp python -m tools.check_spec_diff
+
+      - name: pytest (spec, tracking, capture, leakage)
+        run: uv run --directory mvp pytest tests/spec tests/tracking tests/capture tests/leakage -x -q
