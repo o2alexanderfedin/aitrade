@@ -117,6 +117,25 @@ def test_render_features_table_escapes_pipe_and_joins_source_datasets():
     assert "ds1, ds2" in body
 
 
+def test_render_features_table_escapes_embedded_newline():
+    entries = {
+        "x": FeatureEntry(
+            name="x",
+            definition="line1\nline2",
+            information_set="t",
+            lag=0,
+            normalization="none",
+            source_datasets=["ds1"],
+            notes="n",
+            version=1,
+            introduced="2026-09-13",
+        )
+    }
+    body = render_features_table(entries)
+    assert "\n" not in body.strip("\n")  # no raw newline splits the row
+    assert "line1<br>line2" in body
+
+
 def test_render_labels_table_rows_only_no_header():
     body = render_labels_table(LABELS)
     assert "Name | Horizon" not in body

@@ -52,7 +52,11 @@ LABELS_HEADER = (
 
 
 def _escape_cell(value: str) -> str:
-    return value.replace("|", "\\|")
+    """Escape a value for embedding in a single GFM table cell: `|` would
+    otherwise terminate the cell early, and a literal newline (from a
+    triple-quoted multi-line TOML string) would otherwise split one logical
+    row across multiple physical lines, breaking the table."""
+    return value.replace("|", "\\|").replace("\n", "<br>")
 
 
 def render_features_table(entries: dict[str, FeatureEntry]) -> str:
