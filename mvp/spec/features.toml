@@ -1,0 +1,52 @@
+# Feature catalogue source of truth (SPEC-01, SPEC-02).
+#
+# Every feature must have an entry here before being used in training/inference code
+# (mvp/spec/catalogue.py's registry is the only way training code reaches a feature by
+# name). A definition change gets a NEW name (see mvp/spec.md Feature catalogue Rules);
+# mvp/tools/check_spec_diff.py CI-rejects a changed `definition` under an existing name.
+#
+# Rendered into mvp/spec.md between the `<!-- catalogue:features:begin -->` /
+# `:end` markers by `mvp/spec/render.py` -- keep table-declaration order meaningful:
+# rows render in this file's declaration order, not sorted.
+#
+# Declared here, not implemented -- implementation lands in Phase 4 (FEAT-02).
+
+[mid]
+definition = "(best_bid + best_ask) / 2"
+information_set = "t"
+lag = 0
+normalization = "none"
+source_datasets = ["swap L1 BBO"]
+notes = "Treat sub-tick stickiness flag separately"
+version = 1
+introduced = "2026-09-13"
+
+[imb_top]
+definition = "(bid_size - ask_size) / (bid_size + ask_size)"
+information_set = "t"
+lag = 0
+normalization = "none"
+source_datasets = ["swap L1 BBO"]
+notes = "Undefined when both sizes are 0"
+version = 1
+introduced = "2026-09-13"
+
+[ofi]
+definition = "Order-flow imbalance: top-of-book quote-and-size delta between consecutive updates (Cont-Kukanov-Stoikov convention)"
+information_set = "t"
+lag = 0
+normalization = "none"
+source_datasets = ["swap L1 BBO"]
+notes = "Declared, not yet implemented; implementation is Phase 4 (FEAT-02)"
+version = 1
+introduced = "2026-09-13"
+
+[trade_flow]
+definition = "Signed trade volume over a trailing window using tradeSide_corrected"
+information_set = "t"
+lag = 0
+normalization = "none"
+source_datasets = ["swap trades"]
+notes = "Declared, not yet implemented; implementation is Phase 4 (FEAT-02)"
+version = 1
+introduced = "2026-09-13"
