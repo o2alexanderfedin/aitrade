@@ -24,6 +24,19 @@ import mlflow
 
 from data.capture.config import DEFAULT_MIN_FREE_GB, DataRootError, validate_data_root
 
+# Re-exported so callers can catch `tracking.mlflow_utils.DataRootError`
+# without reaching into `data.capture.config` directly -- `start_tracked_run`
+# re-raises it unmodified for a bad tracking root.
+__all__ = [
+    "MANDATORY_TAG_KEYS",
+    "MissingTagError",
+    "DataRootError",
+    "build_tracking_uri",
+    "compute_code_hash",
+    "compute_env_hash",
+    "start_tracked_run",
+]
+
 # The 8 mandatory tag keys, verbatim from mvp/spec.md's "MLflow tag schema"
 # section -- mvp/tests/tracking/test_mlflow_utils.py asserts these never drift
 # apart (the spec is the contract).
@@ -53,24 +66,31 @@ def build_tracking_uri(root: str) -> str:
     Four slashes after `sqlite:` for an absolute path: three literal slashes
     in the URI scheme plus the leading `/` of the resolved absolute path.
     """
-    raise NotImplementedError
+    resolved = pathlib.Path(root).resolve()
+    return f"sqlite:///{resolved}/mlflow.db"
 
 
-def compute_code_hash(
-    dirty_suffix: str = "-dirty", git_runner=subprocess.run
-) -> str:
+def compute_code_hash(dirty_suffix: str = "-dirty", git_runner=subprocess.run) -> str:
     """Return git HEAD's SHA, with `dirty_suffix` appended if the working
     tree is not clean.
 
     `git_runner` is injectable so tests can supply a fake git command runner
     rather than depending on the real repo's dirty/clean state at test time.
     """
-    raise NotImplementedError
+    sha_result = git_runner(
+        ["git", "rev-parse", "HEAD"], capture_output=True, text=True
+    )
+    sha = sha_result.stdout.strip()
+    status_result = git_runner(
+        ["git", "status", "--porcelain"], capture_output=True, text=True
+    )
+    dirty = bool(status_result.stdout.strip())
+    return f"{sha}{dirty_suffix}" if dirty else sha
 
 
 def compute_env_hash(lock_path: pathlib.Path) -> str:
     """Return the SHA-256 hex digest of `lock_path`'s bytes."""
-    raise NotImplementedError
+    return hashlib.sha256(pathlib.Path(lock_path).read_bytes()).hexdigest()
 
 
 def start_tracked_run(
@@ -87,4 +107,20 @@ def start_tracked_run(
     any MLflow call. Re-raises `DataRootError` unmodified if `tracking_root`
     fails validation.
     """
-    raise NotImplementedError
+    missing = MANDATORY_TAG_KEYS - tags.keys()
+    if missing:
+        raise MissingTagError(f"missing mandatory tags: {sorted(missing)}")
+
+    # Let DataRootError propagate unmodified -- do not catch and rewrap it.
+    resolved_root = validate_data_root(tracking_root, min_free_gb=min_free_gb)
+
+    mlflow.set_tracking_uri(build_tracking_uri(str(resolved_root)))
+    experiment = mlflow.get_experiment_by_name(experiment_name)
+    if experiment is None:
+        experiment_id = mlflow.create_experiment(
+            experiment_name, artifact_location=f"{resolved_root}/artifacts"
+        )
+    else:
+        experiment_id = experiment.experiment_id
+
+    return mlflow.start_run(experiment_id=experiment_id, tags=dict(tags))
