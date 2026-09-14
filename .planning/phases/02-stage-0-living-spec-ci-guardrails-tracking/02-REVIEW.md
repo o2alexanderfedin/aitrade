@@ -35,7 +35,7 @@ findings:
   warning: 9
   info: 6
   total: 23
-status: issues_found
+status: fixed
 ---
 
 # Phase 2: Code Review Report
@@ -43,7 +43,7 @@ status: issues_found
 **Reviewed:** 2026-09-13T00:00:00Z
 **Depth:** standard
 **Files Reviewed:** 26
-**Status:** issues_found
+**Status:** fixed
 
 ## Summary
 
@@ -359,8 +359,51 @@ def _init_scratch_repo(tmp_path: Path) -> Path:
 **Issue:** `uv sync --locked` (which already fails if the lock is stale) is immediately followed by a separate `uv lock --check` step doing the same assertion. Harmless, just redundant.
 **Fix:** None required; optional cleanup.
 
+## Fix log
+
+All 8 Critical findings and all 9 Warning findings were fixed on
+`feature/phase-02-stage-0-living-spec-ci-guardrails-tracking`. Every Critical
+(and CR-adjacent Warning) got a RED test reproducing the reviewer's exact
+bypass input, committed `xfail(strict=True)` before the GREEN fix that removed
+the marker -- both commits are listed below. Info findings were left
+unaddressed (out of `--fix` scope per the workflow contract) except where
+noted.
+
+| Finding | RED commit | GREEN / fix commit |
+|---|---|---|
+| CR-01 (aliased import bypass) | `2952030` | `42d0db8` |
+| CR-02 (keyword-only call bypass) | `2952030` | `42d0db8` |
+| CR-03 (list-literal/variable-indirection bypass) | `753a250` | `14cd70b` |
+| CR-04 (`latest.<ext>` boundary miss) | `753a250` | `14cd70b` |
+| CR-05 (decorator alias / bare `@jit` bypass) | `9a3f0f3` | `532dedd` |
+| CR-06 (module global inside try/except) | `9a3f0f3` | `532dedd` |
+| CR-07 (equivalent numeric forms `1000000`/`1e6`/`10**6`) | `b237ae1` | `7811a79` |
+| CR-08 (removed entries never flagged + `HEAD~1` two-commit bypass) | `5f5d74c` | `8efb943` |
+| WR-01 (newline not escaped in table cells) | -- | `5dc9ca0` |
+| WR-02 (duplicate lockfile entries / missing version key) | -- | `d07aa69` |
+| WR-03 (comment/docstring false-positive) | `b237ae1` | `7811a79` (same AST rewrite as CR-07) |
+| WR-04 (`compute_code_hash` returncode/cwd) | -- | `261546a` |
+| WR-05 (bare `uv run` without `--locked`) | -- | `79de939` |
+| WR-06 (scratch git repo env isolation) | -- | `7836a33` |
+| WR-07 (subset check instead of set equality) | -- | `29c05ce` |
+| WR-08 (allowlist scan scope / hardcoded pytest dirs) | -- | `79de939` (same commit as WR-05) |
+| WR-09 (nested-scope local masks outer global read) | `9a3f0f3` | `532dedd` (same commit as CR-05/CR-06) |
+
+Verification after all fixes: `170` tests passing
+(`./mvp/.venv/bin/python3 -m pytest mvp/tests -q -W error::DeprecationWarning`),
+`pre-commit run --all-files` 10/10 green, `.pre-commit-config.yaml` and
+`.github/workflows/ci.yml` entry/run command sets verified byte-identical
+after the `--locked` edit.
+
+No fix required weakening any check; where a finding asked for broader
+detection (CR-03/CR-04's regex, CR-07's AST rewrite, WR-08's denylist scan),
+the new scan scope was run against the real repo tree before committing and
+produced zero new false positives.
+
 ---
 
 _Reviewed: 2026-09-13T00:00:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+_Fixed: 2026-09-13_
+_Fixer: Claude (gsd-code-fixer)_
