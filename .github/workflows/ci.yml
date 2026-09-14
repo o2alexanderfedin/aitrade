@@ -31,31 +31,31 @@ jobs:
         run: uv sync --locked --directory mvp
 
       - name: ruff check
-        run: uv run --directory mvp ruff check .
+        run: uv run --locked --directory mvp ruff check .
 
       - name: ruff format --check
-        run: uv run --directory mvp ruff format --check .
+        run: uv run --locked --directory mvp ruff format --check .
 
       - name: uv lock --check
         run: uv --directory mvp lock --check
 
       - name: check_pin_versions
-        run: uv run --directory mvp python -m tools.check_pin_versions
+        run: uv run --locked --directory mvp python -m tools.check_pin_versions
 
       - name: check_ms_to_ns_site
-        run: uv run --directory mvp python -m tools.check_ms_to_ns_site
+        run: uv run --locked --directory mvp python -m tools.check_ms_to_ns_site
 
       - name: check_catalogue_completeness
-        run: uv run --directory mvp python -m tools.check_catalogue_completeness
+        run: uv run --locked --directory mvp python -m tools.check_catalogue_completeness
 
       - name: check_latest_ban
-        run: uv run --directory mvp python -m tools.check_latest_ban
+        run: uv run --locked --directory mvp python -m tools.check_latest_ban
 
       - name: check_numba_globals
-        run: uv run --directory mvp python -m tools.check_numba_globals
+        run: uv run --locked --directory mvp python -m tools.check_numba_globals
 
       - name: check_spec_diff
-        run: uv run --directory mvp python -m tools.check_spec_diff
+        run: uv run --locked --directory mvp python -m tools.check_spec_diff
 
-      - name: pytest (spec, tracking, capture, leakage)
-        run: uv run --directory mvp pytest tests/spec tests/tracking tests/capture tests/leakage -x -q
+      - name: pytest (tests, via testpaths)
+        run: uv run --locked --directory mvp pytest tests -x -q

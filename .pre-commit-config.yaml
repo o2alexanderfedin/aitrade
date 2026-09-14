@@ -18,13 +18,13 @@ repos:
     hooks:
       - id: ruff-check
         name: ruff check
-        entry: uv run --directory mvp ruff check .
+        entry: uv run --locked --directory mvp ruff check .
         language: system
         pass_filenames: false
 
       - id: ruff-format
         name: ruff format --check
-        entry: uv run --directory mvp ruff format --check .
+        entry: uv run --locked --directory mvp ruff format --check .
         language: system
         pass_filenames: false
 
@@ -36,42 +36,42 @@ repos:
 
       - id: pin-assertion
         name: check_pin_versions
-        entry: uv run --directory mvp python -m tools.check_pin_versions
+        entry: uv run --locked --directory mvp python -m tools.check_pin_versions
         language: system
         pass_filenames: false
 
       - id: ms-to-ns-site
         name: check_ms_to_ns_site
-        entry: uv run --directory mvp python -m tools.check_ms_to_ns_site
+        entry: uv run --locked --directory mvp python -m tools.check_ms_to_ns_site
         language: system
         pass_filenames: false
 
       - id: catalogue-completeness
         name: check_catalogue_completeness
-        entry: uv run --directory mvp python -m tools.check_catalogue_completeness
+        entry: uv run --locked --directory mvp python -m tools.check_catalogue_completeness
         language: system
         pass_filenames: false
 
       - id: latest-ban
         name: check_latest_ban
-        entry: uv run --directory mvp python -m tools.check_latest_ban
+        entry: uv run --locked --directory mvp python -m tools.check_latest_ban
         language: system
         pass_filenames: false
 
       - id: numba-globals
         name: check_numba_globals
-        entry: uv run --directory mvp python -m tools.check_numba_globals
+        entry: uv run --locked --directory mvp python -m tools.check_numba_globals
         language: system
         pass_filenames: false
 
       - id: spec-diff
         name: check_spec_diff
-        entry: uv run --directory mvp python -m tools.check_spec_diff
+        entry: uv run --locked --directory mvp python -m tools.check_spec_diff
         language: system
         pass_filenames: false
 
       - id: pytest
-        name: pytest (spec, tracking, capture, leakage)
-        entry: uv run --directory mvp pytest tests/spec tests/tracking tests/capture tests/leakage -x -q
+        name: pytest (tests, via testpaths)
+        entry: uv run --locked --directory mvp pytest tests -x -q
         language: system
         pass_filenames: false

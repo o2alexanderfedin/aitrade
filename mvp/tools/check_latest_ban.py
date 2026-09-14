@@ -24,13 +24,14 @@ is not caught by static analysis.
 from __future__ import annotations
 
 import ast
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
 PKG_ROOT = Path(__file__).resolve().parents[1]
 
-SCAN_SUBDIRS = ("data", "pipelines")
+PRUNE_DIRNAMES = frozenset({".venv", "__pycache__", ".pytest_cache", ".ruff_cache"})
 
 EXCLUDE_MARKERS = (".venv", "__pycache__", ".pytest_cache", ".ruff_cache", "/tests/")
 
@@ -114,13 +115,24 @@ def _excluded(path: Path) -> bool:
     return any(marker in path_str for marker in EXCLUDE_MARKERS)
 
 
-def main() -> int:
+def _iter_py_files(root: Path) -> list[Path]:
+    """os.walk with early pruning of .venv/__pycache__/etc so a full-repo
+    recursive scan doesn't descend into thousands of venv files before the
+    substring filter drops them. Denylist over the whole package (matching
+    check_numba_globals's pattern) rather than an allowlist of specific
+    subdirectory names, so a future source directory not yet on any allowlist
+    is scanned automatically instead of silently skipped."""
     files: list[Path] = []
-    for subdir in SCAN_SUBDIRS:
-        target = PKG_ROOT / subdir
-        if not target.is_dir():
-            continue
-        files.extend(p for p in target.rglob("*.py") if not _excluded(p))
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in PRUNE_DIRNAMES]
+        for fname in filenames:
+            if fname.endswith(".py"):
+                files.append(Path(dirpath) / fname)
+    return [p for p in files if not _excluded(p)]
+
+
+def main() -> int:
+    files = _iter_py_files(PKG_ROOT)
 
     all_violations: list[Violation] = []
     for path in files:
