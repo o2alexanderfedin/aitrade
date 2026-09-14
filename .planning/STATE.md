@@ -125,6 +125,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-14T02:46:07.538Z
-Stopped at: Completed 02-04-PLAN.md Tasks 1-2; Task 3 (human-verify checkpoint) pending
+Last session: 2026-09-14
+Stopped at: Phases 1–2 complete and merged. Next: `/gsd-autonomous --from 3` (Data Layer — backfill, ingest, lockbox). Work ONLY from /Volumes/ProjectsSSD/aihedgefund/repo (OneDrive checkout is dehydrated/stale). Capture daemon Run G (PID 10771) running from that checkout's mvp/.venv. git-flow is NOT initialised in the SSD clone — use `git merge --no-ff` (identical result) or run `git flow init -d` first.
 Resume file: .planning/phases/02-stage-0-living-spec-ci-guardrails-tracking/02-04-SUMMARY.md
