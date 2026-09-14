@@ -5,6 +5,8 @@ Hermetic: every fixture is an in-memory source string passed to `scan_source`
 -- never a real .py file under PKG_ROOT/data or PKG_ROOT/pipelines.
 """
 
+import pytest
+
 from tools.check_latest_ban import Violation, main, scan_source
 
 
@@ -45,6 +47,38 @@ def test_fstring_latest_segment_is_flagged():
     source = 'import pathlib\nsymbol = "BTCUSDT"\npathlib.Path(f"data/latest/{symbol}.parquet")\n'
     violations = scan_source(source, "fixture.py")
     assert len(violations) == 1
+
+
+@pytest.mark.xfail(strict=True, reason="CR-03: list-literal join bypasses the check")
+def test_latest_segment_inside_join_list_literal_is_flagged():
+    source = 'p = "/".join(["data", "latest", "file.parquet"])\n'
+    violations = scan_source(source, "fixture.py")
+    assert len(violations) == 1
+    assert "latest" in violations[0].message
+
+
+@pytest.mark.xfail(
+    strict=True, reason="CR-03: module-level variable indirection bypasses the check"
+)
+def test_latest_segment_via_module_level_variable_is_flagged():
+    source = (
+        "from pathlib import Path\n"
+        'LATEST = "latest"\n'
+        'p = Path("data") / LATEST / "file.parquet"\n'
+    )
+    violations = scan_source(source, "fixture.py")
+    assert len(violations) == 1
+    assert "latest" in violations[0].message
+
+
+@pytest.mark.xfail(
+    strict=True, reason="CR-04: 'latest.<ext>' misses the trailing-dot boundary"
+)
+def test_latest_dot_extension_filename_is_flagged():
+    source = 'import pathlib\npathlib.Path("data/latest.parquet")\n'
+    violations = scan_source(source, "fixture.py")
+    assert len(violations) == 1
+    assert "latest" in violations[0].message
 
 
 def test_main_scans_real_repo_and_exits_zero(capsys):
