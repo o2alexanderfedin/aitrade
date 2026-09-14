@@ -56,7 +56,13 @@ Plans:
   3. spec.md contains the corrected decision-rule pseudocode (dimensional bug fixed), the spot-L1 clock exception, and the trades-backfill side-exactness note
   4. Sharpe annualization convention, MLflow tag schema, and numba no-globals lint rule are pre-declared in spec.md before any run exists
   5. MLflow on SQLite backend records code hash + data hash + seed + env hash for a test run; environment pins are CI-enforced
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — Move spec.md/mvp.md under mvp/, land all spec corrections, TOML catalogues + registry + renderer
+- [ ] 02-02-PLAN.md — CI guardrail scripts: catalogue completeness, latest-ban, numba-no-globals, pin assertion
+- [ ] 02-03-PLAN.md — MLflow tracking wrapper (mlflow-skinny, mandatory tags, root guard reuse, smoke run)
+- [ ] 02-04-PLAN.md — Wire pre-commit + GitHub Actions, prove every check red-then-green
 
 ### Phase 3: Data Layer — Backfill, Ingest & Lockbox
 **Goal**: A canonical, immutable, manifest-addressed data lake exists with quality gates and a mechanically enforced held-out quarantine
@@ -175,7 +181,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Capture Daemon & Repo Foundation | 4/4 | Complete | 2026-09-13 |
-| 2. Stage 0 — Living Spec, CI Guardrails & Tracking | 0/TBD | Not started | - |
+| 2. Stage 0 — Living Spec, CI Guardrails & Tracking | 0/4 | Not started | - |
 | 3. Data Layer — Backfill, Ingest & Lockbox | 0/TBD | Not started | - |
 | 4. Feature & Label Engine | 0/TBD | Not started | - |
 | 5. Fold Harness & Overfitting Controls | 0/TBD | Not started | - |
