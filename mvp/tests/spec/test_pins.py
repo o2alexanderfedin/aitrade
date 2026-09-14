@@ -124,6 +124,45 @@ def test_find_ms_to_ns_sites_zero_sites_in_empty_dir(tmp_path):
     assert find_ms_to_ns_sites(tmp_path) == []
 
 
+@pytest.mark.xfail(
+    strict=True, reason="CR-07: 1000000 without underscores bypasses detection"
+)
+def test_unspaced_literal_1000000_is_flagged(tmp_path):
+    (tmp_path / "e.py").write_text("ns = ms * 1000000\n")
+    sites = find_ms_to_ns_sites(tmp_path)
+    assert len(sites) == 1
+
+
+@pytest.mark.xfail(
+    strict=True, reason="CR-07: 1e6 scientific notation bypasses detection"
+)
+def test_scientific_notation_1e6_is_flagged(tmp_path):
+    (tmp_path / "f.py").write_text("ns = ms * 1e6\n")
+    sites = find_ms_to_ns_sites(tmp_path)
+    assert len(sites) == 1
+
+
+@pytest.mark.xfail(
+    strict=True, reason="CR-07: 10 ** 6 power expression bypasses detection"
+)
+def test_power_expression_10_pow_6_is_flagged(tmp_path):
+    (tmp_path / "g.py").write_text("ns = ms * (10 ** 6)\n")
+    sites = find_ms_to_ns_sites(tmp_path)
+    assert len(sites) == 1
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="WR-03: comment mentioning 1_000_000 false-positives under line-regex scan",
+)
+def test_comment_mentioning_ms_to_ns_literal_is_not_flagged(tmp_path):
+    (tmp_path / "h.py").write_text(
+        "# see 1_000_000 in parse.py for the ms->ns convention\n"
+    )
+    sites = find_ms_to_ns_sites(tmp_path)
+    assert sites == []
+
+
 def test_ms_main_exits_zero_against_real_repo(capsys):
     exit_code = ms_main()
     captured = capsys.readouterr()
