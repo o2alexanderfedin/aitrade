@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 Phase: 1 of 11 (Capture Daemon & Repo Foundation) — COMPLETE
 Plan: 4 of 4 complete
 Status: Phase 1 COMPLETE — verified (20/20), code-reviewed (2 critical + 7 warning fixed), merged to develop at f6c5319 and pushed. Next: Phase 2
-Last activity: 2026-09-13 — Phase 1 merged to develop (55 commits). Capture daemon Run F (PID 11428) running on pre-review code; ~24h Binance close observed forensically at ~20:11 UTC, then daemon restarts onto reviewed code.
+Last activity: 2026-09-14 — Phase 2 discussed + researched. **24h forensic result: Binance did NOT force-close** — Run F reached 1d 4h 36m on the same sockets with zero per-connection gap >2.2s all day (18.58M frames each, redundancy exact). Daemon restarted as Run G (PID 10771) onto reviewed code from the SSD clone after the OneDrive dehydration incident.
 
 Progress: [██████████] 100%
 
@@ -93,10 +93,12 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- [Phase 1, deferred operational check]: Run the capture daemon ≥24h and confirm Binance's server-initiated ~24h connection close is handled by the reconnect loop with **no data gap** in the gap ledger. Cannot be verified inside one execution session. A bug here silently punches a daily hole in irreplaceable data.
+- [Phase 1, deferred operational check — **premise now doubtful**]: Binance's documented ~24h forced close **did not occur** on `fstream` — Run F held both connections for 28h+ with no reconnect (largest gap 0.656s in the 24h-mark window). Reconnect handling is unit-tested and now logged (`connection X: closed code=... — reconnecting`); watch Run G's log for the first real close, whenever it comes, and confirm the ledger shows no gap.
 - [Phase 1, deferred operational check]: Eject `/Volumes/ProjectsSSD` while the daemon runs; confirm it records an outage and resumes cleanly without corrupting a partition, rather than crashing or writing a partial file.
 
 ### Blockers/Concerns
+
+- [OPS, 2026-09-14 00:54 UTC — RESOLVED, but the lesson is permanent]: **OneDrive Files-On-Demand dehydrated the repo working tree and `.venv`** under disk pressure (internal volume at 97%). `ls -lO` showed `compressed,dataless` on `daemon.py`, `rotation.py`, `schema.py`, `uv.lock`, and 343/380 polars files. Python's import hung in `importlib.get_data` waiting on OneDrive. A daemon restart therefore stalled with no log output and no pidfile, costing ~2.5 min of capture. **Resolution: the canonical working checkout is now `/Volumes/ProjectsSSD/aihedgefund/repo`** (cloned from `origin/develop`, venv built there, Run G launched from it). The OneDrive checkout at `~/Library/CloudStorage/OneDrive-Personal/.../AiHedgeFund` is stale by design — do not commit there; do not open it in an editor expecting it to be current. Git objects there were mostly intact (8/400 sampled dataless) so the three local-only Phase 2 commits were pushed before switching.
 
 - ~~[Phase 1]: Human decision required — Tardis.dev L1 history buy vs wait-for-capture vs two-regime dataset~~ **RESOLVED 2026-09-11: two-regime dataset.**
 - [Phase 2]: Spot L1 etime strategy — **decided** (spot deferred post-MVP, swap-only); still must be **written into spec.md** during Stage 0.
