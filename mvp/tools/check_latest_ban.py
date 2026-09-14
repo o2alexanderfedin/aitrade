@@ -34,7 +34,11 @@ SCAN_SUBDIRS = ("data", "pipelines")
 
 EXCLUDE_MARKERS = (".venv", "__pycache__", ".pytest_cache", ".ruff_cache", "/tests/")
 
-LATEST_SEGMENT_RE = re.compile(r"(^|/)latest(/|$)")
+#: Matches a "latest" path/name segment bounded by a path separator,
+#: underscore, dot, or hyphen (or string start/end) on both sides -- so
+#: "data/latest/file", "data/latest.parquet", and "data_latest" all match,
+#: while prose like "the latest research" (bounded by plain spaces) does not.
+LATEST_SEGMENT_RE = re.compile(r"(^|[/\\_.-])latest([/\\_.-]|$)")
 
 
 @dataclass(frozen=True)
@@ -47,45 +51,60 @@ class Violation:
         return f"{self.filename}:{self.lineno}: {self.message}"
 
 
-def _constant_str_segments(node: ast.expr) -> list[ast.Constant]:
-    """Return every string ast.Constant reachable as a literal segment of `node`:
-    the node itself if it's a string Constant, or each string Constant among an
-    ast.JoinedStr's (f-string) `.values`.
+def _docstring_nodes(tree: ast.Module) -> set[int]:
+    """Return `id()` of every Constant node that is a docstring: the first
+    statement of the Module, or of any FunctionDef/AsyncFunctionDef/ClassDef
+    body, when that statement is a bare string-literal Expr. Excluded from the
+    scan so module/function/class prose ("the latest research shows...") is
+    never flagged just because it happens to contain the word.
     """
-    if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return [node]
-    if isinstance(node, ast.JoinedStr):
-        return [
-            v
-            for v in node.values
-            if isinstance(v, ast.Constant) and isinstance(v.value, str)
-        ]
-    return []
-
-
-def _check_segments(node: ast.expr, filename: str, violations: list[Violation]) -> None:
-    for const in _constant_str_segments(node):
-        if LATEST_SEGMENT_RE.search(const.value):
-            violations.append(
-                Violation(
-                    filename,
-                    const.lineno,
-                    f"literal 'latest' path segment: {const.value!r}",
-                )
-            )
+    scopes: list[ast.Module | ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef] = [
+        tree
+    ]
+    scopes.extend(
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+    )
+    ids: set[int] = set()
+    for scope in scopes:
+        body = scope.body
+        if (
+            body
+            and isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)
+        ):
+            ids.add(id(body[0].value))
+    return ids
 
 
 def scan_source(source: str, filename: str) -> list[Violation]:
+    """Scan every string `ast.Constant` reachable anywhere in `source` (not just
+    ones that happen to sit in direct Call-argument or BinOp-operand position)
+    for a banned "latest" path/name segment. This deliberately also catches a
+    string literal reached through a list/tuple literal later `"/".join`-ed, or
+    bound to a module-level variable and referenced elsewhere -- the segment is
+    spelled out as a literal either way; only module/function/class docstrings
+    are exempted (see `_docstring_nodes`).
+    """
     tree = ast.parse(source, filename=filename)
+    docstring_ids = _docstring_nodes(tree)
     violations: list[Violation] = []
 
     for node in ast.walk(tree):
-        if isinstance(node, ast.Call):
-            for arg in list(node.args) + [kw.value for kw in node.keywords]:
-                _check_segments(arg, filename, violations)
-        elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
-            _check_segments(node.left, filename, violations)
-            _check_segments(node.right, filename, violations)
+        if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
+            continue
+        if id(node) in docstring_ids:
+            continue
+        if LATEST_SEGMENT_RE.search(node.value):
+            violations.append(
+                Violation(
+                    filename,
+                    node.lineno,
+                    f"literal 'latest' path segment: {node.value!r}",
+                )
+            )
 
     return violations
 
