@@ -11,6 +11,8 @@ dependence on this checkout's actual HEAD/history.
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from spec.catalogue import FeatureEntry, LabelEntry
 from spec.render import (
     FEATURES_BEGIN,
@@ -239,3 +241,87 @@ def test_main_warns_and_exits_zero_when_base_ref_unresolvable(
     captured = capsys.readouterr()
     assert exit_code == 0
     assert "does not resolve" in captured.out.lower() or "WARN" in captured.out
+
+
+def _commit(repo: Path, message: str) -> None:
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", message], cwd=repo, check=True)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="CR-08: a name only in `old` (deleted outright) is never flagged",
+)
+def test_diff_removed_names_flags_deleted_entry():
+    from spec.catalogue import diff_removed_names
+
+    old = {"mid": {"definition": "x"}, "imb_top": {"definition": "y"}}
+    new = {"imb_top": {"definition": "y"}}
+    assert diff_removed_names(old, new) == ["mid"]
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="CR-08: check_spec_diff never fails when a catalogue entry is removed",
+)
+def test_spec_diff_main_fails_when_feature_removed(monkeypatch, tmp_path, capsys):
+    repo = _init_scratch_repo(tmp_path)
+    (repo / "mvp" / "spec").mkdir(parents=True)
+    features_path = repo / "mvp" / "spec" / "features.toml"
+    features_path.write_text('[mid]\ndefinition = "old"\n')
+    (repo / "mvp" / "spec" / "labels.toml").write_text("")
+    _commit(repo, "base")
+
+    features_path.write_text("")  # mid removed outright
+    _commit(repo, "remove mid")
+
+    import tools.check_spec_diff as mod
+
+    monkeypatch.setattr(mod, "PKG_ROOT", repo / "mvp")
+    monkeypatch.setattr(mod, "load_features", lambda: {})
+    monkeypatch.setattr(mod, "load_labels", lambda: {})
+    spec_md = (
+        "<!-- catalogue:features:begin -->\n"
+        "| Name | Definition | Information set (latest input timestamp ≤ decision `t`) "
+        "| Lag (if any) | Normalization | Source dataset(s) | Notes |\n"
+        "| --- | --- | --- | --- | --- | --- | --- |\n"
+        "<!-- catalogue:features:end -->\n"
+        "<!-- catalogue:labels:begin -->\n"
+        "| Name | Horizon | Computation | Information set required to evaluate "
+        "| Embargo | Notes |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "<!-- catalogue:labels:end -->\n"
+    )
+    (repo / "mvp" / "spec.md").write_text(spec_md)
+
+    exit_code = check_spec_diff_main(["--base-ref", "HEAD~1"])
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "mid" in captured.out
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="CR-08: default --base-ref=HEAD~1 lets a two-commit rename-under-a-name slip through",
+)
+def test_default_base_ref_resolves_to_merge_base_with_develop(tmp_path):
+    repo = _init_scratch_repo(tmp_path)
+    (repo / "f.txt").write_text("base\n")
+    _commit(repo, "base")
+    subprocess.run(["git", "branch", "develop"], cwd=repo, check=True)
+
+    (repo / "f.txt").write_text("commit1\n")
+    _commit(repo, "commit 1")
+    (repo / "f.txt").write_text("commit2\n")
+    _commit(repo, "commit 2")
+
+    from tools.check_spec_diff import _default_base_ref
+
+    base_ref = _default_base_ref(repo)
+    expected = subprocess.run(
+        ["git", "merge-base", "HEAD", "develop"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert base_ref == expected
