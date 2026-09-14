@@ -1,0 +1,48 @@
+# Label catalogue source of truth (SPEC-01, SPEC-02).
+#
+# Every label must have an entry here before being used. A definition (computation)
+# change gets a NEW name (see mvp/spec.md Label catalogue Rules);
+# mvp/tools/check_spec_diff.py CI-rejects a changed `computation` under an existing
+# name.
+#
+# Rendered into mvp/spec.md between the `<!-- catalogue:labels:begin -->` /
+# `:end` markers by `mvp/spec/render.py` -- keep table-declaration order meaningful:
+# rows render in this file's declaration order (primary label first), not sorted.
+#
+# Declared here, not implemented -- implementation lands in Phase 4 (FEAT-02).
+
+[ret_10s_mid]
+horizon = "10s"
+computation = "(mid_{t+10s} - mid_t) / mid_t"
+information_set = "data through t + 10s"
+embargo = ">= 10s"
+notes = "Primary trading target"
+version = 1
+introduced = "2026-09-13"
+
+[ret_1s_mid]
+horizon = "1s"
+computation = "(mid_{t+1s} - mid_t) / mid_t"
+information_set = "data through t + 1s"
+embargo = ">= 1s"
+notes = "Diagnostic only"
+version = 1
+introduced = "2026-09-13"
+
+[ret_1min_mid]
+horizon = "1min"
+computation = "(mid_{t+1min} - mid_t) / mid_t"
+information_set = "data through t + 1min"
+embargo = ">= 1min"
+notes = "Diagnostic only"
+version = 1
+introduced = "2026-09-13"
+
+[ret_10min_mid]
+horizon = "10min"
+computation = "(mid_{t+10min} - mid_t) / mid_t"
+information_set = "data through t + 10min"
+embargo = ">= 10min"
+notes = "Diagnostic only"
+version = 1
+introduced = "2026-09-13"
