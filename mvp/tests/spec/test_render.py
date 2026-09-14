@@ -344,3 +344,21 @@ def test_default_base_ref_resolves_to_merge_base_with_develop(tmp_path):
         env=_GIT_ENV,
     ).stdout.strip()
     assert base_ref == expected
+
+
+def test_default_base_ref_falls_back_to_head_minus_1_when_on_develop_itself(tmp_path):
+    """Advisor-caught regression: if the resolved merge-base of HEAD with
+    develop IS HEAD (running directly on develop, e.g. a post-merge CI push),
+    diffing HEAD against itself would silently no-op the whole check. Must
+    fall back to HEAD~1 instead, matching pre-CR-08 behavior on that branch
+    -- CR-08's fix must be a strict widening, never a narrowing."""
+    repo = _init_scratch_repo(tmp_path)
+    (repo / "f.txt").write_text("base\n")
+    _commit(repo, "base")
+    _git(["branch", "develop"], cwd=repo)
+    # Still on the default branch, which IS develop's tip -- merge-base(HEAD,
+    # develop) == HEAD here.
+
+    from tools.check_spec_diff import _default_base_ref
+
+    assert _default_base_ref(repo) == "HEAD~1"

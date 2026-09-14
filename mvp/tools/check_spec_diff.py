@@ -83,7 +83,19 @@ def _default_base_ref(cwd: Path) -> str:
     defeats: at N+1, `HEAD~1` is N, which no longer has the name, so it looks
     brand-new. The merge-base with the branch's start point is stable across
     however many commits the branch/PR has, closing that gap.
+
+    If the resolved merge-base IS HEAD (e.g. running directly on `develop`
+    itself -- a post-merge CI `push:` run, or any direct push to develop),
+    diffing HEAD against itself would silently no-op the whole check. Falls
+    back to `HEAD~1` in that case instead, matching this module's prior
+    (pre-CR-08) behavior on that one branch so this fix is a strict widening,
+    never a narrowing, of what gets caught.
     """
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], capture_output=True, cwd=cwd, text=True
+    )
+    head_sha = head.stdout.strip() if head.returncode == 0 else None
+
     for ref in ("develop", "origin/develop"):
         result = subprocess.run(
             ["git", "merge-base", "HEAD", ref],
@@ -92,10 +104,13 @@ def _default_base_ref(cwd: Path) -> str:
             text=True,
         )
         if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
+            merge_base = result.stdout.strip()
+            if head_sha is not None and merge_base == head_sha:
+                continue  # HEAD IS the merge-base -- diffing it against itself is a no-op
+            return merge_base
     print(
-        "WARN: could not resolve merge-base with 'develop' or 'origin/develop' -- "
-        "falling back to HEAD~1 (single-commit-back default)."
+        "WARN: could not resolve a merge-base with 'develop'/'origin/develop' that "
+        "differs from HEAD -- falling back to HEAD~1 (single-commit-back default)."
     )
     return "HEAD~1"
 
