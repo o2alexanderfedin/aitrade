@@ -246,7 +246,39 @@ def test_experiment_created_if_absent(tmp_path):
 # --- spec-contract: MANDATORY_TAG_KEYS matches mvp/spec.md's tag schema ------
 
 
+def _extract_mandatory_tag_keys(section: str) -> set[str]:
+    import re
+
+    match = re.search(
+        r"exactly these eight mandatory tags:\s*\n\s*(.+?)\.\s*\n", section
+    )
+    assert match, "'exactly these eight mandatory tags:' sentence not found"
+    return set(re.findall(r"`([A-Za-z0-9_]+)`", match.group(1)))
+
+
+def test_extract_mandatory_tag_keys_rejects_a_ninth_key_spec_md_would_have_missed():
+    """Regression guard for the bug WR-07 fixed: a per-key substring
+    containment check only ever verifies code-tags-are-subset-of-spec, so a
+    spec.md sentence listing a 9th, code-unknown tag would previously pass
+    silently. Set equality catches it."""
+    section = (
+        "## MLflow tag schema\n\n"
+        "- Every MLflow run carries exactly these eight mandatory tags:\n"
+        "  `code_hash`, `data_hash`, `seed`, `env_hash`, `segment_manifest_id`, "
+        "`model_class`, `fold_config`, `stage`, `extra_ninth_tag`.\n"
+    )
+    keys = _extract_mandatory_tag_keys(section)
+    assert keys != set(MANDATORY_TAG_KEYS)
+
+
 def test_mandatory_tag_keys_match_spec_md():
+    """Set equality (not just code-tags-is-subset-of-spec) against the exact
+    "exactly these eight mandatory tags:" sentence in spec.md's MLflow tag
+    schema section -- a per-key substring-containment check only catches a
+    key present in code but missing from spec.md; it would miss spec.md
+    gaining a 9th tag (or a stray backticked mention of a dropped key
+    elsewhere in the section) that MANDATORY_TAG_KEYS doesn't know about.
+    """
     from pathlib import Path
 
     spec_path = Path(__file__).resolve().parents[2] / "spec.md"
@@ -259,8 +291,9 @@ def test_mandatory_tag_keys_match_spec_md():
     if next_heading_idx != -1:
         section = section[:next_heading_idx]
 
-    for key in MANDATORY_TAG_KEYS:
-        assert f"`{key}`" in section, (
-            f"mandatory tag key {key!r} not found backticked in spec.md's "
-            "MLflow tag schema section"
-        )
+    spec_keys = _extract_mandatory_tag_keys(section)
+    assert spec_keys == set(MANDATORY_TAG_KEYS), (
+        f"spec.md's mandatory-tags sentence {spec_keys} != "
+        f"MANDATORY_TAG_KEYS {set(MANDATORY_TAG_KEYS)} -- the spec is the "
+        "contract, keep both in lockstep"
+    )
