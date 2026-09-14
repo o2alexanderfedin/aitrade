@@ -22,7 +22,12 @@ import subprocess
 import tomllib
 from pathlib import Path
 
-from spec.catalogue import diff_definition_changes, load_features, load_labels
+from spec.catalogue import (
+    diff_definition_changes,
+    diff_removed_names,
+    load_features,
+    load_labels,
+)
 from spec.render import render_spec
 
 PKG_ROOT = Path(__file__).resolve().parents[1]
@@ -66,14 +71,48 @@ def check_drift(spec_md_path: Path, features: dict, labels: dict) -> str | None:
     )
 
 
+def _default_base_ref(cwd: Path) -> str:
+    """Resolve the default `--base-ref`: the merge-base of HEAD with `develop`
+    (falling back to `origin/develop`, then finally `HEAD~1` with a WARN if
+    neither branch ref resolves -- e.g. a fresh clone with no local `develop`
+    and no remote configured).
+
+    A plain `HEAD~1` default only ever diffs against the immediately
+    preceding commit, which a two-commit sequence (delete a name in commit N,
+    re-add it under the same name with a different definition in commit N+1)
+    defeats: at N+1, `HEAD~1` is N, which no longer has the name, so it looks
+    brand-new. The merge-base with the branch's start point is stable across
+    however many commits the branch/PR has, closing that gap.
+    """
+    for ref in ("develop", "origin/develop"):
+        result = subprocess.run(
+            ["git", "merge-base", "HEAD", ref],
+            capture_output=True,
+            cwd=cwd,
+            text=True,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    print(
+        "WARN: could not resolve merge-base with 'develop' or 'origin/develop' -- "
+        "falling back to HEAD~1 (single-commit-back default)."
+    )
+    return "HEAD~1"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--base-ref",
-        default="HEAD~1",
-        help="git ref to diff the catalogue TOML against (default: HEAD~1)",
+        default=None,
+        help="git ref to diff the catalogue TOML against "
+        "(default: merge-base of HEAD with develop/origin-develop, "
+        "falling back to HEAD~1)",
     )
     args = parser.parse_args(argv)
+    base_ref = (
+        args.base_ref if args.base_ref is not None else _default_base_ref(PKG_ROOT)
+    )
 
     exit_code = 0
 
@@ -86,12 +125,12 @@ def main(argv: list[str] | None = None) -> int:
         print(drift)
         exit_code = 1
 
-    old_features = git_show_toml(args.base_ref, FEATURES_TOML_RELPATH, PKG_ROOT)
-    old_labels = git_show_toml(args.base_ref, LABELS_TOML_RELPATH, PKG_ROOT)
+    old_features = git_show_toml(base_ref, FEATURES_TOML_RELPATH, PKG_ROOT)
+    old_labels = git_show_toml(base_ref, LABELS_TOML_RELPATH, PKG_ROOT)
 
     if old_features is None or old_labels is None:
         print(
-            f"WARN: base-ref {args.base_ref!r} does not resolve "
+            f"WARN: base-ref {base_ref!r} does not resolve "
             f"{FEATURES_TOML_RELPATH!r}/{LABELS_TOML_RELPATH!r} -- skipping "
             "definition-drift check (not a failure)."
         )
@@ -116,6 +155,21 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  features (definition changed): {changed_features}")
         if changed_labels:
             print(f"  labels (computation changed): {changed_labels}")
+        exit_code = 1
+
+    removed_features = diff_removed_names(old_features, new_features_raw)
+    removed_labels = diff_removed_names(old_labels, new_labels_raw)
+
+    if removed_features or removed_labels:
+        print(
+            "FAIL: catalogue entry removed outright -- old runs referencing it "
+            "become unreproducible. Add `deprecated = true` to the entry instead "
+            "of deleting it:"
+        )
+        if removed_features:
+            print(f"  features (removed): {removed_features}")
+        if removed_labels:
+            print(f"  labels (removed): {removed_labels}")
         exit_code = 1
 
     return exit_code

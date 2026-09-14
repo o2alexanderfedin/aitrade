@@ -11,8 +11,6 @@ dependence on this checkout's actual HEAD/history.
 import subprocess
 from pathlib import Path
 
-import pytest
-
 from spec.catalogue import FeatureEntry, LabelEntry
 from spec.render import (
     FEATURES_BEGIN,
@@ -248,10 +246,6 @@ def _commit(repo: Path, message: str) -> None:
     subprocess.run(["git", "commit", "-q", "-m", message], cwd=repo, check=True)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="CR-08: a name only in `old` (deleted outright) is never flagged",
-)
 def test_diff_removed_names_flags_deleted_entry():
     from spec.catalogue import diff_removed_names
 
@@ -260,10 +254,6 @@ def test_diff_removed_names_flags_deleted_entry():
     assert diff_removed_names(old, new) == ["mid"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="CR-08: check_spec_diff never fails when a catalogue entry is removed",
-)
 def test_spec_diff_main_fails_when_feature_removed(monkeypatch, tmp_path, capsys):
     repo = _init_scratch_repo(tmp_path)
     (repo / "mvp" / "spec").mkdir(parents=True)
@@ -300,10 +290,6 @@ def test_spec_diff_main_fails_when_feature_removed(monkeypatch, tmp_path, capsys
     assert "mid" in captured.out
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="CR-08: default --base-ref=HEAD~1 lets a two-commit rename-under-a-name slip through",
-)
 def test_default_base_ref_resolves_to_merge_base_with_develop(tmp_path):
     repo = _init_scratch_repo(tmp_path)
     (repo / "f.txt").write_text("base\n")

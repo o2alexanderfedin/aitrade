@@ -149,3 +149,19 @@ def diff_definition_changes(
         if old[name][field] != new[name][field]
     ]
     return changed
+
+
+def diff_removed_names(old: dict[str, dict], new: dict[str, dict]) -> list[str]:
+    """Return sorted names present in `old` but absent from `new` -- i.e.
+    deleted outright rather than changed under the same name.
+
+    spec.md's own rule is "A feature whose definition changes gets a new
+    name... old runs remain reproducible" -- deleting the name out from under
+    old runs is a strictly worse violation of that invariant than changing
+    its definition in place, so removal is never silently allowed. A name
+    that must be phased out gets a `deprecated = true` field added to its
+    TOML entry instead of being deleted (REQUIRED_FEATURE_KEYS/
+    REQUIRED_LABEL_KEYS only enforce their own required keys are present;
+    an extra `deprecated` key is not rejected).
+    """
+    return sorted(old.keys() - new.keys())
