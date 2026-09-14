@@ -1,0 +1,112 @@
+"""Tests for mvp/tools/check_numba_globals.py -- the AST guardrail that flags
+an @njit function reading a module-level non-constant global.
+
+Hermetic: every fixture is an in-memory source string passed to `scan_source`
+-- never a real .py file under PKG_ROOT (a stray fixture would itself trip
+`main()`'s repo-wide scan).
+"""
+
+from tools.check_numba_globals import Violation, is_njit_decorated, main, scan_source
+
+FIXTURE = """
+from numba import njit
+
+MAX_POS: int = 100
+some_mutable_global = 5
+
+
+@njit
+def bad_kernel(x):
+    total = 0
+    total += 1
+    return x + MAX_POS + some_mutable_global + total
+"""
+
+
+def test_lowercase_mutable_global_is_flagged_uppercase_and_local_are_not():
+    violations = scan_source(FIXTURE, "fixture.py")
+    assert len(violations) == 1
+    assert "some_mutable_global" in violations[0].message
+    assert isinstance(violations[0], Violation)
+    for v in violations:
+        assert "MAX_POS" not in v.message
+        assert "'total'" not in v.message
+
+
+def test_explicit_global_statement_is_flagged():
+    source = """
+from numba import njit
+
+counter = 0
+
+
+@njit
+def bump():
+    global counter
+    counter += 1
+"""
+    violations = scan_source(source, "fixture.py")
+    assert len(violations) >= 1
+    assert any("global" in v.message for v in violations)
+
+
+def test_imported_name_is_exempt():
+    source = """
+import numpy as np
+from numba import njit
+
+
+@njit
+def use_sqrt(x):
+    return np.sqrt(x)
+"""
+    violations = scan_source(source, "fixture.py")
+    assert violations == []
+
+
+def test_non_njit_function_is_never_scanned():
+    source = """
+some_mutable_global = 5
+
+
+def plain_function(x):
+    return x + some_mutable_global
+"""
+    violations = scan_source(source, "fixture.py")
+    assert violations == []
+
+
+def test_jit_nopython_style_decorator_is_also_detected():
+    source = """
+from numba import jit
+
+leaky = 1
+
+
+@jit(nopython=True)
+def kernel(x):
+    return x + leaky
+"""
+    violations = scan_source(source, "fixture.py")
+    assert len(violations) == 1
+    assert "leaky" in violations[0].message
+
+
+def test_is_njit_decorated_helper():
+    import ast
+
+    tree = ast.parse("@njit\ndef f(x): return x\n")
+    fn = tree.body[0]
+    assert is_njit_decorated(fn) is True
+
+    tree2 = ast.parse("def g(x): return x\n")
+    fn2 = tree2.body[0]
+    assert is_njit_decorated(fn2) is False
+
+
+def test_main_scans_real_repo_and_exits_zero(capsys):
+    exit_code = main()
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "scanned" in captured.out
+    assert "njit functions" in captured.out
