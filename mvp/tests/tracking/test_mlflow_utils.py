@@ -38,8 +38,10 @@ def _end_any_active_run():
 
 
 class _FakeCompletedProcess:
-    def __init__(self, stdout: str):
+    def __init__(self, stdout: str, returncode: int = 0, stderr: str = ""):
         self.stdout = stdout
+        self.returncode = returncode
+        self.stderr = stderr
 
 
 def _fake_git_runner(*, clean: bool, sha: str):
@@ -48,6 +50,25 @@ def _fake_git_runner(*, clean: bool, sha: str):
             return _FakeCompletedProcess(stdout=f"{sha}\n")
         if "status" in cmd:
             return _FakeCompletedProcess(stdout="" if clean else " M mvp/foo.py\n")
+        raise AssertionError(f"unexpected git command in test: {cmd}")
+
+    return _runner
+
+
+def _fake_failing_git_runner(*, fail_on: str, returncode: int = 128):
+    """A fake git_runner whose `fail_on` command ("rev-parse" or "status")
+    returns a non-zero returncode, simulating git being present but the
+    command itself failing (not a git repo, corrupted .git, permissions)."""
+
+    def _runner(cmd, **kwargs):
+        if fail_on in cmd:
+            return _FakeCompletedProcess(
+                stdout="", returncode=returncode, stderr=f"fatal: {fail_on} failed"
+            )
+        if "rev-parse" in cmd:
+            return _FakeCompletedProcess(stdout=f"{'0' * 40}\n")
+        if "status" in cmd:
+            return _FakeCompletedProcess(stdout="")
         raise AssertionError(f"unexpected git command in test: {cmd}")
 
     return _runner
@@ -88,6 +109,29 @@ def test_compute_code_hash_dirty_tree_has_suffix():
     sha = "1" * 40
     result = compute_code_hash(git_runner=_fake_git_runner(clean=False, sha=sha))
     assert result == f"{sha}-dirty"
+
+
+def test_compute_code_hash_raises_on_nonzero_rev_parse_returncode():
+    with pytest.raises(RuntimeError, match="rev-parse"):
+        compute_code_hash(git_runner=_fake_failing_git_runner(fail_on="rev-parse"))
+
+
+def test_compute_code_hash_raises_on_nonzero_status_returncode():
+    with pytest.raises(RuntimeError, match="status"):
+        compute_code_hash(git_runner=_fake_failing_git_runner(fail_on="status"))
+
+
+def test_compute_code_hash_passes_cwd_to_git_runner():
+    seen_cwds = []
+
+    def _runner(cmd, **kwargs):
+        seen_cwds.append(kwargs.get("cwd"))
+        if "rev-parse" in cmd:
+            return _FakeCompletedProcess(stdout=f"{'0' * 40}\n")
+        return _FakeCompletedProcess(stdout="")
+
+    compute_code_hash(git_runner=_runner)
+    assert all(cwd is not None for cwd in seen_cwds)
 
 
 # --- compute_env_hash ---------------------------------------------------------

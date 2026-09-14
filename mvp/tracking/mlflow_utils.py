@@ -24,6 +24,8 @@ import mlflow
 
 from data.capture.config import DEFAULT_MIN_FREE_GB, DataRootError, validate_data_root
 
+PKG_ROOT = pathlib.Path(__file__).resolve().parents[1]
+
 # Re-exported so callers can catch `tracking.mlflow_utils.DataRootError`
 # without reaching into `data.capture.config` directly -- `start_tracked_run`
 # re-raises it unmodified for a bad tracking root.
@@ -76,14 +78,24 @@ def compute_code_hash(dirty_suffix: str = "-dirty", git_runner=subprocess.run) -
 
     `git_runner` is injectable so tests can supply a fake git command runner
     rather than depending on the real repo's dirty/clean state at test time.
+    Both subprocess calls pin `cwd=PKG_ROOT` (never the caller's ambient cwd)
+    and check `returncode` explicitly -- a silent `""` code_hash (git absent,
+    not a git repo, corrupted `.git`, permission error) would still satisfy
+    `MANDATORY_TAG_KEYS`'s presence check and get logged as if it were a
+    valid, reproducibility-grade git SHA.
     """
     sha_result = git_runner(
-        ["git", "rev-parse", "HEAD"], capture_output=True, text=True
+        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=PKG_ROOT
     )
+    if sha_result.returncode != 0 or not sha_result.stdout.strip():
+        raise RuntimeError(f"git rev-parse HEAD failed: {sha_result.stderr}")
     sha = sha_result.stdout.strip()
+
     status_result = git_runner(
-        ["git", "status", "--porcelain"], capture_output=True, text=True
+        ["git", "status", "--porcelain"], capture_output=True, text=True, cwd=PKG_ROOT
     )
+    if status_result.returncode != 0:
+        raise RuntimeError(f"git status --porcelain failed: {status_result.stderr}")
     dirty = bool(status_result.stdout.strip())
     return f"{sha}{dirty_suffix}" if dirty else sha
 
