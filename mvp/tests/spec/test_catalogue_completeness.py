@@ -85,6 +85,27 @@ def test_keyword_only_uncatalogued_name_is_flagged():
     assert "uncatalogued" in violations[0].message
 
 
+def test_relative_import_alias_is_also_resolved():
+    """`_catalogue_aliases` doesn't filter on node.module, so a relative
+    import (module='catalogue', level=1) still resolves."""
+    source = (
+        "from .catalogue import get_feature as gf\n"
+        'gf("totally_bogus_uncatalogued_feature")\n'
+    )
+    violations = scan_source(source, "fixture.py", FEATURE_NAMES, LABEL_NAMES)
+    assert len(violations) == 1
+    assert "uncatalogued" in violations[0].message
+
+
+def test_double_star_kwargs_call_is_flagged_non_literal():
+    """A name that can't be statically read (get_feature(**kw)) can't be
+    statically verified either -- flag it rather than silently skip."""
+    source = "kw = {}\nget_feature(**kw)\n"
+    violations = scan_source(source, "fixture.py", FEATURE_NAMES, LABEL_NAMES)
+    assert len(violations) == 1
+    assert "non-literal" in violations[0].message
+
+
 def test_main_scans_real_repo_and_exits_zero(capsys):
     exit_code = main()
     captured = capsys.readouterr()

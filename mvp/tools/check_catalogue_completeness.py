@@ -45,14 +45,18 @@ def _catalogue_aliases(tree: ast.Module) -> dict[str, str]:
     (`from spec.catalogue import get_feature as gf`) resolves to `"get_feature"`
     rather than being invisible because the literal token at the call site is
     `gf`, not `get_feature`.
+
+    Deliberately does NOT filter on `node.module` -- any `ImportFrom` that
+    binds a local name to `"get_feature"`/`"get_label"` counts, regardless of
+    which module it's imported from (`from .catalogue import get_feature as
+    gf` is a relative import with `module="catalogue"`, `level=1`; a stray
+    same-named `get_feature` from an unrelated module is not a realistic
+    false-positive risk worth narrowing the module check for). This is
+    strictly more detection than a module-scoped filter, never less.
     """
     aliases: dict[str, str] = {}
     for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.ImportFrom)
-            and node.module
-            and (node.module == "spec.catalogue" or node.module.endswith(".catalogue"))
-        ):
+        if isinstance(node, ast.ImportFrom):
             for alias in node.names:
                 if alias.name in CATALOGUE_CALL_NAMES:
                     aliases[alias.asname or alias.name] = alias.name
@@ -115,6 +119,18 @@ def scan_source(
             else next((kw.value for kw in node.keywords if kw.arg == "name"), None)
         )
         if first_arg is None:
+            # No positional arg and no literal `name=` keyword -- e.g.
+            # get_feature(**kw). The name can't be statically read, so it
+            # can't be statically verified either; per this checker's own
+            # rule (an unreadable name is a violation, not a free pass),
+            # flag it rather than silently skipping.
+            violations.append(
+                Violation(
+                    filename,
+                    node.lineno,
+                    f"non-literal name passed to {call_kind}",
+                )
+            )
             continue
 
         if not (

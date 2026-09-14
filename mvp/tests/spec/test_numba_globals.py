@@ -155,6 +155,47 @@ def kernel(x):
     assert "lookup" in violations[0].message
 
 
+def test_module_level_for_loop_target_is_flagged():
+    source = """
+from numba import njit
+
+for leaky in range(1):
+    pass
+
+
+@njit
+def kernel(x):
+    return x + leaky
+"""
+    violations = scan_source(source, "fixture.py")
+    assert len(violations) == 1
+    assert "leaky" in violations[0].message
+
+
+def test_module_level_with_as_target_is_flagged():
+    source = """
+from numba import njit
+
+class _Ctx:
+    def __enter__(self):
+        return 5
+
+    def __exit__(self, *a):
+        return False
+
+with _Ctx() as leaky:
+    pass
+
+
+@njit
+def kernel(x):
+    return x + leaky
+"""
+    violations = scan_source(source, "fixture.py")
+    assert len(violations) == 1
+    assert "leaky" in violations[0].message
+
+
 def test_nested_function_param_does_not_mask_outer_global_read():
     source = """
 from numba import njit

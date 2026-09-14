@@ -143,9 +143,14 @@ def _walk_module_stmts(stmts: list[ast.stmt], names: set[str]) -> None:
             names.add(stmt.target.id)
         elif isinstance(stmt, (ast.Import, ast.ImportFrom)):
             continue  # exempt: imported names are not subject to this rule
-        elif isinstance(stmt, (ast.If, ast.With)):
+        elif isinstance(stmt, ast.If):
             _walk_module_stmts(stmt.body, names)
-            _walk_module_stmts(getattr(stmt, "orelse", []), names)
+            _walk_module_stmts(stmt.orelse, names)
+        elif isinstance(stmt, (ast.With, ast.AsyncWith)):
+            for item in stmt.items:
+                if item.optional_vars is not None:
+                    names.update(_target_names(item.optional_vars))
+            _walk_module_stmts(stmt.body, names)
         elif isinstance(stmt, ast.Try):
             _walk_module_stmts(stmt.body, names)
             _walk_module_stmts(stmt.orelse, names)
@@ -153,6 +158,8 @@ def _walk_module_stmts(stmts: list[ast.stmt], names: set[str]) -> None:
             for handler in stmt.handlers:
                 _walk_module_stmts(handler.body, names)
         elif isinstance(stmt, (ast.For, ast.AsyncFor, ast.While)):
+            if isinstance(stmt, (ast.For, ast.AsyncFor)):
+                names.update(_target_names(stmt.target))
             _walk_module_stmts(stmt.body, names)
             _walk_module_stmts(stmt.orelse, names)
 
@@ -160,7 +167,9 @@ def _walk_module_stmts(stmts: list[ast.stmt], names: set[str]) -> None:
 def _module_level_globals(tree: ast.Module) -> set[str]:
     """Module-level Assign/AnnAssign/AugAssign target names (the candidate
     "globals"), including ones produced inside a module-level If/Try/With/
-    For/While body (see `_walk_module_stmts`)."""
+    For/While body (see `_walk_module_stmts`), and For-loop / `with ... as`
+    targets themselves (a module-level `for x in ...:` or `with open(...) as
+    f:` binds `x`/`f` at module scope too)."""
     names: set[str] = set()
     _walk_module_stmts(tree.body, names)
     return names
