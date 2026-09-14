@@ -482,14 +482,14 @@ tracking_uri = f"sqlite:///{os.path.abspath(MLFLOW_ROOT)}/mlflow.db"
 
 **If this table is empty:** N/A — see above.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Should the ruff pin move to 0.16.x now or stay at 0.15.x?**
+1. **Should the ruff pin move to 0.16.x now or stay at 0.15.x?** — **RESOLVED: hold ruff at 0.15.\*, adopted in 02-04-PLAN.md** (pre-commit and CI both resolve ruff from `mvp/uv.lock` via `uv run --directory mvp ruff`, no independent `astral-sh/ruff-pre-commit` pin, so there is no second version to bump).
    - What we know: `mvp/pyproject.toml` currently pins `ruff==0.15.*`; PyPI's current latest is `0.16.7`; `astral-sh/ruff-pre-commit`'s latest tag is also `v0.16.7`.
    - What's unclear: whether ruff 0.16 introduces any rule-behavior change that affects the existing `TID251` banned-pandas config from Phase 1.
    - Recommendation: hold at `0.15.*` for this infra-only phase to minimize unrelated diff noise; bump ruff as a dedicated, separately-reviewed change if desired later. Either choice is compatible with everything else in this research.
 
-2. **Does `mlflow-skinny` fully cover any MLflow feature later phases (5, 9) will need (e.g., nested runs for the selection-bias ledger, `MlflowCallback` from `optuna-integration`)?**
+2. **Does `mlflow-skinny` fully cover any MLflow feature later phases (5, 9) will need (e.g., nested runs for the selection-bias ledger, `MlflowCallback` from `optuna-integration`)?** — **RESOLVED: deferred to Phase 9 research (optuna-integration MLflowCallback vs mlflow-skinny), out of Phase 2 scope.**
    - What we know: `mlflow-skinny` covers `start_run`, nested runs (untested here but documented as a core tracking-client feature, not a full-mlflow-only feature), tags, metrics, `MlflowClient`.
    - What's unclear: `optuna-integration`'s `MLflowCallback` (Phase 9) internals were not inspected this session — need to verify it doesn't hard-import full `mlflow` (defeating the point of switching to `mlflow-skinny` now).
    - Recommendation: re-verify `optuna-integration[mlflow]`'s dependency graph specifically in Phase 9's research, before that phase adds the dependency; not a Phase 2 blocker since Phase 2 has no Optuna usage.
