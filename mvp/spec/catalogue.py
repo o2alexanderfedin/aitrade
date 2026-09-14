@@ -93,7 +93,9 @@ def load_features(path: Path = FEATURES_TOML) -> dict[str, FeatureEntry]:
             raise CatalogueError(
                 f"feature {name!r} missing required key(s): {sorted(missing)}"
             )
-        entries[name] = FeatureEntry(name=name, **{k: entry[k] for k in REQUIRED_FEATURE_KEYS})
+        entries[name] = FeatureEntry(
+            name=name, **{k: entry[k] for k in REQUIRED_FEATURE_KEYS}
+        )
     return entries
 
 
@@ -107,7 +109,9 @@ def load_labels(path: Path = LABELS_TOML) -> dict[str, LabelEntry]:
             raise CatalogueError(
                 f"label {name!r} missing required key(s): {sorted(missing)}"
             )
-        entries[name] = LabelEntry(name=name, **{k: entry[k] for k in REQUIRED_LABEL_KEYS})
+        entries[name] = LabelEntry(
+            name=name, **{k: entry[k] for k in REQUIRED_LABEL_KEYS}
+        )
     return entries
 
 

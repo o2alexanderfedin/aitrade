@@ -133,7 +133,11 @@ def render_spec(
     """
     lines = spec_md_text.split("\n")
     lines = _replace_block(
-        lines, FEATURES_BEGIN, FEATURES_END, FEATURES_HEADER, render_features_table(features)
+        lines,
+        FEATURES_BEGIN,
+        FEATURES_END,
+        FEATURES_HEADER,
+        render_features_table(features),
     )
     lines = _replace_block(
         lines, LABELS_BEGIN, LABELS_END, LABELS_HEADER, render_labels_table(labels)

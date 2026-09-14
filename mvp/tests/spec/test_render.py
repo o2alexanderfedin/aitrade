@@ -21,7 +21,11 @@ from spec.render import (
     render_labels_table,
     render_spec,
 )
-from tools.check_spec_diff import check_drift, git_show_toml, main as check_spec_diff_main
+from tools.check_spec_diff import (
+    check_drift,
+    git_show_toml,
+    main as check_spec_diff_main,
+)
 
 FEATURES = {
     "mid": FeatureEntry(
@@ -212,7 +216,9 @@ def test_check_drift_returns_diff_when_rendering_differs():
     assert "mid" in diff
 
 
-def test_main_warns_and_exits_zero_when_base_ref_unresolvable(monkeypatch, tmp_path, capsys):
+def test_main_warns_and_exits_zero_when_base_ref_unresolvable(
+    monkeypatch, tmp_path, capsys
+):
     import tools.check_spec_diff as mod
 
     monkeypatch.setattr(mod, "PKG_ROOT", tmp_path)
