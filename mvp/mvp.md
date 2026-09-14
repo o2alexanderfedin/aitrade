@@ -49,15 +49,14 @@ Both stages are designed for **rolling windows with periodic re-training**; walk
 
 ## Decision logic (explicit)
 
-```python
-if position == 0:
-    if pred_10s_return * mid > best_ask + X_bps_in_price:    long
-    elif pred_10s_return * mid < best_bid - X_bps_in_price:  short
-    else:                                                    flat
-else:  # in a position, only opposite-direction trades allowed
-    if position > 0 and pred_10s_return * mid < best_bid - X_bps_in_price: flip to short
-    if position < 0 and pred_10s_return * mid > best_ask + X_bps_in_price: flip to long
-```
+**Struck (dimensional bug, SPEC-03).** An earlier draft of this section multiplied the
+predicted return by the midprice and compared that price *change* against a price
+*level* (`best_ask`/`best_bid` plus an offset) — the two sides of the comparison were
+not in the same units, so the resulting threshold crossings were wrong except by
+coincidence. The corrected pseudocode is authoritative in
+[`spec.md`](spec.md)'s "Decision rule (Stage 2)" section (`spec.md` wins per this
+doc's own conflict rule, see Stage 0 below). Read that section, not this one, for the
+actual entry/exit condition.
 
 ## Two-stage training pipeline
 

@@ -38,11 +38,17 @@ Listed roughly in the order they were given. Each is the human input that trigge
 ## Contents
 
 - [Conventions](#conventions)
+  - [Spot-L1 clock exception](#spot-l1-clock-exception)
+  - [Trades-backfill side-exactness](#trades-backfill-side-exactness)
 - [Feature catalogue](#feature-catalogue)
 - [Label catalogue](#label-catalogue)
+- [Decision rule (Stage 2)](#decision-rule-stage-2)
 - [DOs](#dos)
 - [DONTs](#donts)
 - [Known HFT/MFT pitfalls](#known-hftmft-pitfalls)
+- [Sharpe annualization convention](#sharpe-annualization-convention)
+- [MLflow tag schema](#mlflow-tag-schema)
+- [Numba no-globals rule](#numba-no-globals-rule)
 - [Update protocol](#update-protocol)
 - [Glossary](#glossary)
 - [Change log](#change-log)
@@ -59,18 +65,43 @@ Listed roughly in the order they were given. Each is the human input that trigge
 - **Currency / units**: prices in quote currency; sizes in base currency; notional in USDT.
 - **File layout** (TBD before v0): partition by `symbol/date`, Parquet, schema versioned.
 - **Time alignment**: feature state accumulates over **every** incoming row (BBO updates, trades, …) — no rows are skipped during ingest, so accumulators (rolling windows, EMAs, OFI, etc.) see the full event stream. **Decision points** (training labels, model inference, simulator order/cancel decisions) are emitted only on the **last row of each `etime`** group — a proxy for "decide at end of received packet, not in the middle of it". When multiple events share an `etime`, the last one (latest in arrival order within the file) is the decision row; preceding rows update state but produce no output. This applies uniformly across Stage 1 (forecast) and Stage 2 (sim).
-- **Side conventions**: `tradeSide ∈ {-1, 0, +1}` (sell, unknown, buy). Trade-side backfill rule: closer to bid ⇒ sell; closer to ask ⇒ buy; tie ⇒ 0. Backfilled side stored alongside raw (`tradeSide_raw`, `tradeSide_corrected`).
+- **Side conventions**: `tradeSide ∈ {-1, 0, +1}` (sell, unknown, buy). Trade-side backfill rule (applies **only** to legacy rows where the raw side is absent or `0` — see [Trades-backfill side-exactness](#trades-backfill-side-exactness) below; an exact side is never re-classified): closer to bid ⇒ sell; closer to ask ⇒ buy; tie ⇒ 0. Backfilled side stored alongside raw (`tradeSide_raw`, `tradeSide_corrected`).
 - **Resync events**: explicitly tagged in the data; downstream features must respect a configurable post-resync warm-up.
 - **Tech stack (Python)**: `polars` + `numpy` + `numba` (sim hot path). **No `pandas`** — `polars` is faster on the workloads here and avoids the index/dtype landmines. Transformer track adds PyTorch; tree track adds LightGBM (default), CatBoost or XGBoost optional; regression track stays in scikit-learn. MLflow for tracking. Single feature-pipeline code path shared by training, inference, and simulator (Production–research drift mitigation).
+
+### Spot-L1 clock exception
+
+Spot L1 is deferred post-MVP (swap-only capture, Phase 1 decision). Binance's spot
+`bookTicker` stream carries no exchange timestamp field at all — only swap/futures
+`bookTicker` carries `E`/`T`. If spot L1 is ever captured, the `etime` approach for it
+(e.g. the `@depth@100ms` diff-depth stream, which does carry `E`; an SBE stream; or an
+explicitly documented local-recv-clock exception) **must be chosen and written into
+this section first**. No spot row may exist anywhere in the pipeline with a null or
+locally-sourced `etime` without this section being updated to describe and justify it.
+
+### Trades-backfill side-exactness
+
+- Captured `@trade` stream frames carry `m` (buyer-is-maker) — the side is **exact**,
+  not inferred.
+- `data.binance.vision` futures `trades` daily dumps carry `is_buyer_maker` — the side
+  is **exact**, not inferred.
+- Nearest-quote classification (`tradeSide_corrected`; closer to bid ⇒ sell, closer to
+  ask ⇒ buy, tie ⇒ unknown) applies **only** to legacy rows where the side field is
+  absent or `0`. An exact side (from `m` or `is_buyer_maker`) is never "corrected" by
+  the nearest-quote heuristic.
 
 ## Feature catalogue
 
 > Every feature must have an entry before being used in training. Empty rows are placeholders.
 
+<!-- catalogue:features:begin -->
 | Name | Definition | Information set (latest input timestamp ≤ decision `t`) | Lag (if any) | Normalization | Source dataset(s) | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| *example*: `mid` | `(best_bid + best_ask) / 2` from L1 | `t` (most recent BBO at or before `t`) | 0 | none | swap L1 BBO | Treat sub-tick stickiness flag separately |
-| *example*: `imb_top` | `(bid_size - ask_size) / (bid_size + ask_size)` | `t` | 0 | none (already in [-1, 1]) | swap L1 BBO | Undefined when both sizes are 0 |
+| `mid` | (best_bid + best_ask) / 2 | t | 0 | none | swap L1 BBO | Treat sub-tick stickiness flag separately |
+| `imb_top` | (bid_size - ask_size) / (bid_size + ask_size) | t | 0 | none | swap L1 BBO | Undefined when both sizes are 0 |
+| `ofi` | Order-flow imbalance: top-of-book quote-and-size delta between consecutive updates (Cont-Kukanov-Stoikov convention) | t | 0 | none | swap L1 BBO | Declared, not yet implemented; implementation is Phase 4 (FEAT-02) |
+| `trade_flow` | Signed trade volume over a trailing window using tradeSide_corrected | t | 0 | none | swap trades | Declared, not yet implemented; implementation is Phase 4 (FEAT-02) |
+<!-- catalogue:features:end -->
 
 **Rules:**
 
@@ -82,10 +113,14 @@ Listed roughly in the order they were given. Each is the human input that trigge
 
 > Every label has an entry before being used.
 
+<!-- catalogue:labels:begin -->
 | Name | Horizon | Computation | Information set required to evaluate | Embargo | Notes |
 | --- | --- | --- | --- | --- | --- |
-| *example*: `ret_10s_mid` | 10s | `(mid_{t+10s} - mid_t) / mid_t` | data through `t + 10s` | ≥ 10s | Primary trading target |
-| *example*: `ret_1s_mid` | 1s | analogous | data through `t + 1s` | ≥ 1s | Diagnostic only |
+| `ret_10s_mid` | 10s | (mid_{t+10s} - mid_t) / mid_t | data through t + 10s | >= 10s | Primary trading target |
+| `ret_1s_mid` | 1s | (mid_{t+1s} - mid_t) / mid_t | data through t + 1s | >= 1s | Diagnostic only |
+| `ret_1min_mid` | 1min | (mid_{t+1min} - mid_t) / mid_t | data through t + 1min | >= 1min | Diagnostic only |
+| `ret_10min_mid` | 10min | (mid_{t+10min} - mid_t) / mid_t | data through t + 10min | >= 10min | Diagnostic only |
+<!-- catalogue:labels:end -->
 
 **Rules:**
 
@@ -127,6 +162,29 @@ Training on non-tradeable rows teaches patterns the live system cannot exploit; 
 
 ---
 
+## Decision rule (Stage 2)
+
+Corrected pseudocode (SPEC-03) — supersedes the struck block in `mvp.md`'s "Decision
+logic (explicit)" section, which multiplied the predicted return by the midprice and
+compared that price *change* against a price *level*, producing wrong signs except by
+coincidence.
+
+Let `pred_mid = mid * (1 + pred_10s_return)` be the model's predicted midprice ten
+seconds ahead, and `X_price = mid * X_bps / 10_000` be the swept threshold `X_bps`
+expressed in price units at the current midprice.
+
+- **When flat** (`position == 0`): go long when `pred_mid > best_ask + X_price`; go
+  short when `pred_mid < best_bid - X_price`; otherwise stay flat.
+- **When positioned**: only the opposite-direction flip is allowed, using the same two
+  comparisons — a long position flips to short when `pred_mid < best_bid - X_price`; a
+  short position flips to long when `pred_mid > best_ask + X_price`. No same-direction
+  or risk-increasing order is ever placed.
+
+This is the authoritative decision rule. Phase 6's oracle tests re-derive Stage-2 P&L
+from this exact rule, not from `mvp.md`'s struck pseudocode.
+
+---
+
 ## DOs
 
 - **DO** compute every feature using only data available at or before the decision timestamp; prove it per feature in CI.
@@ -156,6 +214,9 @@ Training on non-tradeable rows teaches patterns the live system cannot exploit; 
 - **DON'T** silently swap data versions between runs — never use `latest` in pipelines.
 - **DON'T** ship a more complex model class when the simpler class meets the bar at parity.
 - **DON'T** override the critic / red-team / leakage-audit findings without a written rationale on the PR.
+- **DON'T** annualize a per-trade Sharpe by `sqrt(trades/year)` — see [Sharpe annualization convention](#sharpe-annualization-convention); the only valid gating Sharpe is the daily-P&L form.
+- **DON'T** depend on the full `mlflow` package — it unconditionally imports `pandas` transitively (verified; see `02-RESEARCH.md`); use `mlflow-skinny` + `sqlalchemy` + `alembic` instead.
+- **DON'T** call `mlflow.search_runs()` (the pandas-DataFrame-returning convenience API) anywhere in the project, even under `mlflow-skinny` — use `MlflowClient().search_runs()` instead.
 
 ---
 
@@ -253,6 +314,56 @@ Training on non-tradeable rows teaches patterns the live system cannot exploit; 
 
 ---
 
+## Sharpe annualization convention
+
+- **Headline annualized Sharpe** = `mean(daily_pnl) / std(daily_pnl) * sqrt(365)`,
+  computed on UTC-day P&L extracted from the simulator's equity curve (crypto perps
+  trade 24/7 — 365, not 252, trading days/year).
+- Daily P&L is the sum of realized + mark-to-market P&L over each UTC day. A day with
+  zero trades is a valid observation with P&L equal to 0 — it is never dropped or
+  imputed.
+- **Hourly Sharpe** (`* sqrt(8760)`) may be reported alongside, always explicitly
+  labeled "secondary — data-starved diagnostic". It is never the gate.
+- The MVP gate ("Sharpe > 5") is evaluated **only** when the held-out window has **at
+  least 30 daily observations**. Fewer observations yields the result "insufficient
+  history", not a pass/fail verdict.
+- **Forbidden**: annualizing a per-trade Sharpe by `sqrt(trades/year)`. This form
+  inflates HFT-style Sharpe into meaninglessness and must never be reported as the
+  gating metric (see DONTs).
+
+## MLflow tag schema
+
+- Every MLflow run carries exactly these eight mandatory tags:
+  `code_hash`, `data_hash`, `seed`, `env_hash`, `segment_manifest_id`, `model_class`, `fold_config`, `stage`.
+- `code_hash` — git `HEAD` SHA, with a `-dirty` suffix appended when the working tree
+  is not clean at run start.
+- `data_hash` — content hash of the dataset manifest the run consumes, or the literal
+  string `"none"` for a run that consumes no dataset.
+- `seed` — the integer random seed.
+- `env_hash` — SHA-256 of `mvp/uv.lock`.
+- `segment_manifest_id`, `model_class`, `fold_config`, `stage` — may be the literal
+  string `"n/a"` before their owning phase lands, but the **keys must always be
+  present**; a tag dict missing any key is a schema violation, not an optional field.
+- The tracking wrapper (`mvp/tracking/mlflow_utils.py`, Plan 03) is the only place a
+  run is started; it **rejects** any `start_run` call whose tag dict is missing a
+  mandatory key, rather than silently logging a partial tag set.
+
+## Numba no-globals rule
+
+- `@njit`-decorated functions take **every** input as an explicit parameter.
+  Module-level globals are limited to compile-time constants declared with an
+  explicit UPPER_CASE name (the `Final`/constant escape hatch).
+- A `@njit` function that reads a module-level, non-constant global freezes that
+  value at first compile — later edits to the global are **silently ignored**, not
+  picked up on the next call. This is a correctness trap, not a style preference.
+- Enforced by `mvp/tools/check_numba_globals.py` (Plan 02), an AST check that fails on
+  any `Name` load inside an `@njit`-decorated function body that resolves to a
+  module-level, non-UPPER_CASE binding. The check must run in CI even against zero
+  `@njit` functions (none exist yet, Phase 2), so it is proven wired before Phase 4
+  adds the first kernel.
+
+---
+
 ## Update protocol
 
 - **Same-day updates** for any leakage finding, post-mortem, or surprise.
@@ -288,3 +399,4 @@ Training on non-tradeable rows teaches patterns the live system cannot exploit; 
 | Date | Change | Reason | Author |
 | --- | --- | --- | --- |
 | *seed* | Initial spec extracted from `mvp.md` Stage 0 | First version | TBD |
+| 2026-09-13 | Stage 0 corrections: decision rule, spot-L1 exception, side-exactness, Sharpe convention, MLflow tag schema, numba no-globals rule; catalogue markers added | SPEC-03/SPEC-04 | Claude (session) |
