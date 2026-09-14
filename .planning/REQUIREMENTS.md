@@ -10,7 +10,7 @@ Requirements for MVP exit. Each maps to roadmap phases. Source of truth: `mvp.md
 ### Stage 0 — Living Spec & Conventions
 
 - [x] **SPEC-01**: spec.md exists in seed form with feature and label catalogues in machine-readable format (structured entries CI can parse, not prose tables)
-- [ ] **SPEC-02**: CI validates that every feature/label used in training has a catalogue entry, and rejects `import pandas` and `latest` data references
+- [x] **SPEC-02**: CI validates that every feature/label used in training has a catalogue entry, and rejects `import pandas` and `latest` data references
 - [x] **SPEC-03**: mvp.md decision-rule pseudocode dimensional bug fixed (`mid * (1 + pred)` vs price level) and spec.md amended same-day with: spot-L1 clock exception, trades-backfill side-exactness
 - [x] **SPEC-04**: Sharpe annualization convention, MLflow tag schema, and numba no-globals lint rule pre-declared in spec.md before any run
 
@@ -66,7 +66,7 @@ Requirements for MVP exit. Each maps to roadmap phases. Source of truth: `mvp.md
 ### Tracking & Reproducibility
 
 - [ ] **TRACK-01**: MLflow with SQL (SQLite) backend; run manifest records code hash + data hash + seed + env hash for every run
-- [ ] **TRACK-02**: Environment pinned (numba/numpy/llvmlite compatibility matrix, Python 3.13, uv-managed); CI enforces pins
+- [x] **TRACK-02**: Environment pinned (numba/numpy/llvmlite compatibility matrix, Python 3.13, uv-managed); CI enforces pins
 
 ### Version Gates
 
@@ -127,7 +127,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | SPEC-01 | Phase 2 | Complete |
-| SPEC-02 | Phase 2 | Pending |
+| SPEC-02 | Phase 2 | Complete |
 | SPEC-03 | Phase 2 | Complete |
 | SPEC-04 | Phase 2 | Complete |
 | DATA-01 | Phase 1 | Complete |
@@ -162,7 +162,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MON-02 | Phase 9 | Pending |
 | MON-03 | Phase 9 | Pending |
 | TRACK-01 | Phase 2 | Pending |
-| TRACK-02 | Phase 2 | Pending |
+| TRACK-02 | Phase 2 | Complete |
 | GATE-01 | Phase 8 | Pending |
 | GATE-02 | Phase 9 | Pending |
 | GATE-03 | Phase 11 | Pending |

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-09-14T02:14:44.406Z"
+stopped_at: Completed 02-04-PLAN.md Tasks 1-2; Task 3 (human-verify checkpoint) pending
+last_updated: "2026-09-14T02:46:07.546Z"
 last_activity: 2026-09-14
 progress:
   total_phases: 11
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 8
-  completed_plans: 5
-  percent: 63
+  completed_plans: 8
+  percent: 100
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 2 of 11 (Stage 0: Living Spec, CI Guardrails & Tracking) — EXECUTING
-Plan: 2 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-09-14
 
-Progress: [██████░░░░] 63%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -57,6 +57,7 @@ Progress: [██████░░░░] 63%
 | Phase 01 P03 | ~50min | 2 tasks | 6 files |
 | Phase 01 P04 | ~70min | 3 tasks | 13 files |
 | Phase 02 P01 | 10min | 3 tasks | 15 files |
+| Phase 02 P04 | 18min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -94,6 +95,9 @@ Recent decisions affecting current work:
 - [Phase 2]: Catalogue markers wrap the entire table (header+separator+rows), not just the rows -- a marker line placed inside an existing GFM table breaks table continuation on GitHub (GFM sec 4.10).
 - [Phase 2]: mvp/tests/spec/__init__.py must not exist -- it collides with the real mvp/spec package under pytest's rootdir package-inference import, silently shadowing spec.catalogue with ModuleNotFoundError.
 - [Phase 2]: diff_definition_changes(old, new, field='definition') defaults to the features comparison key; every label call site passes field='computation' explicitly since labels have no definition key.
+- [Phase 2]: Pre-commit and GitHub Actions run byte-identical command strings for every guardrail (repo:local hooks, no astral ruff-pre-commit integration hook) -- eliminates the ruff-version-drift class of bug entirely.
+- [Phase 2]: All eight Stage-0 CI guardrails mechanically observed red-then-green, plus a real GitHub Actions run observed both failing (ci-red-proof, deleted) and succeeding (real branch): success run https://github.com/o2alexanderfedin/aitrade/actions/runs/34799740762, failure run https://github.com/o2alexanderfedin/aitrade/actions/runs/34799815465.
+- [Phase 2]: mvp/tests/leakage/ scaffolded with one placeholder test, wired into both CI callers' pytest invocation identically to tests/spec/tracking/capture, so Phase 4's real per-feature shuffle-future leakage tests land in an already-CI-exercised directory.
 
 ### Pending Todos
 
@@ -109,6 +113,7 @@ Recent decisions affecting current work:
 - [Phase 1]: Capture has not started yet. Roadmap was created 2026-06-10; it is now 2026-09-11, so ~3 months of L1 the roadmap assumed would be accruing were never captured. L1-dependent phases are gated on capture depth from the day the daemon actually starts.
 - [Phase 8]: Q3 (GPU spec & training budget) unresolved — blocks transformer track; mvp.md says needed before v0
 - [Phase 11]: Q5 (2nd-tier symbol choice) — check tick-size/filter re-tick history of candidates first
+- [Phase 2, Plan 04]: Task 3 (checkpoint:human-verify, gate=blocking) is PENDING human review. Evidence (8 red-proof transcripts, 2 GitHub Actions run URLs) is gathered in 02-04-SUMMARY.md's CHECKPOINT EVIDENCE section. Phase 2 should not be marked complete in ROADMAP.md until a human reviews and responds "approved".
 
 ## Deferred Items
 
@@ -120,6 +125,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-14T02:14:44.391Z
-Stopped at: Completed 02-01-PLAN.md
-Resume file: None
+Last session: 2026-09-14T02:46:07.538Z
+Stopped at: Completed 02-04-PLAN.md Tasks 1-2; Task 3 (human-verify checkpoint) pending
+Resume file: .planning/phases/02-stage-0-living-spec-ci-guardrails-tracking/02-04-SUMMARY.md

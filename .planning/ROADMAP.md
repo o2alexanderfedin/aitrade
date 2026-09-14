@@ -60,9 +60,9 @@ Plans:
 
 Plans:
 - [x] 02-01-PLAN.md — Move spec.md/mvp.md under mvp/, land all spec corrections, TOML catalogues + registry + renderer
-- [ ] 02-02-PLAN.md — CI guardrail scripts: catalogue completeness, latest-ban, numba-no-globals, pin assertion
-- [ ] 02-03-PLAN.md — MLflow tracking wrapper (mlflow-skinny, mandatory tags, root guard reuse, smoke run)
-- [ ] 02-04-PLAN.md — Wire pre-commit + GitHub Actions, prove every check red-then-green
+- [x] 02-02-PLAN.md — CI guardrail scripts: catalogue completeness, latest-ban, numba-no-globals, pin assertion
+- [x] 02-03-PLAN.md — MLflow tracking wrapper (mlflow-skinny, mandatory tags, root guard reuse, smoke run)
+- [x] 02-04-PLAN.md — Wire pre-commit + GitHub Actions, prove every check red-then-green
 
 ### Phase 3: Data Layer — Backfill, Ingest & Lockbox
 **Goal**: A canonical, immutable, manifest-addressed data lake exists with quality gates and a mechanically enforced held-out quarantine
