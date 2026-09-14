@@ -7,8 +7,6 @@ Hermetic: every fixture is an in-memory source string passed directly to
 would itself trip `main()`'s repo-wide scan against the "clean" repo.
 """
 
-import pytest
-
 from tools.check_catalogue_completeness import Violation, main, scan_source
 
 FEATURE_NAMES = frozenset({"mid", "imb_top", "ofi", "trade_flow"})
@@ -70,7 +68,6 @@ def test_scan_source_defaults_to_real_catalogue():
     assert len(violations) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="CR-01: aliased import bypasses the check")
 def test_aliased_import_uncatalogued_name_is_flagged():
     source = (
         "from spec.catalogue import get_feature as gf\n"
@@ -81,7 +78,6 @@ def test_aliased_import_uncatalogued_name_is_flagged():
     assert "uncatalogued" in violations[0].message
 
 
-@pytest.mark.xfail(strict=True, reason="CR-02: keyword-only call bypasses the check")
 def test_keyword_only_uncatalogued_name_is_flagged():
     source = 'get_feature(name="bogus_uncatalogued")\n'
     violations = scan_source(source, "fixture.py", FEATURE_NAMES, LABEL_NAMES)

@@ -38,11 +38,42 @@ class Violation:
         return f"{self.filename}:{self.lineno}: {self.message}"
 
 
-def _is_catalogue_call(node: ast.Call) -> str | None:
-    """Return 'get_feature'/'get_label' if `node` calls one of them, else None."""
+def _catalogue_aliases(tree: ast.Module) -> dict[str, str]:
+    """Map every local alias bound to `get_feature`/`get_label` (however it was
+    imported) to its real catalogue name, so a call through an aliased import
+    (`from spec.catalogue import get_feature as gf`) resolves to `"get_feature"`
+    rather than being invisible because the literal token at the call site is
+    `gf`, not `get_feature`.
+    """
+    aliases: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module
+            and (node.module == "spec.catalogue" or node.module.endswith(".catalogue"))
+        ):
+            for alias in node.names:
+                if alias.name in CATALOGUE_CALL_NAMES:
+                    aliases[alias.asname or alias.name] = alias.name
+    return aliases
+
+
+def _is_catalogue_call(
+    node: ast.Call, aliases: dict[str, str] | None = None
+) -> str | None:
+    """Return 'get_feature'/'get_label' if `node` calls one of them, else None.
+
+    Resolves through import aliases (`aliases`, from `_catalogue_aliases`) in
+    addition to the literal-token check, so `from spec.catalogue import
+    get_feature as gf; gf(...)` and `catalogue.get_feature(...)`-style attribute
+    access are both recognized.
+    """
     func = node.func
-    if isinstance(func, ast.Name) and func.id in CATALOGUE_CALL_NAMES:
-        return func.id
+    if isinstance(func, ast.Name):
+        if func.id in CATALOGUE_CALL_NAMES:
+            return func.id
+        if aliases and func.id in aliases:
+            return aliases[func.id]
     if isinstance(func, ast.Attribute) and func.attr in CATALOGUE_CALL_NAMES:
         return func.attr
     return None
@@ -67,18 +98,23 @@ def scan_source(
         label_names = frozenset(load_labels().keys())
 
     tree = ast.parse(source, filename=filename)
+    aliases = _catalogue_aliases(tree)
     violations: list[Violation] = []
 
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
-        call_kind = _is_catalogue_call(node)
+        call_kind = _is_catalogue_call(node, aliases)
         if call_kind is None:
             continue
 
-        if not node.args:
+        first_arg = (
+            node.args[0]
+            if node.args
+            else next((kw.value for kw in node.keywords if kw.arg == "name"), None)
+        )
+        if first_arg is None:
             continue
-        first_arg = node.args[0]
 
         if not (
             isinstance(first_arg, ast.Constant) and isinstance(first_arg.value, str)
@@ -124,11 +160,14 @@ def main() -> int:
         source = path.read_text()
         rel = str(path.relative_to(PKG_ROOT))
         violations = scan_source(source, rel, feature_names, label_names)
+        tree = ast.parse(source, filename=rel)
+        aliases = _catalogue_aliases(tree)
         call_site_count += len(
             [
                 n
-                for n in ast.walk(ast.parse(source, filename=rel))
-                if isinstance(n, ast.Call) and _is_catalogue_call(n) is not None
+                for n in ast.walk(tree)
+                if isinstance(n, ast.Call)
+                and _is_catalogue_call(n, aliases) is not None
             ]
         )
         all_violations.extend(violations)
