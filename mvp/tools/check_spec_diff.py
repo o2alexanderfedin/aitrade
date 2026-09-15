@@ -29,6 +29,7 @@ from spec.catalogue import (
     load_labels,
 )
 from spec.render import render_spec
+from tools.git_env import scrubbed_git_env
 
 PKG_ROOT = Path(__file__).resolve().parents[1]
 
@@ -46,6 +47,7 @@ def git_show_toml(ref: str, relpath: str, cwd: Path) -> dict | None:
         capture_output=True,
         cwd=cwd,
         text=True,
+        env=scrubbed_git_env(),
     )
     if result.returncode != 0:
         return None
@@ -92,7 +94,11 @@ def _default_base_ref(cwd: Path) -> str:
     never a narrowing, of what gets caught.
     """
     head = subprocess.run(
-        ["git", "rev-parse", "HEAD"], capture_output=True, cwd=cwd, text=True
+        ["git", "rev-parse", "HEAD"],
+        capture_output=True,
+        cwd=cwd,
+        text=True,
+        env=scrubbed_git_env(),
     )
     head_sha = head.stdout.strip() if head.returncode == 0 else None
 
@@ -102,6 +108,7 @@ def _default_base_ref(cwd: Path) -> str:
             capture_output=True,
             cwd=cwd,
             text=True,
+            env=scrubbed_git_env(),
         )
         if result.returncode == 0 and result.stdout.strip():
             merge_base = result.stdout.strip()

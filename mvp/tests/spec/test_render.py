@@ -8,7 +8,6 @@ file). check_spec_diff.* git-ref tests build a scratch git repo under `tmp_path`
 dependence on this checkout's actual HEAD/history.
 """
 
-import os
 import subprocess
 from pathlib import Path
 
@@ -22,6 +21,7 @@ from spec.render import (
     render_labels_table,
     render_spec,
 )
+from tools.git_env import scrubbed_git_env
 from tools.check_spec_diff import (
     check_drift,
     git_show_toml,
@@ -185,11 +185,16 @@ def test_render_spec_against_real_repo_state_is_idempotent_on_second_run():
 #: hang on a GPG prompt or run an unexpected hook against a "hermetic" test
 #: scratch repo -- the same hermeticity gap Phase 1's disk-state lesson
 #: exists to avoid).
-_GIT_ENV = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+# Built per call, never captured at import: `git commit -- <pathspec>` exports
+# GIT_DIR + GIT_INDEX_FILE into its pre-commit hook (which runs this suite), and
+# inheriting them makes `cwd=` a lie -- scratch-repo writes land in the outer
+# repo's temporary index and kill the commit. See tools/git_env.py.
+def _git_env() -> dict[str, str]:
+    return scrubbed_git_env(isolate_config=True)
 
 
 def _git(args: list[str], cwd: Path) -> None:
-    subprocess.run(["git", *args], cwd=cwd, check=True, env=_GIT_ENV)
+    subprocess.run(["git", *args], cwd=cwd, check=True, env=_git_env())
 
 
 def _init_scratch_repo(tmp_path: Path) -> Path:
@@ -341,7 +346,7 @@ def test_default_base_ref_resolves_to_merge_base_with_develop(tmp_path):
         cwd=repo,
         capture_output=True,
         text=True,
-        env=_GIT_ENV,
+        env=_git_env(),
     ).stdout.strip()
     assert base_ref == expected
 

@@ -23,6 +23,7 @@ import subprocess
 import mlflow
 
 from data.capture.config import DEFAULT_MIN_FREE_GB, DataRootError, validate_data_root
+from tools.git_env import scrubbed_git_env
 
 PKG_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -85,14 +86,22 @@ def compute_code_hash(dirty_suffix: str = "-dirty", git_runner=subprocess.run) -
     valid, reproducibility-grade git SHA.
     """
     sha_result = git_runner(
-        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=PKG_ROOT
+        ["git", "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        cwd=PKG_ROOT,
+        env=scrubbed_git_env(),
     )
     if sha_result.returncode != 0 or not sha_result.stdout.strip():
         raise RuntimeError(f"git rev-parse HEAD failed: {sha_result.stderr}")
     sha = sha_result.stdout.strip()
 
     status_result = git_runner(
-        ["git", "status", "--porcelain"], capture_output=True, text=True, cwd=PKG_ROOT
+        ["git", "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+        cwd=PKG_ROOT,
+        env=scrubbed_git_env(),
     )
     if status_result.returncode != 0:
         raise RuntimeError(f"git status --porcelain failed: {status_result.stderr}")
