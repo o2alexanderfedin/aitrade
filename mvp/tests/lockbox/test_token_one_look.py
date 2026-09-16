@@ -1,0 +1,294 @@
+"""Tests for data.lockbox's token API -- MLflow-first consumption
+durability (03-RESEARCH.md Pitfall 4).
+
+Hermetic: every fixture builds its own `tmp_path`-backed registry root,
+lake root, and MLflow tracking root -- never the real
+`/Volumes/ProjectsSSD/aihedgefund/mlflow/` or the real, git-committed
+`mvp/data/lake_registry/`. The lockbox segment built here is READABLE (no
+`chmod 0000`) -- `open_lockbox` must be able to actually read it for these
+tests to exercise the token protocol; the `chmod 0000` physical barrier is
+`tests/lockbox/test_containment.py`'s job.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+
+import mlflow
+import polars as pl
+import pytest
+from mlflow.tracking import MlflowClient
+
+from data.lockbox import LockboxTokenError, issue_token, open_lockbox, token_path
+from data.store import issue_manifest
+from tracking.mlflow_utils import build_tracking_uri
+
+
+@pytest.fixture(autouse=True)
+def _end_any_active_run():
+    """Belt-and-braces: end any run left active by a failing test."""
+    yield
+    if mlflow.active_run() is not None:
+        mlflow.end_run()
+
+
+def _write_lockbox_partition(lake_root: Path, rel_path: str, df: pl.DataFrame) -> dict:
+    final_path = lake_root / rel_path
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    df.write_parquet(final_path, compression="zstd")
+    st = final_path.stat()
+    return {
+        "date": "2026-09-12",
+        "path": rel_path,
+        "sha256": hashlib.sha256(final_path.read_bytes()).hexdigest(),
+        "rows": df.height,
+        "size_bytes": st.st_size,
+        "mtime_ns": st.st_mtime_ns,
+        "etime_min": int(df["etime"].min()),
+        "etime_max": int(df["etime"].max()),
+    }
+
+
+def _build_segment(tmp_path: Path, *, token_id: str = "lb-001"):
+    """Build a synthetic (readable) lockbox segment: a manifest + partition,
+    and a matching, unconsumed token. Returns
+    (registry_root, lake_root, tracking_root, manifest, token)."""
+    lake_root = tmp_path / "lake"
+    registry_root = tmp_path / "registry"
+    tracking_root = tmp_path / "mlflow_root"
+    tracking_root.mkdir()
+
+    df = pl.DataFrame(
+        {
+            "trade_id": [1, 2, 3],
+            "etime": [1_000, 2_000, 3_000],
+            "price": [1.0, 2.0, 3.0],
+        }
+    )
+    part = _write_lockbox_partition(
+        lake_root,
+        "lockbox/symbol=BTCUSDT/stream=trade/date=2026-09-12/part-1.parquet",
+        df,
+    )
+    manifest = issue_manifest(
+        dataset="BTCUSDT.trade",
+        symbol="BTCUSDT",
+        stream="trade",
+        tier="lockbox",
+        schema_version=1,
+        inputs=[],
+        partitions=[part],
+        code_hash="deadbeef",
+        registry_root=registry_root,
+    )
+    token = issue_token(
+        token_id=token_id,
+        segment_manifest_id=manifest["manifest_id"],
+        dataset="BTCUSDT.trade",
+        purpose="v0 gate evaluation",
+        gate="EVAL-06",
+        requested_by="alex",
+        registry_root=registry_root,
+    )
+    return registry_root, lake_root, tracking_root, manifest, token
+
+
+# --- issue_token --------------------------------------------------------
+
+
+def test_issue_token_writes_unconsumed_token(tmp_path: Path):
+    registry_root, lake_root, tracking_root, manifest, token = _build_segment(tmp_path)
+    assert token["consumed_at"] is None
+    assert token["mlflow_run_id"] is None
+    on_disk = json.loads(token_path("lb-001", registry_root=registry_root).read_text())
+    assert on_disk == token
+
+
+def test_issue_token_refuses_to_overwrite_existing_token_id(tmp_path: Path):
+    registry_root, *_ = _build_segment(tmp_path, token_id="lb-dup")
+    with pytest.raises(LockboxTokenError, match="already exists"):
+        issue_token(
+            token_id="lb-dup",
+            segment_manifest_id="whatever",
+            dataset="BTCUSDT.trade",
+            purpose="p",
+            gate="g",
+            requested_by="alex",
+            registry_root=registry_root,
+        )
+
+
+# --- open_lockbox: missing token / identity mismatch ---------------------
+
+
+def test_open_lockbox_raises_if_token_missing(tmp_path: Path):
+    tracking_root = tmp_path / "mlflow_root"
+    tracking_root.mkdir()
+    with pytest.raises(LockboxTokenError, match="not found"):
+        open_lockbox(
+            "no-such-token",
+            "purpose",
+            "alex",
+            str(tracking_root),
+            lake_root=tmp_path / "lake",
+            registry_root=tmp_path / "registry",
+            min_free_gb=0.0,
+        )
+
+
+def test_open_lockbox_raises_on_requested_by_mismatch(tmp_path: Path):
+    registry_root, lake_root, tracking_root, manifest, token = _build_segment(
+        tmp_path, token_id="lb-002"
+    )
+    with pytest.raises(LockboxTokenError, match="requested_by"):
+        open_lockbox(
+            "lb-002",
+            "purpose",
+            "someone-else",
+            str(tracking_root),
+            lake_root=lake_root,
+            registry_root=registry_root,
+            min_free_gb=0.0,
+        )
+
+
+# --- open_lockbox: the one-look guarantee ---------------------------------
+
+
+def test_open_lockbox_succeeds_once_and_returns_data(tmp_path: Path):
+    registry_root, lake_root, tracking_root, manifest, token = _build_segment(
+        tmp_path, token_id="lb-003"
+    )
+    df = open_lockbox(
+        "lb-003",
+        "purpose",
+        "alex",
+        str(tracking_root),
+        lake_root=lake_root,
+        registry_root=registry_root,
+        min_free_gb=0.0,
+    )
+    assert df.height == 3
+    assert sorted(df["trade_id"].to_list()) == [1, 2, 3]
+
+    on_disk = json.loads(token_path("lb-003", registry_root=registry_root).read_text())
+    assert on_disk["consumed_at"] is not None
+    assert on_disk["mlflow_run_id"]
+
+    client = MlflowClient(build_tracking_uri(str(tracking_root)))
+    exp = client.get_experiment_by_name("lockbox_access")
+    assert exp is not None
+    runs = client.search_runs(
+        [exp.experiment_id], filter_string="tags.lockbox_token_id = 'lb-003'"
+    )
+    assert len(runs) == 1
+    assert runs[0].data.tags["lockbox_access"] == "true"
+    assert runs[0].data.tags["lockbox_purpose"] == "purpose"
+
+
+def test_second_open_lockbox_raises_json_already_shows_consumed(tmp_path: Path):
+    registry_root, lake_root, tracking_root, manifest, token = _build_segment(
+        tmp_path, token_id="lb-004"
+    )
+    open_lockbox(
+        "lb-004",
+        "purpose",
+        "alex",
+        str(tracking_root),
+        lake_root=lake_root,
+        registry_root=registry_root,
+        min_free_gb=0.0,
+    )
+    with pytest.raises(LockboxTokenError, match="already consumed"):
+        open_lockbox(
+            "lb-004",
+            "purpose",
+            "alex",
+            str(tracking_root),
+            lake_root=lake_root,
+            registry_root=registry_root,
+            min_free_gb=0.0,
+        )
+
+
+def test_second_open_lockbox_raises_after_json_revert_because_mlflow_still_has_record(
+    tmp_path: Path,
+):
+    """The scenario 03-RESEARCH.md Pitfall 4 exists to close: a same-uid
+    `git checkout -- <token>.json` silently reverts the JSON's own
+    `consumed_at` field back to None between the first and second call.
+    The MLflow record (queried FIRST) must still catch it."""
+    registry_root, lake_root, tracking_root, manifest, token = _build_segment(
+        tmp_path, token_id="lb-005"
+    )
+    open_lockbox(
+        "lb-005",
+        "purpose",
+        "alex",
+        str(tracking_root),
+        lake_root=lake_root,
+        registry_root=registry_root,
+        min_free_gb=0.0,
+    )
+
+    # Simulate a same-uid `git checkout --` reverting the JSON stamp.
+    tp = token_path("lb-005", registry_root=registry_root)
+    reverted = json.loads(tp.read_text())
+    assert reverted["consumed_at"] is not None  # sanity: it really was stamped
+    reverted["consumed_at"] = None
+    tp.write_text(json.dumps(reverted, sort_keys=True, indent=2))
+
+    with pytest.raises(LockboxTokenError, match="MLflow record"):
+        open_lockbox(
+            "lb-005",
+            "purpose",
+            "alex",
+            str(tracking_root),
+            lake_root=lake_root,
+            registry_root=registry_root,
+            min_free_gb=0.0,
+        )
+
+    # And the JSON is not left looking innocuous either -- open_lockbox
+    # raised before it could re-stamp, but the MLflow record alone is what
+    # blocked the second look; confirm exactly one run still carries the tag.
+    client = MlflowClient(build_tracking_uri(str(tracking_root)))
+    exp = client.get_experiment_by_name("lockbox_access")
+    runs = client.search_runs(
+        [exp.experiment_id], filter_string="tags.lockbox_token_id = 'lb-005'"
+    )
+    assert len(runs) == 1
+
+
+def test_open_lockbox_propagates_mlflow_query_error_never_treats_as_not_consumed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A monkeypatched query failure (simulating an unreachable/reset
+    tracking root) must propagate out of open_lockbox -- NOT be silently
+    treated as 'not consumed' and allowed to proceed."""
+    registry_root, lake_root, tracking_root, manifest, token = _build_segment(
+        tmp_path, token_id="lb-006"
+    )
+
+    def _raise(*args, **kwargs):
+        raise RuntimeError("simulated unreachable tracking root")
+
+    monkeypatch.setattr(MlflowClient, "search_experiments", _raise)
+
+    with pytest.raises(RuntimeError, match="simulated unreachable"):
+        open_lockbox(
+            "lb-006",
+            "purpose",
+            "alex",
+            str(tracking_root),
+            lake_root=lake_root,
+            registry_root=registry_root,
+            min_free_gb=0.0,
+        )
+
+    # Refused, not silently proceeded: the token must still show unconsumed
+    # (open_lockbox never reached the stamping step).
+    on_disk = json.loads(token_path("lb-006", registry_root=registry_root).read_text())
+    assert on_disk["consumed_at"] is None
