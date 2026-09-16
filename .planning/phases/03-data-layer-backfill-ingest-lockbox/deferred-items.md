@@ -72,3 +72,37 @@ post-restart instead.
 work (DATA-07) — restart-caused outages are a known, structural blind
 spot of the current gap-ledger design, not something any one plan's
 restart introduces freshly.
+
+## 03-04: reconciliation check (2)'s `missing_from_archive` is dominated by
+capture-only NA-placeholder rows, not a curated-data defect
+
+**Found during:** 03-04 Task 3, running the real DQ report over the real
+107-day trade range and finding `reconciliation` degraded on 2026-09-12
+(0.75%) even though `gap_coverage` was `"ok"` that day (no outage).
+
+**What happened:** `curated_build.py:build_curated_day` calls
+`select_source_for_day` (which computes `reconciliation_missing_from_*`)
+BEFORE `filter_na_placeholders` runs on the chosen source. On every day
+probed so far the archive is chosen, so the NA-placeholder filter never
+even applies (it only fires on capture-sourced trades) -- but
+`reconciliation_missing_from_archive` still counts every capture-side
+`X="NA"` placeholder row (and any other capture-only id) as "missing from
+archive", even though those rows were never going to end up in curated
+output regardless of which source got chosen. This is real, measured, and
+not a bug in check (2) itself -- check (2) is required (03-04-PLAN.md's
+must-have) to read Plan 02's PERSISTED `build_stats.json` fields exactly
+as computed, never recompute from curated data. The defect, if any, is
+one layer up in what `select_source_for_day` persists.
+
+**Not fixed (explicitly out of scope for 03-04):** acknowledged instead,
+per-day, with a reason distinguishing it from the battery-sleep-caused
+days (see the 6 real `dq_acknowledgements/*.json` files this plan
+committed, specifically `BTCUSDT__trade__2026-09-12.json`).
+
+**Suggested follow-up:** a future `curated_build.py` revision could
+persist a THIRD, NA-excluded reconciliation count (`reconciliation_missing_from_archive_excl_na`)
+alongside the existing field, computed after `filter_na_placeholders`
+would have removed those rows from consideration -- giving check (2) a
+cleaner signal without recomputing from curated Parquet (still reading a
+persisted, precomputed field, just a better one). Left to whichever later
+plan next touches `curated_build.py`'s reconciliation stats.
