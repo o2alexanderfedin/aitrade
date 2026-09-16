@@ -28,6 +28,7 @@ from pathlib import Path
 
 from data.capture.config import DEFAULT_MIN_FREE_GB
 from data.capture.gap_ledger import GapLedger
+from data.capture.power import sleep_risk
 
 
 class Watchdog:
@@ -55,9 +56,12 @@ class Watchdog:
         # Keyed by conn_id, plus the literal key "merged".
         self._active_stall: dict[str, bool] = {}
         self._low_space_alarmed = False
+        self._sleep_risk_alarmed = False
 
     def _tick(self) -> None:
         now_ns = time.time_ns()
+
+        self._check_sleep_risk(now_ns)
 
         # "merged" is checked first and takes priority over any individual
         # connection's stall, mirroring rotation.py's reactive
@@ -168,6 +172,47 @@ class Watchdog:
                 self._low_space_alarmed = True
         else:
             self._low_space_alarmed = False
+
+    def _check_sleep_risk(self, now_ns: int) -> None:
+        """Alarm while the host is on battery with battery sleep enabled.
+
+        This is the one failure the rest of the watchdog structurally cannot
+        see: when macOS sleeps, this task stops running too, so nothing ticks
+        and nothing is recorded until the host wakes — the outage lands in the
+        ledger as an unexplained silence. Recording the RISK while the host is
+        still awake is what makes the eventual gap attributable. See
+        data/capture/power.py for why caffeinate does not cover this.
+
+        One row per ongoing risk period, not one per tick, matching every other
+        alarm in this class. Never fatal: a failed `pmset` returns None from
+        `sleep_risk()` and is treated as "nothing to report".
+        """
+        try:
+            risk = sleep_risk()
+        except Exception as exc:  # defensive: a watchdog must not die here
+            print(f"WATCHDOG: sleep-risk check failed: {exc}", flush=True)
+            return
+
+        if risk is None:
+            self._sleep_risk_alarmed = False
+            return
+
+        if not self._sleep_risk_alarmed:
+            print(f"WATCHDOG: SLEEP RISK — {risk}", flush=True)
+            try:
+                self.gap_ledger.record_gap(
+                    stream="__power__",
+                    conn_id="watchdog",
+                    gap_start_rtime=now_ns,
+                    gap_end_rtime=now_ns,
+                    cause=f"sleep-risk: {risk}",
+                )
+            except OSError as ledger_exc:
+                print(
+                    f"WATCHDOG: sleep-risk ledger write failed ({ledger_exc})",
+                    flush=True,
+                )
+            self._sleep_risk_alarmed = True
 
     async def run(
         self,
