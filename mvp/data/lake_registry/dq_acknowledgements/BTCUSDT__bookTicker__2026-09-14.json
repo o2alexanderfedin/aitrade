@@ -1,0 +1,8 @@
+{
+  "date": "2026-09-14",
+  "reason": "gap_coverage FAILED (3269.5s outage seconds this UTC day, same connection-level outage as the trade stream -- both streams ride the same merged socket pair) and l1_sparsity degraded (2894.05s max inter-arrival gap, matches the 2894.2s collapsed outage almost exactly). Root cause: host sleeps on battery; caffeinate's PreventSystemSleep assertion is honored on AC power only; see power.py + commit 343d6d6 for the alarm mitigation; sudo pmset -b disablesleep 1 is the pending OS-level fix.",
+  "stream": "bookTicker",
+  "symbol": "BTCUSDT",
+  "when": "2026-09-16T22:08:09Z",
+  "who": "phase-3-execution"
+}

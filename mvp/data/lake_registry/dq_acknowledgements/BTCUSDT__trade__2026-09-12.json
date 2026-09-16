@@ -1,0 +1,8 @@
+{
+  "date": "2026-09-12",
+  "reason": "gap_coverage=ok this day (no outage); reconciliation check (2) degraded (missing_from_archive_pct=0.7526%, >0.5% threshold) -- structural artifact of the per-day whole-source-switch design (03-CONTEXT.md Pattern 2): missing_from_archive counts capture-side X=\"NA\" placeholder rows and other capture-only ids that were never destined for curated output (the archive source was chosen for this day), not curated-data corruption. See dq_thresholds.toml [reconciliation].notes and 03-02-SUMMARY.md. Deferred item: a future curated_build.py revision could persist an NA-excluded reconciliation count to avoid this structural false-positive; not fixed in this plan per the must-have that check (2) reads only Plan 02's existing persisted build_stats.json fields, never recomputes.",
+  "stream": "trade",
+  "symbol": "BTCUSDT",
+  "when": "2026-09-16T22:08:09Z",
+  "who": "phase-3-execution"
+}

@@ -1,0 +1,8 @@
+{
+  "date": "2026-09-14",
+  "reason": "gap_coverage FAILED (3269.5s outage seconds this UTC day) and reconciliation degraded (missing_from_capture_pct=4.7838%, correlated with the same outage -- capture missed archive trade ids during the outage window). Root cause: host sleeps on battery; caffeinate's PreventSystemSleep assertion is honored on AC power only; see power.py + commit 343d6d6 for the alarm mitigation; sudo pmset -b disablesleep 1 is the pending OS-level fix. Collapsed outage intervals this day (rtime-as-etime, see checks.py docstring): 303.8s (15:55:10-16:00:14Z), 2894.2s (16:00:38-16:48:52Z, matches STATE.md's documented 2894s outage), 71.5s (16:49:14-16:50:25Z).",
+  "stream": "trade",
+  "symbol": "BTCUSDT",
+  "when": "2026-09-16T22:08:09Z",
+  "who": "phase-3-execution"
+}
