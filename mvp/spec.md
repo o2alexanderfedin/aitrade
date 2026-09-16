@@ -225,6 +225,7 @@ from this exact rule, not from `mvp.md`'s struck pseudocode.
 - **DON'T** annualize a per-trade Sharpe by `sqrt(trades/year)` — see [Sharpe annualization convention](#sharpe-annualization-convention); the only valid gating Sharpe is the daily-P&L form.
 - **DON'T** depend on the full `mlflow` package — it unconditionally imports `pandas` transitively (verified; see `02-RESEARCH.md`); use `mlflow-skinny` + `sqlalchemy` + `alembic` instead.
 - **DON'T** call `mlflow.search_runs()` (the pandas-DataFrame-returning convenience API) anywhere in the project, even under `mlflow-skinny` — use `MlflowClient().search_runs()` instead.
+- **DON'T** reference `lake/lockbox/` from any agent-run script outside `data/lockbox.py`; gate evaluations are human-invoked only (see `mvp/data/lockbox_POLICY.md`).
 
 ---
 

@@ -159,3 +159,21 @@ Do not make direct repo edits outside a GSD workflow unless the user explicitly 
 > Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
 > This section is managed by `generate-claude-profile` -- do not edit manually.
 <!-- GSD:profile-end -->
+
+## Lockbox
+
+`mvp/data/lockbox_POLICY.md` is the canonical policy document for the
+held-out data lockbox (`lake/lockbox/`) -- read it before touching anything
+lockbox-related.
+
+**No agent-run script may reference `lake/lockbox/`, or import any
+underscore-prefixed (private) name from `data/lockbox.py`, outside a
+deliberate, human-invoked gate evaluation.** This is mechanically enforced
+by `tools/check_lockbox_containment.py` in both pre-commit and CI -- it is
+not merely a convention. The only sanctioned public entry point is
+`data.lockbox.open_lockbox()`, and only a human-invoked gate-evaluation
+script should ever call it. The mechanism is accident-proofing plus an
+audit trail against a same-uid, non-adversarial actor -- it is explicitly
+NOT proof against a determined same-uid agent (that same uid can always
+`chmod` the physical barrier back). Do not describe it otherwise in any
+code, test, or report you write.

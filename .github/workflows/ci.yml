@@ -51,6 +51,9 @@ jobs:
       - name: check_latest_ban
         run: uv run --locked --directory mvp python -m tools.check_latest_ban
 
+      - name: check_lockbox_containment
+        run: uv run --locked --directory mvp python -m tools.check_lockbox_containment
+
       - name: check_numba_globals
         run: uv run --locked --directory mvp python -m tools.check_numba_globals
 

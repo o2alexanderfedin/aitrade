@@ -69,6 +69,12 @@ repos:
         language: system
         pass_filenames: false
 
+      - id: lockbox-containment
+        name: check_lockbox_containment
+        entry: uv run --locked --directory mvp python -m tools.check_lockbox_containment
+        language: system
+        pass_filenames: false
+
       - id: numba-globals
         name: check_numba_globals
         entry: uv run --locked --directory mvp python -m tools.check_numba_globals
