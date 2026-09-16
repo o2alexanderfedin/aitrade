@@ -9,7 +9,44 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from data.store import ManifestHashMismatch, issue_manifest, load_curated
+from data.store import (
+    ManifestHashMismatch,
+    dq_report_path,
+    issue_manifest,
+    load_curated,
+)
+
+
+def _write_ok_dq_report(lake_root: Path, symbol: str, stream: str, date: str) -> None:
+    """Minimal report.parquet fixture giving (symbol, stream, date) an
+    "ok" DQ status -- required since Plan 04 wired DQPauseError's
+    fail-closed-on-missing-report check into load_curated (a date with no
+    report.parquet at all now pauses); see tests/dq/test_pause_enforcement.py
+    for the pause behavior itself."""
+    path = dq_report_path(lake_root, date)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame(
+        {
+            "date": [date],
+            "symbol": [symbol],
+            "stream": [stream],
+            "check": ["gap_coverage"],
+            "dq_status": ["ok"],
+            "value": [0.0],
+            "count": [None],
+            "detail": [None],
+        },
+        schema={
+            "date": pl.Utf8,
+            "symbol": pl.Utf8,
+            "stream": pl.Utf8,
+            "check": pl.Utf8,
+            "dq_status": pl.Utf8,
+            "value": pl.Float64,
+            "count": pl.Int64,
+            "detail": pl.Utf8,
+        },
+    ).write_parquet(path, compression="zstd")
 
 
 def _write_partition(lake_root: Path, rel_path: str, df: pl.DataFrame) -> dict:
@@ -41,6 +78,7 @@ def test_load_curated_returns_concatenated_verified_rows(tmp_path: Path):
     )
     part1 = _write_partition(lake_root, "curated/part-1.parquet", df1)
     part2 = _write_partition(lake_root, "curated/part-2.parquet", df2)
+    _write_ok_dq_report(lake_root, "BTCUSDT", "trade", "2026-09-12")
 
     manifest = issue_manifest(
         dataset="BTCUSDT.trade",

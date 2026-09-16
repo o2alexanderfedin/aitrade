@@ -17,9 +17,20 @@ separate `capture/parsed/` root -- two different physical roots, so only an
 absolute path works for both without inventing a second root concept).
 
 `load_curated` is the ONLY reading path this phase builds that is called
-"the default loader" -- it never constructs a path under `lockbox/` (Plan
-05 verifies this by construction: the string "lockbox" does not appear
+"the default loader" -- it never constructs a path under the quarantined
+tier (Plan 05 verifies this by construction: no such string appears
 anywhere in this module).
+
+DQ pause enforcement (Plan 04, DATA-07): `load_curated` ALSO refuses to
+return rows for any requested day whose data-quality status is
+`"failed"`, `"degraded"`, or has no DQ report at all, unless a matching
+acknowledgement file is committed under
+`LAKE_REGISTRY_ROOT / "dq_acknowledgements"`. This is checked AFTER
+`resolve_manifest`'s hash verification (a corrupted/mismatched manifest
+must never even get to a DQ conversation) and reads ONLY
+`lake_root()/dq/date=.../report.parquet` -- this module never imports
+`data.dq.report` (that module is the one PRODUCING the report this one
+reads; importing it back would be circular).
 """
 
 from __future__ import annotations
@@ -32,15 +43,25 @@ from pathlib import Path
 import polars as pl
 
 __all__ = [
+    "DQPauseError",
     "ManifestHashMismatch",
     "canonicalize_manifest",
     "compute_manifest_id",
+    "dq_acknowledgement_path",
+    "dq_report_path",
     "issue_manifest",
     "resolve_manifest",
     "load_curated",
     "manifest_path",
     "by_date_index_path",
 ]
+
+
+class DQPauseError(ValueError):
+    """Raised by `load_curated` when any date the requested manifest covers
+    has an unacknowledged `"failed"`/`"degraded"`/missing-report DQ status
+    (DATA-07's mechanical training pause). Add a git-committed
+    acknowledgement JSON at `dq_acknowledgement_path(...)` to proceed."""
 
 
 class ManifestHashMismatch(ValueError):
@@ -75,6 +96,26 @@ def compute_manifest_id(manifest: dict) -> str:
 def manifest_path(registry_root: Path, dataset: str, manifest_id: str) -> Path:
     """Single source of truth for a manifest JSON's on-disk path."""
     return Path(registry_root) / "manifests" / dataset / f"{manifest_id}.json"
+
+
+def dq_report_path(lake_root: Path, date: str) -> Path:
+    """Single source of truth for a date's DQ report parquet path --
+    matches `data.dq.report.dq_report_path` exactly (duplicated here, not
+    imported, to avoid this module importing `data.dq.report` -- see
+    module docstring)."""
+    return Path(lake_root) / "dq" / f"date={date}" / "report.parquet"
+
+
+def dq_acknowledgement_path(
+    registry_root: Path, symbol: str, stream: str, date: str
+) -> Path:
+    """Single source of truth for a DQ acknowledgement JSON's on-disk path
+    -- `LAKE_REGISTRY_ROOT / "dq_acknowledgements" / "{symbol}__{stream}__{date}.json"`,
+    git-committed (same registry-root convention as `manifest_path`/
+    `by_date_index_path` above)."""
+    return (
+        Path(registry_root) / "dq_acknowledgements" / f"{symbol}__{stream}__{date}.json"
+    )
 
 
 def by_date_index_path(
@@ -194,20 +235,102 @@ def resolve_manifest(
     return manifest
 
 
+def _dq_status_for_date(
+    lake_root: Path, symbol: str, stream: str, date: str
+) -> tuple[str, str | None]:
+    """Return `(status, detail)` for `(symbol, stream, date)`: the worst-of
+    status across every row of that date's `report.parquet` matching
+    `(symbol, stream)`.
+
+    `"missing"` covers TWO distinct absences, both treated identically as
+    a pause-requiring status (fail-closed -- nothing in this phase
+    schedules the report to run automatically, so any day nobody has
+    reported on yet must not silently pass):
+    - no `report.parquet` at all for this date, or no row in it matching
+      `(symbol, stream)` -- this `(symbol, stream, date)` was never
+      reported on.
+    - every matching row says `"n/a"` -- the report DID run, but no
+      substantive check actually produced a signal for this
+      `(symbol, stream, date)` (e.g. every check happened to be
+      inapplicable that day), which must not be silently treated as a
+      pass either.
+
+    `"ok"` only when at least one row is `"ok"` and none is
+    `"failed"`/`"degraded"`.
+    """
+    report_path = dq_report_path(lake_root, date)
+    if not report_path.exists():
+        return "missing", "no DQ report generated for this date"
+
+    report = pl.read_parquet(report_path)
+    rows = report.filter((pl.col("symbol") == symbol) & (pl.col("stream") == stream))
+    if rows.height == 0:
+        return "missing", "no DQ report generated for this date"
+
+    statuses = set(rows["dq_status"].to_list())
+    if "failed" in statuses:
+        return "failed", None
+    if "degraded" in statuses:
+        return "degraded", None
+    if "ok" in statuses:
+        return "ok", None
+    return (
+        "missing",
+        "every DQ check reported n/a for this date -- no substantive signal",
+    )
+
+
+def _enforce_dq_pause(manifest: dict, *, registry_root: Path, lake_root: Path) -> None:
+    """DATA-07's mechanical training pause: for every date this manifest
+    covers, require an `"ok"` status OR a matching committed acknowledgement.
+    Raises `DQPauseError` naming every unacknowledged day if any remain.
+    """
+    symbol = manifest["symbol"]
+    stream = manifest["stream"]
+    dates = sorted({part["date"] for part in manifest["partitions"]})
+
+    unacknowledged: list[tuple[str, str, str | None]] = []
+    for date in dates:
+        status, detail = _dq_status_for_date(Path(lake_root), symbol, stream, date)
+        if status == "ok":
+            continue
+        ack_path = dq_acknowledgement_path(Path(registry_root), symbol, stream, date)
+        if not ack_path.exists():
+            unacknowledged.append((date, status, detail))
+
+    if unacknowledged:
+        summary = "; ".join(
+            f"{date}: {status}" + (f" ({detail})" if detail else "")
+            for date, status, detail in unacknowledged
+        )
+        example_path = dq_acknowledgement_path(
+            Path(registry_root), symbol, stream, unacknowledged[0][0]
+        )
+        raise DQPauseError(
+            f"DQ pause: {symbol}.{stream} has unacknowledged day(s): {summary}. "
+            f"Add a git-committed acknowledgement JSON (e.g. {example_path}) to proceed."
+        )
+
+
 def load_curated(
     manifest_id: str, dataset: str, *, registry_root: Path, lake_root: Path
 ) -> pl.DataFrame:
-    """Resolve `manifest_id` (verifying every partition's hash) and return
-    the concatenated curated rows.
+    """Resolve `manifest_id` (verifying every partition's hash), enforce
+    DATA-07's DQ pause (raises `DQPauseError` on any unacknowledged
+    failed/degraded/missing-report day), and return the concatenated
+    curated rows.
 
     The only reading path this phase builds that is called "the default
-    loader" -- it never constructs a path under `lockbox/` (Plan 05
-    verifies this by construction, not by a runtime check inside this
-    function -- the string does not appear anywhere in this module).
+    loader" -- it never constructs a path under the quarantined tier (Plan
+    05 verifies this by construction, not by a runtime check inside this
+    function -- no such string appears anywhere in this module). Hash
+    verification runs BEFORE the DQ pause check: a manifest that fails
+    integrity must never even reach a DQ conversation.
     """
     manifest = resolve_manifest(
         manifest_id, dataset, registry_root=registry_root, lake_root=lake_root
     )
+    _enforce_dq_pause(manifest, registry_root=registry_root, lake_root=lake_root)
     frames = [
         pl.read_parquet(Path(lake_root) / part["path"])
         for part in manifest["partitions"]
