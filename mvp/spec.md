@@ -90,6 +90,13 @@ locally-sourced `etime` without this section being updated to describe and justi
   ask ⇒ buy, tie ⇒ unknown) applies **only** to legacy rows where the side field is
   absent or `0`. An exact side (from `m` or `is_buyer_maker`) is never "corrected" by
   the nearest-quote heuristic.
+- **Sign convention, pinned**: `m`/`is_buyer_maker = true` ⇒ the buyer was the maker ⇒
+  the aggressor **sold** ⇒ `tradeSide = -1`. `m`/`is_buyer_maker = false` ⇒ the
+  aggressor **bought** ⇒ `tradeSide = +1`. Asserted by a committed test
+  (`tests/ingest/test_trade_side.py`) against real archive rows
+  (`tests/fixtures/side_convention_rows.py`, drawn from `BTCUSDT-trades-2026-09-12`)
+  — the inverted mapping is the most common Binance sign-convention bug in the wild
+  and silently flips the sign of every flow feature.
 
 ## Feature catalogue
 
