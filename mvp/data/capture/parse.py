@@ -76,6 +76,10 @@ def parse_trade(data: dict, seq: int, rtime_ns: int, source: str = "capture") ->
             "rtime": rtime_ns,
             "source": source,
             "schema_version": SCHEMA_VERSION,
+            # schema_version=2 (03-06-PLAN.md): X is NOT optional -- a frame
+            # missing it raises FrameParseError below, same as every other
+            # required field.
+            "exec_type": data["X"],
         }
     except KeyError as exc:
         raise FrameParseError(f"trade frame missing field: {exc}") from exc

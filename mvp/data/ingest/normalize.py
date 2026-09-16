@@ -93,6 +93,13 @@ def normalize_archive_trades(
         pl.lit(rtime_ns, dtype=pl.Int64).alias("rtime"),
         pl.lit("archive").alias("source"),
         pl.lit(1, dtype=pl.Int32).alias("schema_version"),
+        # 03-06-PLAN.md: TRADE_SCHEMA gained exec_type at schema_version=2,
+        # but archive CSVs carry no execution-type field at all (and this
+        # writer deliberately keeps archive rows at the literal
+        # schema_version=1 above, regardless of live capture's
+        # SCHEMA_VERSION) -- null, not a fabricated value. curated_build.py
+        # already only reads exec_type conditionally on schema_version==2.
+        pl.lit(None, dtype=pl.Utf8).alias("exec_type"),
     )
 
     df = df.select(list(TRADE_SCHEMA.keys())).cast(TRADE_SCHEMA)

@@ -6,11 +6,20 @@ not a loader rewrite (see `schema_version`).
 Sequence assignment rule (verbatim from SKELETON.md — do not violate elsewhere in
 the codebase): seq is assigned exactly once, by the single writer, after redundant
 connections are merged/deduped — never inside a per-connection socket callback.
+
+`SCHEMA_VERSION` is ONE constant shared by both `BOOKTICKER_SCHEMA` and
+`TRADE_SCHEMA` (03-06-PLAN.md) — bumping it to 2 for `TRADE_SCHEMA`'s new
+`exec_type` column means `BOOKTICKER_SCHEMA` rows ALSO report
+`schema_version=2` after the capture-daemon restart that ships this change,
+even though bookTicker's own column set is unchanged. The alternative
+(per-schema version constants) is a larger, out-of-scope refactor; a shared
+version number that bumps for either schema changing is the existing, locked
+contract this docstring itself describes.
 """
 
 import polars as pl
 
-SCHEMA_VERSION: int = 1
+SCHEMA_VERSION: int = 2
 
 BOOKTICKER_SCHEMA: dict[str, pl.DataType] = {
     "symbol": pl.Utf8,
@@ -41,6 +50,14 @@ TRADE_SCHEMA: dict[str, pl.DataType] = {
     "rtime": pl.Int64,
     "source": pl.Utf8,
     "schema_version": pl.Int32,
+    # schema_version=2 (03-06-PLAN.md): Binance's live trade frame's `X`
+    # field, verbatim. Replaces the ambiguous `price==0 AND qty==0`
+    # NA-placeholder heuristic with an explicit signal -- X="NA" for the
+    # ~0.5% of live trade rows the archive omits entirely (p="0", q="0").
+    # Rows written under schema_version=1 have no exec_type column; readers
+    # spanning both versions (curated_build.py, resume_seq_assigner) must
+    # tolerate its absence rather than assuming it is always present.
+    "exec_type": pl.Utf8,
 }
 
 
