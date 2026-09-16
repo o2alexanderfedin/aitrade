@@ -29,9 +29,10 @@ from pathlib import Path
 
 import polars as pl
 
+from data.backfill.downloader import daterange
 from data.capture.rotation import write_parquet_atomic
 from data.ingest.trade_side import resolve_side
-from data.store import issue_manifest
+from data.store import by_date_index_path, issue_manifest
 
 __all__ = [
     "materialize_seq",
@@ -39,6 +40,7 @@ __all__ = [
     "filter_na_placeholders",
     "read_capture_partition",
     "build_curated_day",
+    "build_curated_range",
 ]
 
 
@@ -231,10 +233,24 @@ def build_curated_day(
     materialize `(etime, seq)`, write the curated partition, issue its
     manifest, and persist `build_stats.json`.
 
+    `stream="bookTicker"` (03-03-PLAN.md Task 2) is capture-ONLY by
+    construction, not by a special-cased branch here: bookTicker has no
+    backfill source at all (the two-regime boundary decision -- L1 exists
+    only from capture's own first etime, 2026-09-12T06:37:10.882Z onward,
+    03-CONTEXT.md/PROBE-RESULTS.md section 3), so `archive_dir` below is
+    simply never populated for this stream and `select_source_for_day`
+    falls through to its `capture_available` branch with `published=False`
+    every time -- the same code path `stream="trade"` uses on any
+    not-yet-archived day, exercised here unconditionally. `resolve_side`
+    and the NA-placeholder filter are skipped for bookTicker below (no
+    side/exec_type concept on that schema); `materialize_seq`'s sort key
+    is `["etime", "update_id"]` instead of `["etime", "trade_id"]`.
+
     Returns the issued manifest dict.
     """
     lake_root = Path(lake_root)
 
+    # Never populated for stream="bookTicker" -- see docstring above.
     archive_dir = (
         lake_root
         / "raw"
@@ -350,3 +366,154 @@ def build_curated_day(
     _atomic_write_json(stats_path, build_stats)
 
     return manifest
+
+
+def _curated_build_stats_path(
+    lake_root: Path, symbol: str, stream: str, date: str
+) -> Path:
+    """Single source of truth for a date's `build_stats.json` path --
+    mirrors `build_curated_day`'s own `stats_path` construction, reused by
+    `build_curated_range` to report `chosen_source` per date without
+    changing `build_curated_day`'s return contract (manifest dict only)."""
+    return (
+        Path(lake_root)
+        / "curated_meta"
+        / f"symbol={symbol}"
+        / f"stream={stream}"
+        / f"date={date}"
+        / "build_stats.json"
+    )
+
+
+def _day_has_any_source(
+    symbol: str, stream: str, date: str, lake_root: Path, capture_root: Path
+) -> bool:
+    """True if EITHER the raw archive partition OR the capture partition
+    has data for this `(symbol, stream, date)`.
+
+    Checked by `build_curated_range` BEFORE calling `build_curated_day`, so
+    a day with neither source (expected for `stream="bookTicker"` on every
+    date before capture's own first etime, 2026-09-12T06:37:10.882Z --
+    there is no L1 backfill source at all, per the two-regime boundary
+    decision) is a documented, counted skip -- not a crashed `ValueError`
+    propagating up from `select_source_for_day`'s own "no source
+    available" guard.
+    """
+    archive_dir = (
+        Path(lake_root)
+        / "raw"
+        / f"symbol={symbol}"
+        / f"stream={stream}"
+        / "source=archive"
+        / f"date={date}"
+    )
+    if archive_dir.exists() and any(archive_dir.glob("part-*.parquet")):
+        return True
+    capture_dir = (
+        Path(capture_root) / f"symbol={symbol}" / f"stream={stream}" / f"date={date}"
+    )
+    return capture_dir.exists() and any(capture_dir.glob("part-*.parquet"))
+
+
+def build_curated_range(
+    symbol: str,
+    stream: str,
+    start_date: str,
+    end_date: str,
+    lake_root: Path,
+    capture_root: Path,
+    *,
+    registry_root: Path,
+    code_hash: str,
+) -> list[dict]:
+    """Call `build_curated_day` once per UTC date in `[start_date,
+    end_date]` (inclusive), idempotently.
+
+    Skips (never fails) two kinds of date, both counted and reported, not
+    silently dropped:
+    - `"already_present"`: the curated partition already exists (write-once
+      immutability -- re-running the range build issues ZERO new
+      manifests/partitions for these dates; the existing manifest_id is
+      looked up via the by-date index, matching `build_curated_day`'s own
+      write-once existing-file refusal so this function never even
+      attempts a write that would raise).
+    - `"no_source"`: neither the raw archive partition nor the capture
+      partition has any data for this date (`_day_has_any_source`) --
+      expected for `stream="bookTicker"` before capture's own history
+      starts (2026-06/07/08, and 2026-09-01..11 before 06:37:10Z on
+      2026-09-12); would be a genuine finding for `stream="trade"`, which
+      has an archive source for every date in this phase's window.
+
+    Returns one status dict per date: `{"date", "status", "manifest_id",
+    "chosen_source"}` (`chosen_source` is `None` for `"no_source"` dates,
+    and is read back from the just-written or already-existing
+    `build_stats.json` otherwise -- `build_curated_day`'s own return
+    contract, the manifest dict, is unchanged).
+    """
+    lake_root = Path(lake_root)
+    dataset = f"{symbol}.{stream}"
+    results: list[dict] = []
+
+    for date in daterange(start_date, end_date):
+        curated_dir = (
+            lake_root
+            / "curated"
+            / f"symbol={symbol}"
+            / f"stream={stream}"
+            / f"date={date}"
+        )
+        if sorted(curated_dir.glob("part-*.parquet")):
+            idx_path = by_date_index_path(registry_root, dataset, symbol, stream, date)
+            manifest_id = (
+                json.loads(idx_path.read_text())["manifest_id"]
+                if idx_path.exists()
+                else None
+            )
+            stats_path = _curated_build_stats_path(lake_root, symbol, stream, date)
+            chosen_source = (
+                json.loads(stats_path.read_text())["chosen_source"]
+                if stats_path.exists()
+                else None
+            )
+            results.append(
+                {
+                    "date": date,
+                    "status": "already_present",
+                    "manifest_id": manifest_id,
+                    "chosen_source": chosen_source,
+                }
+            )
+            continue
+
+        if not _day_has_any_source(symbol, stream, date, lake_root, capture_root):
+            results.append(
+                {
+                    "date": date,
+                    "status": "no_source",
+                    "manifest_id": None,
+                    "chosen_source": None,
+                }
+            )
+            continue
+
+        manifest = build_curated_day(
+            symbol,
+            stream,
+            date,
+            lake_root,
+            capture_root,
+            registry_root=registry_root,
+            code_hash=code_hash,
+        )
+        stats_path = _curated_build_stats_path(lake_root, symbol, stream, date)
+        chosen_source = json.loads(stats_path.read_text())["chosen_source"]
+        results.append(
+            {
+                "date": date,
+                "status": "written",
+                "manifest_id": manifest["manifest_id"],
+                "chosen_source": chosen_source,
+            }
+        )
+
+    return results
