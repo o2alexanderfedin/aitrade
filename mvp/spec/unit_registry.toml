@@ -1,0 +1,22 @@
+# Unit-registry source of truth for (market, dataset) -> archive CSV convention.
+#
+# Mirrors mvp/spec/{features,labels}.toml's shape: hand-edited TOML, loaded by
+# mvp/data/unit_registry.py's get_unit_entry(market, dataset), never read directly
+# by downloader/normalizer code -- that indirection is what makes "unrecognized
+# (market, dataset) pair" a mechanical UnitRegistryError instead of a silent guess.
+#
+# Keys are quoted "market.dataset" strings (a single TOML key each -- NOT a nested
+# [market] / [market.dataset] table pair), so get_unit_entry's
+# raw[f"{market}.{dataset}"] lookup hits directly.
+
+["futures-um.trades"]
+header = true
+time_unit = "ms"
+columns = ["id", "price", "qty", "quote_qty", "time", "is_buyer_maker"]
+notes = "Measured against the real data.binance.vision futures-um daily trades file for 2026-09-12 (791,576 rows): header row present, 6 columns in this exact order, time is a 13-digit millisecond epoch. See evidence/PROBE-RESULTS.md section 1 and 03-CONTEXT.md's Backfill Source decision."
+
+["spot.trades"]
+header = false
+time_unit = "us_since_2025-01-01"
+columns = ["id", "price", "qty", "quote_qty", "time", "is_buyer_maker", "is_best_match"]
+notes = "Declared-but-unused per 03-CONTEXT.md discretion: spot is out of MVP scope. This row exists only so the unit-registry mechanism (unknown-pair rejection, multi-entry resolution) is exercised against more than one entry. Never resolved against a real spot file in Phase 3."
