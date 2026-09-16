@@ -75,7 +75,15 @@ Plans:
   3. Data lake is partitioned by symbol/date with versioned schema; artifacts are immutable and manifest-addressed; `(etime, seq)` makes "last row of each etime" deterministic
   4. Daily data-quality report exists (dropped events, sparsity, resync warm-up tags); degradation pauses training until explicitly acknowledged
   5. Lockbox-quarantined segments are physically unreadable through the default loader; access requires an explicit unlock token that is logged to MLflow as a one-look annotation
-**Plans**: TBD
+**Plans**: 6 plans, 4 waves
+
+Plans:
+- [ ] 03-01-PLAN.md — Acquire + normalize + raw tier (unit registry, backfill client, ms_to_ns rename, raw partition write; real 2026-09-12 slice)
+- [ ] 03-02-PLAN.md — Curated build + manifest + store loader (trade-side resolution, (etime,seq) materialization, manifest issuance, check_no_manifest_rewrite; RP-1, RP-2)
+- [ ] 03-03-PLAN.md — Widen: full backfill window, monthly extract-to-disk, bookTicker curated tier, trade-side cross-check
+- [ ] 03-04-PLAN.md — DQ report (6 checks), pause enforcement, real battery-sleep acknowledgements; RP-4
+- [ ] 03-05-PLAN.md — Lockbox quarantine: token API, chmod 0000 barrier, containment guardrail; RP-3
+- [ ] 03-06-PLAN.md — Capture schema v2 (exec_type) + RawArchiveWriter fix + gated daemon restart
 
 ### Phase 4: Feature & Label Engine
 **Goal**: One leakage-proven feature code path produces the decision-row matrix that training, inference, and the simulator all share
