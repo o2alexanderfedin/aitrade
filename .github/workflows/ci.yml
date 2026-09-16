@@ -57,5 +57,8 @@ jobs:
       - name: check_spec_diff
         run: uv run --locked --directory mvp python -m tools.check_spec_diff
 
+      - name: check_no_manifest_rewrite --full
+        run: uv run --locked --directory mvp python -m tools.check_no_manifest_rewrite --full
+
       - name: pytest (tests, via testpaths)
         run: uv run --locked --directory mvp pytest tests -x -q

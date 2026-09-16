@@ -13,6 +13,17 @@
 # version drift this project doesn't need (02-RESEARCH.md Pitfall 2, option
 # (a)). `uv run --directory mvp ruff ...` always runs the exact `ruff==0.15.*`
 # resolved in `mvp/uv.lock`, identically to CI.
+#
+# `default_stages: [pre-commit]` (Phase 3 Plan 02): introduced alongside this
+# phase's first `stages: [pre-push]`-scoped hook (check-no-manifest-rewrite-full,
+# below). Without this, a hook with no explicit `stages:` key defaults to EVERY
+# installed stage -- once `pre-commit install --hook-type pre-push` registers a
+# pre-push git hook, every pre-existing hook here (ruff, pytest, the other
+# guardrails) would silently start re-running on every push too. Pinning the
+# default keeps every hook's execution scope exactly what it was before this
+# plan, except the two manifest-rewrite hooks, which declare their own stage
+# explicitly.
+default_stages: [pre-commit]
 repos:
   - repo: local
     hooks:
@@ -69,6 +80,20 @@ repos:
         entry: uv run --locked --directory mvp python -m tools.check_spec_diff
         language: system
         pass_filenames: false
+
+      - id: check-no-manifest-rewrite
+        name: check_no_manifest_rewrite
+        entry: uv run --locked --directory mvp python -m tools.check_no_manifest_rewrite
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: check-no-manifest-rewrite-full
+        name: check_no_manifest_rewrite --full
+        entry: uv run --locked --directory mvp python -m tools.check_no_manifest_rewrite --full
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
 
       - id: pytest
         name: pytest (tests, via testpaths)
