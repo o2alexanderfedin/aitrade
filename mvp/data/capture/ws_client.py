@@ -43,6 +43,18 @@ class StartupLivenessError(RuntimeError):
     no-data subscription (see PROBE-RESULTS.md finding 3)."""
 
 
+#: 03-06-PLAN.md fix defaults: how often the long-lived per-file zstd
+#: compressor closes a decodable FRAME boundary (as opposed to the
+#: per-message FLUSH_BLOCK, which is durable but not a frame boundary every
+#: reader can rely on). Small and safe -- bounds how much of the tail a
+#: crash between two FLUSH_FRAME calls can leave undecoded to at most a few
+#: hundred messages / a few seconds, while still getting the ~10x
+#: shared-context compression ratio a fresh-compressor-per-message defeated
+#: (measured 1.5x, PROBE-RESULTS.md section 4).
+DEFAULT_FLUSH_FRAME_EVERY_MESSAGES = 500
+DEFAULT_FLUSH_FRAME_EVERY_SECONDS = 5.0
+
+
 class RawArchiveWriter:
     """Appends verbatim wire messages to a zstd-compressed NDJSON archive.
 
@@ -50,13 +62,38 @@ class RawArchiveWriter:
     rotates to a new `date=...` file the moment the date changes, since a
     multi-day-running connection must not keep writing into day 1's file
     forever.
+
+    ONE long-lived `ZstdCompressor().stream_writer` per open file (not one
+    per message, per 03-06-PLAN.md -- the fresh-compressor-per-message
+    defect measured ~1.5x instead of the ~10x zstd gives NDJSON with a
+    shared compression context, PROBE-RESULTS.md section 4): every
+    `append()` writes the line, then `flush(FLUSH_BLOCK)` (durable -- the
+    file is decodable up to this point even if the process dies before the
+    next flush; NOT a frame boundary every reader can rely on). Every
+    `flush_frame_every_messages` messages OR `flush_frame_every_seconds`
+    seconds, whichever comes first, `flush(FLUSH_FRAME)` closes a real
+    frame boundary, bounding how much of the tail a crash can leave
+    undecoded by *some* readers to at most one partial frame. Rotation
+    (date change) and `close()` both force a final `FLUSH_FRAME` before the
+    underlying file handle closes.
     """
 
-    def __init__(self, archive_dir: Path, conn_id: str) -> None:
+    def __init__(
+        self,
+        archive_dir: Path,
+        conn_id: str,
+        flush_frame_every_messages: int = DEFAULT_FLUSH_FRAME_EVERY_MESSAGES,
+        flush_frame_every_seconds: float = DEFAULT_FLUSH_FRAME_EVERY_SECONDS,
+    ) -> None:
         self._archive_dir = archive_dir
         self._conn_id = conn_id
+        self._flush_frame_every_messages = flush_frame_every_messages
+        self._flush_frame_every_seconds = flush_frame_every_seconds
         self._current_date: str | None = None
         self._fh = None
+        self._writer = None
+        self._messages_since_frame_flush = 0
+        self._last_frame_flush_monotonic = 0.0
         self._open_for_today()
 
     def _today(self) -> str:
@@ -66,13 +103,28 @@ class RawArchiveWriter:
         date_str = self._today()
         if date_str == self._current_date and self._fh is not None:
             return
-        if self._fh is not None:
-            self._fh.close()
+        self._close_writer()
         day_dir = self._archive_dir / f"date={date_str}"
         day_dir.mkdir(parents=True, exist_ok=True)
         path = day_dir / f"conn_{self._conn_id}.ndjson.zst"
         self._fh = open(path, "ab")
+        cctx = zstandard.ZstdCompressor()
+        self._writer = cctx.stream_writer(self._fh, closefd=False)
         self._current_date = date_str
+        self._messages_since_frame_flush = 0
+        self._last_frame_flush_monotonic = time.monotonic()
+
+    def _close_writer(self) -> None:
+        if self._writer is not None:
+            # Final FLUSH_FRAME before the file handle closes -- rotation
+            # (date change) and shutdown must never leave the last frame
+            # unclosed.
+            self._writer.flush(zstandard.FLUSH_FRAME)
+            self._writer.close()
+            self._writer = None
+        if self._fh is not None:
+            self._fh.close()
+            self._fh = None
 
     def append(self, raw: bytes | str, rtime_ns: int) -> None:
         self._open_for_today()
@@ -83,14 +135,23 @@ class RawArchiveWriter:
             )
             + b"\n"
         )
-        cctx = zstandard.ZstdCompressor()
-        with cctx.stream_writer(self._fh, closefd=False) as writer:
-            writer.write(line)
+        self._writer.write(line)
+        self._writer.flush(zstandard.FLUSH_BLOCK)
+        self._messages_since_frame_flush += 1
+        now = time.monotonic()
+        due_by_count = (
+            self._messages_since_frame_flush >= self._flush_frame_every_messages
+        )
+        due_by_time = (
+            now - self._last_frame_flush_monotonic >= self._flush_frame_every_seconds
+        )
+        if due_by_count or due_by_time:
+            self._writer.flush(zstandard.FLUSH_FRAME)
+            self._messages_since_frame_flush = 0
+            self._last_frame_flush_monotonic = now
 
     def close(self) -> None:
-        if self._fh is not None:
-            self._fh.close()
-            self._fh = None
+        self._close_writer()
 
 
 async def run_connection(
