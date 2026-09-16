@@ -1,0 +1,34 @@
+{
+  "built_at": 1789594201317067000,
+  "code_hash": "9ba1654daf6615a93159842bbae09fafe3beda38",
+  "dataset": "BTCUSDT.trade",
+  "etime_range": [
+    1786924800011000000,
+    1787011199488000000
+  ],
+  "inputs": [
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/lake/raw/symbol=BTCUSDT/stream=trade/source=archive/date=2026-08-17/part-1789593990210423000.parquet",
+      "rows": 2236208,
+      "sha256": "a770b49fc68dba20632a04c477c121c8c45b4f4fdbf19e0d53886616c826fd39"
+    }
+  ],
+  "manifest_id": "a46e407fb621a3b38c1f7cc7bb2dc2eb148263398ac30e2739a63f294cbcf038",
+  "partitions": [
+    {
+      "date": "2026-08-17",
+      "etime_max": 1787011199488000000,
+      "etime_min": 1786924800011000000,
+      "mtime_ns": 1789594201303255245,
+      "path": "curated/symbol=BTCUSDT/stream=trade/date=2026-08-17/part-1789594201133212000.parquet",
+      "rows": 2236208,
+      "sha256": "81d37b9dd81b79e43f2fb7f520b9971b6556643e9b691cf1eeed33e5e8342dd6",
+      "size_bytes": 16763450
+    }
+  ],
+  "row_count": 2236208,
+  "schema_version": 1,
+  "stream": "trade",
+  "symbol": "BTCUSDT",
+  "tier": "curated"
+}
