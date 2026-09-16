@@ -113,6 +113,45 @@ def test_nearest_quote_side_tie_is_unknown():
     assert result["side_method"].to_list() == ["unknown"]
 
 
+def test_nearest_quote_side_never_uses_a_same_etime_quote():
+    """03-03-PLAN.md Task 3 fix: a quote AT the trade's exact etime must
+    never be used (it may be the post-trade update the trade itself
+    caused, per the real 2026-09-13 cross-check's root-cause finding --
+    both etime columns are ms-derived, so same-etime collisions between a
+    trade and its own resulting quote update are common in a fast market).
+    Only the strictly-earlier quote (1ms before) may be used, even though
+    the same-etime quote would give the OPPOSITE (wrong) answer."""
+    df = pl.DataFrame(
+        {"trade_id": [1], "etime": [2_000_000], "price": [100.0], "qty": [1.0]}
+    )
+    quotes = pl.DataFrame(
+        {
+            "etime": [1_000_000, 2_000_000],
+            # Earlier (legitimate prevailing) quote says SELL (closer to bid).
+            "bid_price": [99.9, 50.0],
+            # Same-etime quote (the trade's own price impact) says BUY
+            # (closer to ask) -- must be ignored.
+            "ask_price": [200.0, 100.1],
+        }
+    )
+    result = nearest_quote_side(df, quotes)
+    assert result["tradeSide_corrected"].to_list() == [-1]  # from the EARLIER quote
+    assert result["side_method"].to_list() == ["nearest_quote"]
+
+
+def test_nearest_quote_side_unknown_when_only_same_etime_quote_exists():
+    """If the ONLY quote at/before the trade's etime shares that exact
+    etime (no strictly-earlier quote at all), the trade is 'unknown' --
+    never falls back to the excluded same-etime quote."""
+    df = pl.DataFrame(
+        {"trade_id": [1], "etime": [1_000], "price": [100.0], "qty": [1.0]}
+    )
+    quotes = pl.DataFrame({"etime": [1_000], "bid_price": [99.0], "ask_price": [101.0]})
+    result = nearest_quote_side(df, quotes)
+    assert result["tradeSide_corrected"].to_list() == [0]
+    assert result["side_method"].to_list() == ["unknown"]
+
+
 def test_cross_check_agreement_full_agreement_fixture():
     """A fixture engineered so nearest-quote is known to agree with the
     exact side on every row returns 1.0."""

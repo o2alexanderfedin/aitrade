@@ -34,12 +34,31 @@ tested against a synthetic fixture, but is not expected to fire on real
 data this phase.
 
 Quote-join strategy: `nearest_quote_side` uses `join_asof(..., strategy=
-"backward")` -- the prevailing L1 quote AT OR BEFORE the trade's `etime`,
-never a quote that postdates the trade (a "nearest" strategy could pick a
-post-trade quote that already reflects the trade's own price impact --
-leakage into the very classification the quote is supposed to inform).
-Both frames must be sorted by `etime` before the join; this function sorts
-its own copies internally so callers never have to pre-sort.
+"backward", allow_exact_matches=False)` -- the prevailing L1 quote
+STRICTLY BEFORE the trade's `etime`, never a quote at or after it (a
+"nearest" strategy could pick a post-trade quote that already reflects the
+trade's own price impact -- leakage into the very classification the quote
+is supposed to inform). Both frames must be sorted by `etime` before the
+join; this function sorts its own copies internally so callers never have
+to pre-sort.
+
+`allow_exact_matches=False` (03-03-PLAN.md Task 3, fixed after the real
+2026-09-13 cross-check measured 57.5% agreement pre-fix): both `etime`
+columns are derived from Binance's own MILLISECOND `E`/`T` fields via the
+single `ms_to_ns` site, so their nanosecond "precision" is entirely
+trailing zeros -- two genuinely different events (a trade and the
+bookTicker update IT ITSELF caused) routinely share an identical `etime`
+in a fast market. With `allow_exact_matches=True` (the default),
+`join_asof(strategy="backward")` treats `quote.etime == trade.etime` as a
+valid match and often picks the POST-trade quote (the update the trade's
+own execution triggered), producing the exact price-impact leakage this
+docstring already warned about in principle. Measured root cause: trades
+whose `etime` collided with >1 quote update in the same millisecond
+(877,254 / 1,409,705 = 62%) agreed only 39.0% of the time; trades on an
+unambiguous (single-update) millisecond agreed 88.1% of the time. See
+03-03-SUMMARY.md for the full pre-fix/post-fix transcript -- this is
+exactly the "off-by-one in 'nearest in time'" the plan's own Task 3 text
+anticipated and pre-authorized fixing.
 """
 
 from __future__ import annotations
@@ -102,16 +121,17 @@ def resolve_side(df: pl.DataFrame, quotes: pl.DataFrame | None = None) -> pl.Dat
 
 
 def nearest_quote_side(trades: pl.DataFrame, quotes: pl.DataFrame) -> pl.DataFrame:
-    """Classify `trades` (rows needing a side) by nearest L1 quote at/before
-    each trade's `etime`.
+    """Classify `trades` (rows needing a side) by the nearest L1 quote
+    STRICTLY BEFORE each trade's `etime` (never at the same `etime` -- see
+    module docstring's `allow_exact_matches=False` rationale).
 
     Returns `trades` with `tradeSide_corrected`/`side_method` overwritten:
     closer to the prevailing bid -> sell (`-1`, `"nearest_quote"`); closer to
     the prevailing ask -> buy (`+1`, `"nearest_quote"`); exact tie, or no
-    prevailing quote at all (trade precedes the first quote) -> `0`,
-    `"unknown"`. `tradeSide_raw` is left untouched -- it is the exact-flag
-    value (`0` for these rows by construction), never overwritten by this
-    classifier.
+    strictly-prior quote at all (trade precedes or ties the first quote) ->
+    `0`, `"unknown"`. `tradeSide_raw` is left untouched -- it is the
+    exact-flag value (`0` for these rows by construction), never overwritten
+    by this classifier.
     """
     # Preserve the caller's original row order across the sort join_asof
     # requires -- both resolve_side's legacy-row path and a direct caller
@@ -121,7 +141,9 @@ def nearest_quote_side(trades: pl.DataFrame, quotes: pl.DataFrame) -> pl.DataFra
     trades_sorted = trades_indexed.sort("etime")
     quotes_sorted = quotes.sort("etime").select("etime", "bid_price", "ask_price")
 
-    joined = trades_sorted.join_asof(quotes_sorted, on="etime", strategy="backward")
+    joined = trades_sorted.join_asof(
+        quotes_sorted, on="etime", strategy="backward", allow_exact_matches=False
+    )
 
     dist_bid = (pl.col("price") - pl.col("bid_price")).abs()
     dist_ask = (pl.col("ask_price") - pl.col("price")).abs()
