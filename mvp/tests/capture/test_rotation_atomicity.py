@@ -29,6 +29,7 @@ from data.capture.rotation import (
     consume,
     partition_dir,
     sweep_orphan_tmp_files,
+    write_parquet_atomic,
     write_partition_atomic,
 )
 from data.capture.seq import SeqAssigner
@@ -72,6 +73,45 @@ def test_replace_failure_propagates_and_leaves_no_final_file(
 
     tmp_files = list(stream_dir.glob("**/*.parquet.tmp"))
     assert len(tmp_files) == 1
+
+
+def test_write_parquet_atomic_creates_parent_dir_and_writes_readable_file(
+    tmp_path: Path,
+) -> None:
+    """`write_parquet_atomic` (extracted in 03-01-PLAN.md Task 3) creates a
+    nested, not-yet-existing parent directory and leaves a final (not
+    .tmp-suffixed) file readable by pl.read_parquet -- exercised directly,
+    not only through write_partition_atomic's per-date loop."""
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    final_path = tmp_path / "nested" / "dir" / "part-1.parquet"
+
+    write_parquet_atomic(df, final_path)
+
+    assert final_path.exists()
+    assert not final_path.with_suffix(final_path.suffix + ".tmp").exists()
+    assert pl.read_parquet(final_path).height == 3
+
+
+def test_write_parquet_atomic_replace_failure_leaves_only_tmp_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Same atomicity claim as write_partition_atomic's crash-simulation
+    tests below, exercised directly against write_parquet_atomic: a
+    Path.replace failure after write_parquet completes must propagate and
+    leave no final file, only the orphaned .tmp."""
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    final_path = tmp_path / "part-1.parquet"
+
+    def _boom(self, target):
+        raise OSError("simulated crash between write and rename")
+
+    with monkeypatch.context() as m:
+        m.setattr(Path, "replace", _boom)
+        with pytest.raises(OSError, match="simulated crash"):
+            write_parquet_atomic(df, final_path)
+
+    assert not final_path.exists()
+    assert final_path.with_suffix(final_path.suffix + ".tmp").exists()
 
 
 def test_pl_read_parquet_glob_sees_nothing_before_any_sweep_runs(
