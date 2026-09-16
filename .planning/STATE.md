@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-10)
 
 **Core value:** A reproducible, leakage-proof two-stage pipeline achieving Net P&L > 0 and annualized Sharpe > 5 on a locked held-out walk-forward window under stated simplifications — produced by a workflow where agentic iteration verifiably improves the model.
-**Current focus:** Phase 2 — Stage 0: Living Spec, CI Guardrails & Tracking
+**Current focus:** Phase 3 — Data Layer: Backfill, Ingest & Lockbox
 
 ## Current Position
 
-Phase: 2 of 11 (Stage 0: Living Spec, CI Guardrails & Tracking) — EXECUTING
-Plan: 4 of 4
-Status: Ready to execute
-Last activity: 2026-09-14
+Phase: 3 of 11 (Data Layer — Backfill, Ingest & Lockbox) — DISCUSSED, planning next
+Plan: 0 of ?
+Status: CONTEXT.md written; plan-phase not yet run
+Last activity: 2026-09-16
 
 Progress: [██████████] 100%
 
@@ -101,10 +101,16 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- [Phase 1, deferred operational check — **premise now doubtful**]: Binance's documented ~24h forced close **did not occur** on `fstream` — Run F held both connections for 28h+ with no reconnect (largest gap 0.656s in the 24h-mark window). Reconnect handling is unit-tested and now logged (`connection X: closed code=... — reconnecting`); watch Run G's log for the first real close, whenever it comes, and confirm the ledger shows no gap.
-- [Phase 1, deferred operational check]: Eject `/Volumes/ProjectsSSD` while the daemon runs; confirm it records an outage and resumes cleanly without corrupting a partition, rather than crashing or writing a partial file.
+- [OPS, **ACTION REQUIRED BY USER**]: Run `sudo pmset -b disablesleep 1` on this Mac. Not yet done as of 2026-09-16 05:20 UTC (`battery_sleep_disabled()` still returns False). Without it, every minute the laptop spends unplugged is lost capture — see the Blockers section below for the measured cost. Verify afterwards with `./.venv/bin/python3 -c "from data.capture.power import battery_sleep_disabled; print(battery_sleep_disabled())"` → must print `True`.
+- [Phase 1, deferred operational check — **RESOLVED 2026-09-15**]: Binance's ~24h forced close is real after all. Run G logged repeated closes (`connection B: closed code=None reason='' after 53897.5s — reconnecting`, then A at 53962.9s, and many more; A reached attempt=12, B attempt=15 over ~52h). Every close reconnected automatically; reconnects lasting <5s produced no ledger row, longer ones did. Run F's 28h+ clean hold was luck, not a disproof.
+- [Phase 1, deferred operational check]: Eject `/Volumes/ProjectsSSD` while the daemon runs; confirm it records an outage and resumes cleanly without corrupting a partition, rather than crashing or writing a partial file. **Still open.**
 
 ### Blockers/Concerns
+
+- [OPS, 2026-09-16 — **root-caused, mitigation half-applied**]: **The Mac sleeps on battery and `caffeinate` cannot stop it.** Measured 2.71h of irreplaceable L1 lost in a 69.5h window (96.10% uptime), in three outages of 6053s, 2894s and 304s, plus a further ~54min on 09-15 evening. Cause is not the network and not the daemon: `pmset -g log` shows `Entering Sleep state due to 'Maintenance Sleep': TCPKeepAlive=active Using Batt (Charge:73%)` and later a `Clamshell Sleep`. `caffeinate -i -s`'s `PreventSystemSleep` assertion is honored **on AC power only**; on battery it is inert while still reporting as held (pmset showed it unbroken for 27h across all three sleeps), which is what made the loss invisible. The watchdog structurally cannot catch this — when the host sleeps, the watchdog stops ticking too.
+  - **Done:** `mvp/data/capture/power.py` + watchdog `__power__` ledger rows + a startup `WARNING: SLEEP RISK` line (commit 343d6d6, 9 tests, 5 mutation red-proofs). Live in Run H (PID 57329, restarted 2026-09-16 05:19:45Z, 7.4s gap, seq resumed from sidecar).
+  - **Still needed:** the user must run `sudo pmset -b disablesleep 1`. The alarm makes the risk visible; only pmset makes it impossible.
+  - **Note for Phase 3 DQ design:** capture uptime is ~96%, not ~100%. The gap-ledger coverage check's thresholds must be set against that reality, and the two-regime dataset's L1 regime has real holes that features must not silently interpolate across.
 
 - [OPS, 2026-09-14 00:54 UTC — RESOLVED, but the lesson is permanent]: **OneDrive Files-On-Demand dehydrated the repo working tree and `.venv`** under disk pressure (internal volume at 97%). `ls -lO` showed `compressed,dataless` on `daemon.py`, `rotation.py`, `schema.py`, `uv.lock`, and 343/380 polars files. Python's import hung in `importlib.get_data` waiting on OneDrive. A daemon restart therefore stalled with no log output and no pidfile, costing ~2.5 min of capture. **Resolution: the canonical working checkout is now `/Volumes/ProjectsSSD/aihedgefund/repo`** (cloned from `origin/develop`, venv built there, Run G launched from it). The OneDrive checkout at `~/Library/CloudStorage/OneDrive-Personal/.../AiHedgeFund` is stale by design — do not commit there; do not open it in an editor expecting it to be current. Git objects there were mostly intact (8/400 sampled dataless) so the three local-only Phase 2 commits were pushed before switching.
 
@@ -125,6 +131,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-14
-Stopped at: Phases 1–2 complete and merged. Next: `/gsd-autonomous --from 3` (Data Layer — backfill, ingest, lockbox). Work ONLY from /Volumes/ProjectsSSD/aihedgefund/repo (OneDrive checkout is dehydrated/stale). Capture daemon Run G (PID 10771) running from that checkout's mvp/.venv. git-flow is NOT initialised in the SSD clone — use `git merge --no-ff` (identical result) or run `git flow init -d` first.
+Last session: 2026-09-16
+Stopped at: Phase 3 discussed (CONTEXT.md + evidence/PROBE-RESULTS.md committed on feature/phase-03-data-layer-backfill-ingest-lockbox); two defects found and fixed en route (990b3af scratch-repo index corruption, 343d6d6 battery-sleep alarm). Phases 1–2 complete and merged. Next: `/gsd-autonomous --from 3` (Data Layer — backfill, ingest, lockbox). Work ONLY from /Volumes/ProjectsSSD/aihedgefund/repo (OneDrive checkout is dehydrated/stale). Capture daemon Run G (PID 10771) running from that checkout's mvp/.venv. git-flow is NOT initialised in the SSD clone — use `git merge --no-ff` (identical result) or run `git flow init -d` first.
 Resume file: .planning/phases/02-stage-0-living-spec-ci-guardrails-tracking/02-04-SUMMARY.md
