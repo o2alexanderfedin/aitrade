@@ -17,6 +17,7 @@ from spec.render import (
     FEATURES_END,
     LABELS_BEGIN,
     LABELS_END,
+    load_dq_thresholds_raw,
     render_features_table,
     render_labels_table,
     render_spec,
@@ -87,6 +88,14 @@ SAMPLE_SPEC_MD = """# Sample spec
 <!-- catalogue:labels:end -->
 
 **Rules:** more unrelated prose.
+
+## Data quality
+
+<!-- catalogue:dq_thresholds:begin -->
+| Check | Threshold(s) | Notes |
+| --- | --- | --- |
+| `dq_stub` | x=1 | old, left untouched when dq_thresholds is not passed |
+<!-- catalogue:dq_thresholds:end -->
 """
 
 
@@ -269,7 +278,10 @@ def test_main_warns_and_exits_zero_when_base_ref_unresolvable(
     # Real committed mvp/spec.md already matches its own TOML (checked by the repo
     # tests above); here we just need *some* spec.md that renders driftlessly against
     # the monkeypatched FEATURES/LABELS, so build one from render_spec directly.
-    spec_md = render_spec(SAMPLE_SPEC_MD, FEATURES, LABELS)
+    # dq_thresholds is NOT monkeypatched on `tools.check_spec_diff` (main() always
+    # loads it via spec.render's own, real DQ_THRESHOLDS_TOML path) -- use the same
+    # real values here so the scratch spec.md's DQ block matches what main() renders.
+    spec_md = render_spec(SAMPLE_SPEC_MD, FEATURES, LABELS, load_dq_thresholds_raw())
     (tmp_path / "spec.md").write_text(spec_md)
 
     exit_code = check_spec_diff_main(["--base-ref", "HEAD~999"])
@@ -318,7 +330,14 @@ def test_spec_diff_main_fails_when_feature_removed(monkeypatch, tmp_path, capsys
         "| Embargo | Notes |\n"
         "| --- | --- | --- | --- | --- |\n"
         "<!-- catalogue:labels:end -->\n"
+        "<!-- catalogue:dq_thresholds:begin -->\n"
+        "<!-- catalogue:dq_thresholds:end -->\n"
     )
+    # dq_thresholds is loaded from the REAL project path by main() (not monkeypatched
+    # here, unlike load_features/load_labels above) -- render the real table in so the
+    # scratch spec.md is driftless on that block; this test's assertions only care
+    # about the removed-feature failure, not the DQ block.
+    spec_md = render_spec(spec_md, {}, {}, load_dq_thresholds_raw())
     (repo / "mvp" / "spec.md").write_text(spec_md)
 
     exit_code = check_spec_diff_main(["--base-ref", "HEAD~1"])

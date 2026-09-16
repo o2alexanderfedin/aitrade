@@ -28,7 +28,7 @@ from spec.catalogue import (
     load_features,
     load_labels,
 )
-from spec.render import render_spec
+from spec.render import load_dq_thresholds_raw, render_spec
 from tools.git_env import scrubbed_git_env
 
 PKG_ROOT = Path(__file__).resolve().parents[1]
@@ -54,12 +54,14 @@ def git_show_toml(ref: str, relpath: str, cwd: Path) -> dict | None:
     return tomllib.loads(result.stdout)
 
 
-def check_drift(spec_md_path: Path, features: dict, labels: dict) -> str | None:
-    """Return a unified diff if re-rendering `spec_md_path` from `features`/`labels`
-    would change it, else None.
+def check_drift(
+    spec_md_path: Path, features: dict, labels: dict, dq_thresholds: dict | None = None
+) -> str | None:
+    """Return a unified diff if re-rendering `spec_md_path` from
+    `features`/`labels`/`dq_thresholds` would change it, else None.
     """
     current = spec_md_path.read_text()
-    rendered = render_spec(current, features, labels)
+    rendered = render_spec(current, features, labels, dq_thresholds)
     if rendered == current:
         return None
     return "\n".join(
@@ -140,8 +142,9 @@ def main(argv: list[str] | None = None) -> int:
 
     features = load_features()
     labels = load_labels()
+    dq_thresholds = load_dq_thresholds_raw()
 
-    drift = check_drift(PKG_ROOT / "spec.md", features, labels)
+    drift = check_drift(PKG_ROOT / "spec.md", features, labels, dq_thresholds)
     if drift is not None:
         print("FAIL: mvp/spec.md's catalogue tables drifted from the TOML source:")
         print(drift)
