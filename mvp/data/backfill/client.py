@@ -217,13 +217,34 @@ def extract_expected_member(zip_path: Path, expected_name: str, dest_dir: Path) 
 @dataclass
 class BackfillClient:
     """Idempotent per-`(symbol, date)` downloader: skips re-download if the
-    `.verified` marker for that day already exists in `staging_root`."""
+    `.verified` marker for that day already exists in `staging_root`.
+
+    `granularity` (03-03-PLAN.md Task 1): `"daily"` (default, Plan 01's
+    original shape) hits `.../daily/<dataset>/...` with `date` shaped
+    `YYYY-MM-DD`; `"monthly"` hits `.../monthly/<dataset>/...` with `date`
+    shaped `YYYY-MM` (confirmed live this session: monthly URL template
+    measured against `data.binance.vision`, content-length matched
+    03-CONTEXT.md's measured 2026-06 size, 1,085,937,447 B, exactly). Both
+    share every other method (`_day_dir`/`_verified_marker`/`_zip_name`
+    format identically regardless of `date`'s shape) and the same
+    `download_and_verify`/checksum-sidecar logic -- no duplicated download
+    logic between the two granularities, only the URL's path segment
+    differs.
+    """
 
     staging_root: Path
     market: str = "futures-um"
     dataset: str = "trades"
+    granularity: str = "daily"
     fetch: Fetcher = field(default=_default_fetch)
     open_stream: StreamOpener = field(default=_default_open_stream)
+
+    def __post_init__(self) -> None:
+        if self.granularity not in ("daily", "monthly"):
+            raise ValueError(
+                f"BackfillClient.granularity must be 'daily' or 'monthly', "
+                f"got {self.granularity!r}"
+            )
 
     def _day_dir(self, symbol: str, date: str) -> Path:
         return self.staging_root / symbol / date
@@ -237,6 +258,10 @@ class BackfillClient:
     def ensure_downloaded(self, symbol: str, date: str) -> Path:
         """Idempotently download + checksum-verify the zip for `(symbol, date)`.
 
+        `date` is `YYYY-MM-DD` for `granularity="daily"`, `YYYY-MM` for
+        `granularity="monthly"` -- the caller's responsibility to pass the
+        shape matching this client's own `granularity`.
+
         Returns the final zip path. A second call for an already-verified
         `(symbol, date)` makes zero `fetch`/`open_stream` calls.
         """
@@ -248,7 +273,7 @@ class BackfillClient:
             return zip_path
 
         day_dir.mkdir(parents=True, exist_ok=True)
-        url = f"{ARCHIVE_BASE_URL}data/futures/um/daily/{self.dataset}/{symbol}/{self._zip_name(symbol, date)}"
+        url = f"{ARCHIVE_BASE_URL}data/futures/um/{self.granularity}/{self.dataset}/{symbol}/{self._zip_name(symbol, date)}"
         checksum_url = url + ".CHECKSUM"
         tmp_path = zip_path.with_suffix(zip_path.suffix + ".tmp")
 
