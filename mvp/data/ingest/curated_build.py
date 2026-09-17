@@ -32,7 +32,7 @@ import polars as pl
 from data.backfill.downloader import daterange
 from data.capture.rotation import write_parquet_atomic
 from data.ingest.trade_side import resolve_side
-from data.store import by_date_index_path, issue_manifest
+from data.store import by_date_index_path, issue_manifest, manifest_path
 
 __all__ = [
     "materialize_seq",
@@ -227,6 +227,7 @@ def build_curated_day(
     *,
     registry_root: Path,
     code_hash: str,
+    supersede: bool = False,
 ) -> dict:
     """Orchestrate one day's curated build: read raw archive + capture
     partitions, select a source, filter/resolve-side (trades only),
@@ -245,6 +246,13 @@ def build_curated_day(
     and the NA-placeholder filter are skipped for bookTicker below (no
     side/exec_type concept on that schema); `materialize_seq`'s sort key
     is `["etime", "update_id"]` instead of `["etime", "trade_id"]`.
+
+    `supersede=True` (03-REVIEW.md WR-03) permits building a day that already
+    has a curated partition: a NEW `part-<ns>.parquet` and a NEW manifest are
+    written and the by-date pointer moves to it; the old partition and the
+    old manifest are left untouched and keep resolving (write-once is about
+    never changing bytes a manifest names, not about never rebuilding).
+    `build_curated_range` decides when that is warranted.
 
     Returns the issued manifest dict.
     """
@@ -312,13 +320,15 @@ def build_curated_day(
     # -- a second build_curated_day call for an already-written day is a
     # no-op-that-errors, never a silent overwrite or silent duplicate.
     existing = sorted(curated_date_dir.glob("part-*.parquet"))
-    if existing:
+    if existing and not supersede:
         raise FileExistsError(
             f"curated partition {curated_date_dir} already has a written "
             f"part file: {existing[0]}"
         )
 
     final_path = curated_date_dir / f"part-{time.time_ns()}.parquet"
+    if final_path.exists():  # never overwrite, even when superseding
+        raise FileExistsError(f"curated part file already exists: {final_path}")
     write_parquet_atomic(chosen_df, final_path)
 
     on_disk_bytes = final_path.read_bytes()
@@ -389,6 +399,18 @@ def _curated_build_stats_path(
     )
 
 
+def _archive_published(symbol: str, stream: str, date: str, lake_root: Path) -> bool:
+    archive_dir = (
+        Path(lake_root)
+        / "raw"
+        / f"symbol={symbol}"
+        / f"stream={stream}"
+        / "source=archive"
+        / f"date={date}"
+    )
+    return archive_dir.exists() and any(archive_dir.glob("part-*.parquet"))
+
+
 def _day_has_any_source(
     symbol: str, stream: str, date: str, lake_root: Path, capture_root: Path
 ) -> bool:
@@ -419,6 +441,28 @@ def _day_has_any_source(
     return capture_dir.exists() and any(capture_dir.glob("part-*.parquet"))
 
 
+def _manifested_partition_paths(registry_root: Path, dataset: str) -> set[str]:
+    """Every `partitions[].path` named by any manifest issued for `dataset`."""
+    dataset_dir = Path(registry_root) / "manifests" / dataset
+    if not dataset_dir.exists():
+        return set()
+    paths: set[str] = set()
+    for manifest_file in dataset_dir.glob("*.json"):
+        body = json.loads(manifest_file.read_text())
+        paths.update(p["path"] for p in body.get("partitions", []))
+    return paths
+
+
+def _manifest_source(manifest: dict) -> str:
+    """`"archive"` if the manifest's inputs are the raw archive partition,
+    else `"capture"` -- read from the manifest itself (committed, bound to
+    its id), not from the mutable build_stats.json."""
+    inputs = manifest.get("inputs", [])
+    if inputs and all("/source=archive/" in i["path"] for i in inputs):
+        return "archive"
+    return "capture"
+
+
 def build_curated_range(
     symbol: str,
     stream: str,
@@ -429,36 +473,53 @@ def build_curated_range(
     *,
     registry_root: Path,
     code_hash: str,
+    today: str | None = None,
 ) -> list[dict]:
     """Call `build_curated_day` once per UTC date in `[start_date,
-    end_date]` (inclusive), idempotently.
+    end_date]` (inclusive), idempotently. Returns one status dict per date:
+    `{"date", "status", "manifest_id", "chosen_source"}` plus
+    status-specific keys. Statuses:
 
-    Skips (never fails) two kinds of date, both counted and reported, not
-    silently dropped:
-    - `"already_present"`: the curated partition already exists (write-once
-      immutability -- re-running the range build issues ZERO new
-      manifests/partitions for these dates; the existing manifest_id is
-      looked up via the by-date index, matching `build_curated_day`'s own
-      write-once existing-file refusal so this function never even
-      attempts a write that would raise).
+    - `"written"`: built now.
+    - `"already_present"`: the by-date index points at a manifest naming a
+      partition in this date's directory, and nothing warrants a rebuild --
+      zero new manifests/partitions.
+    - `"superseded"` (03-REVIEW.md WR-03): a TRADE day whose current curated
+      manifest is capture-sourced, now that the archive has published for
+      it. The archive is authoritative for trades on every published day
+      (03-CONTEXT.md), so a day built from (possibly partial) capture before
+      publication is rebuilt: new partition, new manifest, by-date pointer
+      moved (`superseded_manifest_id` names the old one, which keeps
+      resolving). Previously such a day stayed capture-sourced forever.
+    - `"orphan"` (WR-03): a `part-*.parquet` in this date's directory that NO
+      manifest names -- a crash between the partition write and manifest
+      issuance. Reported with `orphan_paths` and NOT built over; it needs a
+      human to confirm and remove it. Previously counted as
+      `already_present` with `manifest_id=None`, forever.
+    - `"not_final"` (WR-03): `date >= today` (UTC; `today` injectable for
+      tests). An in-progress day would be frozen partial.
     - `"no_source"`: neither the raw archive partition nor the capture
-      partition has any data for this date (`_day_has_any_source`) --
-      expected for `stream="bookTicker"` before capture's own history
-      starts (2026-06/07/08, and 2026-09-01..11 before 06:37:10Z on
-      2026-09-12); would be a genuine finding for `stream="trade"`, which
-      has an archive source for every date in this phase's window.
-
-    Returns one status dict per date: `{"date", "status", "manifest_id",
-    "chosen_source"}` (`chosen_source` is `None` for `"no_source"` dates,
-    and is read back from the just-written or already-existing
-    `build_stats.json` otherwise -- `build_curated_day`'s own return
-    contract, the manifest dict, is unchanged).
+      partition has data -- expected for `stream="bookTicker"` before
+      capture's own history starts.
     """
     lake_root = Path(lake_root)
     dataset = f"{symbol}.{stream}"
+    today = today if today is not None else time.strftime("%Y-%m-%d", time.gmtime())
+    manifested = _manifested_partition_paths(registry_root, dataset)
     results: list[dict] = []
 
     for date in daterange(start_date, end_date):
+        if date >= today:
+            results.append(
+                {
+                    "date": date,
+                    "status": "not_final",
+                    "manifest_id": None,
+                    "chosen_source": None,
+                }
+            )
+            continue
+
         curated_dir = (
             lake_root
             / "curated"
@@ -466,30 +527,69 @@ def build_curated_range(
             / f"stream={stream}"
             / f"date={date}"
         )
-        if sorted(curated_dir.glob("part-*.parquet")):
+        existing = sorted(curated_dir.glob("part-*.parquet"))
+        supersede_from: str | None = None
+        if existing:
+            rel_existing = [str(p.relative_to(lake_root)) for p in existing]
+            orphans = [p for p in rel_existing if p not in manifested]
+            if orphans:
+                results.append(
+                    {
+                        "date": date,
+                        "status": "orphan",
+                        "manifest_id": None,
+                        "chosen_source": None,
+                        "orphan_paths": orphans,
+                    }
+                )
+                continue
+
             idx_path = by_date_index_path(registry_root, dataset, symbol, stream, date)
             manifest_id = (
                 json.loads(idx_path.read_text())["manifest_id"]
                 if idx_path.exists()
                 else None
             )
-            stats_path = _curated_build_stats_path(lake_root, symbol, stream, date)
-            chosen_source = (
-                json.loads(stats_path.read_text())["chosen_source"]
-                if stats_path.exists()
+            current = (
+                json.loads(
+                    manifest_path(registry_root, dataset, manifest_id).read_text()
+                )
+                if manifest_id is not None
                 else None
             )
-            results.append(
-                {
-                    "date": date,
-                    "status": "already_present",
-                    "manifest_id": manifest_id,
-                    "chosen_source": chosen_source,
-                }
-            )
-            continue
+            if current is None:
+                # Every part file is manifested, but no by-date pointer:
+                # also a crash window (index write). Surface it, don't guess.
+                results.append(
+                    {
+                        "date": date,
+                        "status": "orphan",
+                        "manifest_id": None,
+                        "chosen_source": None,
+                        "orphan_paths": rel_existing,
+                    }
+                )
+                continue
 
-        if not _day_has_any_source(symbol, stream, date, lake_root, capture_root):
+            current_source = _manifest_source(current)
+            archive_published = _archive_published(symbol, stream, date, lake_root)
+            if not (
+                stream == "trade" and current_source == "capture" and archive_published
+            ):
+                results.append(
+                    {
+                        "date": date,
+                        "status": "already_present",
+                        "manifest_id": manifest_id,
+                        "chosen_source": current_source,
+                    }
+                )
+                continue
+            supersede_from = manifest_id
+
+        if supersede_from is None and not _day_has_any_source(
+            symbol, stream, date, lake_root, capture_root
+        ):
             results.append(
                 {
                     "date": date,
@@ -508,16 +608,19 @@ def build_curated_range(
             capture_root,
             registry_root=registry_root,
             code_hash=code_hash,
+            supersede=supersede_from is not None,
         )
+        manifested.update(p["path"] for p in manifest["partitions"])
         stats_path = _curated_build_stats_path(lake_root, symbol, stream, date)
         chosen_source = json.loads(stats_path.read_text())["chosen_source"]
-        results.append(
-            {
-                "date": date,
-                "status": "written",
-                "manifest_id": manifest["manifest_id"],
-                "chosen_source": chosen_source,
-            }
-        )
+        result = {
+            "date": date,
+            "status": "written" if supersede_from is None else "superseded",
+            "manifest_id": manifest["manifest_id"],
+            "chosen_source": chosen_source,
+        }
+        if supersede_from is not None:
+            result["superseded_manifest_id"] = supersede_from
+        results.append(result)
 
     return results

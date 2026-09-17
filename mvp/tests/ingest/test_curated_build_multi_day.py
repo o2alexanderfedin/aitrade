@@ -223,3 +223,138 @@ def test_build_curated_range_reuses_existing_manifest_built_via_build_curated_da
     )
     assert results[0]["status"] == "already_present"
     assert results[0]["manifest_id"] == direct_manifest["manifest_id"]
+
+
+# --- WR-03 (03-REVIEW.md): partial/capture days supersede; orphans surface --
+
+
+def _write_capture_trade_partition(
+    capture_root_dir: Path, date: str, trade_ids: list[int]
+) -> None:
+    date_dir = capture_root_dir / "symbol=BTCUSDT" / "stream=trade" / f"date={date}"
+    date_dir.mkdir(parents=True, exist_ok=True)
+    n = len(trade_ids)
+    pl.DataFrame(
+        {
+            "symbol": ["BTCUSDT"] * n,
+            "stream": ["trade"] * n,
+            "trade_id": trade_ids,
+            "etime": [1_000 * (i + 1) for i in range(n)],
+            "event_time": [1_000 * (i + 1) for i in range(n)],
+            "price": [100.0 + i for i in range(n)],
+            "qty": [1.0] * n,
+            "is_buyer_maker": [i % 2 == 0 for i in range(n)],
+            "exec_type": ["TRADE"] * n,
+            "seq": list(range(n)),
+            "rtime": [0] * n,
+            "source": ["capture"] * n,
+            "schema_version": [2] * n,
+        }
+    ).write_parquet(date_dir / "part-1.parquet")
+
+
+def _range(lake_root_dir, capture_root, registry_root, start, end, today="2099-01-01"):
+    return build_curated_range(
+        "BTCUSDT",
+        "trade",
+        start,
+        end,
+        lake_root_dir,
+        capture_root,
+        registry_root=registry_root,
+        code_hash="deadbeef",
+        today=today,
+    )
+
+
+def test_capture_sourced_day_is_superseded_once_the_archive_publishes(tmp_path: Path):
+    """03-REVIEW.md WR-03 reproduction: a day built from (partial) capture
+    before the archive published stayed capture-sourced forever. A rebuild
+    must supersede it -- NEW partition + NEW manifest + moved by-date
+    pointer -- while the old manifest and its partition stay resolvable."""
+    import json
+
+    from data.store import resolve_manifest
+
+    lake_root_dir = tmp_path / "lake"
+    registry_root = tmp_path / "registry"
+    capture_root = tmp_path / "capture"
+
+    _write_capture_trade_partition(capture_root, "2026-09-12", [16, 17, 18, 19, 20])
+    first = _range(
+        lake_root_dir, capture_root, registry_root, "2026-09-12", "2026-09-12"
+    )
+    assert first[0]["status"] == "written" and first[0]["chosen_source"] == "capture"
+    old_id = first[0]["manifest_id"]
+
+    _write_archive_trade_partition(lake_root_dir, "2026-09-12", list(range(1, 21)))
+    second = _range(
+        lake_root_dir, capture_root, registry_root, "2026-09-12", "2026-09-12"
+    )
+    assert second[0]["status"] == "superseded", second
+    assert second[0]["chosen_source"] == "archive"
+    assert second[0]["superseded_manifest_id"] == old_id
+    new_id = second[0]["manifest_id"]
+    assert new_id != old_id
+
+    idx = by_date_index_path(
+        registry_root, "BTCUSDT.trade", "BTCUSDT", "trade", "2026-09-12"
+    )
+    assert json.loads(idx.read_text())["manifest_id"] == new_id
+    for mid, rows in ((old_id, 5), (new_id, 20)):
+        m = resolve_manifest(
+            mid,
+            "BTCUSDT.trade",
+            registry_root=registry_root,
+            lake_root=lake_root_dir,
+            expected_tier="curated",
+        )
+        assert m["row_count"] == rows
+
+    third = _range(
+        lake_root_dir, capture_root, registry_root, "2026-09-12", "2026-09-12"
+    )
+    assert third[0]["status"] == "already_present"
+    assert third[0]["manifest_id"] == new_id
+
+
+def test_orphan_partition_without_a_manifest_is_reported_not_already_present(
+    tmp_path: Path,
+):
+    """Crash between write_parquet_atomic and issue_manifest: the part file
+    exists, no manifest names it. Used to report `already_present` with
+    manifest_id=None forever."""
+    lake_root_dir = tmp_path / "lake"
+    registry_root = tmp_path / "registry"
+    capture_root = tmp_path / "capture"
+    _write_archive_trade_partition(lake_root_dir, "2026-09-13", [1, 2, 3])
+    orphan_dir = lake_root_dir / "curated/symbol=BTCUSDT/stream=trade/date=2026-09-13"
+    orphan_dir.mkdir(parents=True)
+    pl.DataFrame({"trade_id": [1]}).write_parquet(orphan_dir / "part-123.parquet")
+
+    results = _range(
+        lake_root_dir, capture_root, registry_root, "2026-09-13", "2026-09-13"
+    )
+    assert results[0]["status"] == "orphan", results
+    assert results[0]["orphan_paths"] == [
+        "curated/symbol=BTCUSDT/stream=trade/date=2026-09-13/part-123.parquet"
+    ]
+
+
+def test_today_and_future_dates_are_never_built(tmp_path: Path):
+    lake_root_dir = tmp_path / "lake"
+    registry_root = tmp_path / "registry"
+    capture_root = tmp_path / "capture"
+    _write_capture_trade_partition(capture_root, "2026-09-16", [1, 2, 3])
+    _write_capture_trade_partition(capture_root, "2026-09-17", [4, 5, 6])
+
+    results = _range(
+        lake_root_dir,
+        capture_root,
+        registry_root,
+        "2026-09-16",
+        "2026-09-17",
+        today="2026-09-16",
+    )
+    assert [r["status"] for r in results] == ["not_final", "not_final"]
+    assert not (lake_root_dir / "curated").exists()
