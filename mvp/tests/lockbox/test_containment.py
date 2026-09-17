@@ -7,7 +7,7 @@ quarantined segment -- and the manual RP-3 drill (recorded in the plan
 SUMMARY, not as a permanent test parameter) proves the assertion itself is
 genuinely conditioned on the permission bit, not trivially true: with the
 `os.chmod(..., 0o000)` line in `_quarantined_segment` temporarily commented
-out, `test_default_loader_cannot_reach_lockbox` must FAIL; restored, it
+out, `test_chmod_0000_blocks_listing_the_quarantined_dir` must FAIL; restored, it
 must PASS.
 """
 
@@ -23,7 +23,7 @@ import pytest
 from mlflow.tracking import MlflowClient
 
 from data.lockbox import LockboxTokenError, issue_token, open_lockbox
-from data.store import issue_manifest, load_curated
+from data.store import ManifestTierError, issue_manifest, load_curated
 from tracking.mlflow_utils import build_tracking_uri
 
 
@@ -81,42 +81,54 @@ def _quarantined_segment(tmp_path: Path):
         os.chmod(lockbox_dir, 0o755)
 
 
-# --- RP-3, direction 1: the default loader cannot reach a chmod'd segment ---
+# --- RP-3, barrier 2 (physical): chmod 0000 blocks listing the segment ---
 
 
 @pytest.mark.skipif(
     os.geteuid() == 0,
     reason="root ignores POSIX permission bits; this test would fail for the wrong reason",
 )
-def test_default_loader_cannot_reach_lockbox(_quarantined_segment):
-    """Behavioral reachability assertion, not a source-code-absence check
-    (that is `tools/check_lockbox_containment.py`'s job, exercised
-    separately). `Path.iterdir()` against a `chmod 0000` directory raises
-    `PermissionError` via `scandir` -- measured on this machine's APFS
-    volume; `glob.glob()` was measured to instead silently return `[]`,
-    which `pytest.raises` cannot catch, so it is deliberately not used
-    here."""
+def test_chmod_0000_blocks_listing_the_quarantined_dir(_quarantined_segment):
+    """Proves the PHYSICAL barrier only (renamed from
+    `test_default_loader_cannot_reach_lockbox`, which never called the loader
+    -- 03-REVIEW.md CR-04). `Path.iterdir()` against a `chmod 0000` directory
+    raises `PermissionError` via `scandir` -- measured on this machine's APFS
+    volume; `glob.glob()` silently returns `[]`, so it is not used here. The
+    loader's own refusal is proven by `tests/store/test_loader_tier_containment.py`
+    and by `test_load_curated_refuses_a_lockbox_manifest_before_any_read` below."""
     _lake_root, lockbox_dir, _part = _quarantined_segment
     with pytest.raises(PermissionError):
         list(lockbox_dir.iterdir())
 
 
-# --- RP-3, direction 2 (independence check): chmod alone blocks a --------
-# --- lockbox-pointed manifest read through the ORDINARY loader -----------
+@pytest.mark.skipif(
+    os.geteuid() == 0,
+    reason="root ignores POSIX permission bits; this test would fail for the wrong reason",
+)
+def test_chmod_barrier_blocks_a_direct_read_independently_of_the_loader(
+    _quarantined_segment,
+):
+    """Independence of the two barriers, direction 1: a read that bypasses
+    `load_curated` entirely (straight at the partition path) is still stopped
+    by `chmod 0000` alone."""
+    lake_root, _lockbox_dir, part = _quarantined_segment
+    with pytest.raises((PermissionError, OSError, pl.exceptions.ComputeError)):
+        pl.read_parquet(lake_root / part["path"])
 
 
-def test_load_curated_against_lockbox_manifest_is_blocked_by_chmod(
+# --- RP-3, barrier 1 (loader): load_curated refuses a lockbox manifest ------
+# --- before it ever touches the chmod barrier -------------------------------
+
+
+def test_load_curated_refuses_a_lockbox_manifest_before_any_read(
     tmp_path: Path, _quarantined_segment
 ):
-    """Constructs a fixture manifest whose `partitions[].path` deliberately
-    points INTO the `chmod 0000`'d `lockbox/` fixture directory --
-    something `store.py`'s own code never does by construction (Plan 05's
-    "no code path" guardrail already proves that absence) -- and calls
-    `store.load_curated` DIRECTLY against that manifest, bypassing the
-    missing-code-path control on purpose. Asserts `PermissionError`, not
-    `ManifestHashMismatch` or a silent empty read -- proving the chmod
-    barrier is a genuinely SECOND, INDEPENDENT layer, not decoration behind
-    the loader's own refusal."""
+    """Independence of the two barriers, direction 2 (03-REVIEW.md CR-04):
+    against the SAME chmod'd segment, `load_curated` raises
+    `ManifestTierError` -- not `PermissionError` -- so the loader's refusal
+    happens before any file read and does not depend on the permission bit.
+    (Before CR-04 this raised `PermissionError`, i.e. only chmod stood in the
+    way; during a human-unlocked gate evaluation nothing did.)"""
     lake_root, _lockbox_dir, part = _quarantined_segment
     registry_root = tmp_path / "registry"
 
@@ -132,7 +144,7 @@ def test_load_curated_against_lockbox_manifest_is_blocked_by_chmod(
         registry_root=registry_root,
     )
 
-    with pytest.raises(PermissionError):
+    with pytest.raises(ManifestTierError):
         load_curated(
             manifest["manifest_id"],
             "BTCUSDT.trade",

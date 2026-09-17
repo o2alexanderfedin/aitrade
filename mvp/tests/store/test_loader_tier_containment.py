@@ -1,0 +1,220 @@
+"""03-REVIEW.md CR-04: the default loader must enforce the curated tier and
+path containment itself -- these tests CALL `load_curated` (the test the
+review singled out, `test_default_loader_cannot_reach_lockbox`, never did).
+
+Each test builds a readable (never chmod'd) fixture, so the ONLY thing that
+can stop the read is the loader's own refusal -- the state of the lockbox
+directory during a human-unlocked gate evaluation, when the physical barrier
+is lifted.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from pathlib import Path
+
+import polars as pl
+import pytest
+
+from data import store
+from data.store import by_date_index_path, dq_report_path, issue_manifest, load_curated
+
+DATE = "2026-09-13"
+
+
+def _ok_report(lake_root: Path) -> None:
+    path = dq_report_path(lake_root, DATE)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame(
+        {
+            "date": [DATE],
+            "symbol": ["BTCUSDT"],
+            "stream": ["trade"],
+            "check": ["gap_coverage"],
+            "dq_status": ["ok"],
+            "value": [0.0],
+            "count": [None],
+            "detail": [None],
+        },
+        schema={
+            "date": pl.Utf8,
+            "symbol": pl.Utf8,
+            "stream": pl.Utf8,
+            "check": pl.Utf8,
+            "dq_status": pl.Utf8,
+            "value": pl.Float64,
+            "count": pl.Int64,
+            "detail": pl.Utf8,
+        },
+    ).write_parquet(path)
+
+
+def _partition(lake_root: Path, rel: str, *, on_disk: Path | None = None) -> dict:
+    target = on_disk if on_disk is not None else lake_root / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if not target.exists():
+        pl.DataFrame(
+            {"trade_id": [1, 2], "etime": [1_000, 2_000], "price": [1.0, 2.0]}
+        ).write_parquet(target)
+    data = (
+        (lake_root / rel).read_bytes()
+        if (lake_root / rel).exists()
+        else target.read_bytes()
+    )
+    return {
+        "date": DATE,
+        "path": rel,
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "rows": 2,
+        "size_bytes": len(data),
+        "mtime_ns": 0,
+        "etime_min": 1_000,
+        "etime_max": 2_000,
+    }
+
+
+def _issue(registry_root: Path, part: dict, tier: str) -> dict:
+    return issue_manifest(
+        dataset="BTCUSDT.trade",
+        symbol="BTCUSDT",
+        stream="trade",
+        tier=tier,
+        schema_version=1,
+        inputs=[],
+        partitions=[part],
+        code_hash="deadbeef",
+        registry_root=registry_root,
+    )
+
+
+def _spy_reads(monkeypatch) -> list:
+    """Record every partition read `load_curated` attempts, so a test can
+    assert the refusal happened BEFORE any file was touched."""
+    reads: list = []
+    real_read = pl.read_parquet
+
+    def spy(path, *args, **kwargs):
+        reads.append(path)
+        return real_read(path, *args, **kwargs)
+
+    monkeypatch.setattr(store.pl, "read_parquet", spy)
+    return reads
+
+
+def test_lockbox_tier_manifest_is_refused_before_any_read(tmp_path: Path, monkeypatch):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    _ok_report(lake_root)
+    part = _partition(
+        lake_root, "lockbox/symbol=BTCUSDT/stream=trade/date=2026-09-13/part-1.parquet"
+    )
+    manifest = _issue(registry_root, part, tier="lockbox")
+    reads = _spy_reads(monkeypatch)
+    with pytest.raises(store.ManifestTierError):
+        load_curated(
+            manifest["manifest_id"],
+            "BTCUSDT.trade",
+            registry_root=registry_root,
+            lake_root=lake_root,
+        )
+    assert reads == []
+
+
+@pytest.mark.parametrize(
+    "rel",
+    [
+        "lockbox/symbol=BTCUSDT/stream=trade/date=2026-09-13/part-1.parquet",
+        "curated/../lockbox/symbol=BTCUSDT/date=2026-09-13/part-1.parquet",
+        "curated/symbol=BTCUSDT/../../raw/part-1.parquet",
+    ],
+)
+def test_curated_tier_manifest_naming_a_path_outside_curated_is_refused(
+    tmp_path: Path, monkeypatch, rel: str
+):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    _ok_report(lake_root)
+    part = _partition(lake_root, rel)
+    manifest = _issue(registry_root, part, tier="curated")
+    reads = _spy_reads(monkeypatch)
+    with pytest.raises(store.ManifestTierError):
+        load_curated(
+            manifest["manifest_id"],
+            "BTCUSDT.trade",
+            registry_root=registry_root,
+            lake_root=lake_root,
+        )
+    assert reads == []
+
+
+def test_absolute_partition_path_is_refused(tmp_path: Path):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    _ok_report(lake_root)
+    outside = tmp_path / "elsewhere" / "part-1.parquet"
+    part = _partition(lake_root, str(outside), on_disk=outside)
+    manifest = _issue(registry_root, part, tier="curated")
+    with pytest.raises(store.ManifestTierError):
+        load_curated(
+            manifest["manifest_id"],
+            "BTCUSDT.trade",
+            registry_root=registry_root,
+            lake_root=lake_root,
+        )
+
+
+def test_symlink_inside_curated_pointing_into_lockbox_is_refused(tmp_path: Path):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    _ok_report(lake_root)
+    real = _partition(lake_root, "lockbox/segment/part-1.parquet")
+    link = (
+        lake_root / "curated/symbol=BTCUSDT/stream=trade/date=2026-09-13/part-1.parquet"
+    )
+    link.parent.mkdir(parents=True)
+    os.symlink(lake_root / real["path"], link)
+    part = {**real, "path": str(link.relative_to(lake_root))}
+    manifest = _issue(registry_root, part, tier="curated")
+    with pytest.raises(store.ManifestTierError):
+        load_curated(
+            manifest["manifest_id"],
+            "BTCUSDT.trade",
+            registry_root=registry_root,
+            lake_root=lake_root,
+        )
+
+
+def test_lockbox_manifest_never_repoints_the_curated_by_date_index(tmp_path: Path):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    curated = _issue(
+        registry_root,
+        _partition(
+            lake_root,
+            "curated/symbol=BTCUSDT/stream=trade/date=2026-09-13/part-1.parquet",
+        ),
+        tier="curated",
+    )
+    _issue(
+        registry_root,
+        _partition(
+            lake_root,
+            "lockbox/symbol=BTCUSDT/stream=trade/date=2026-09-13/part-2.parquet",
+        ),
+        tier="lockbox",
+    )
+    idx = by_date_index_path(registry_root, "BTCUSDT.trade", "BTCUSDT", "trade", DATE)
+    assert json.loads(idx.read_text())["manifest_id"] == curated["manifest_id"]
+
+
+def test_well_formed_curated_manifest_still_loads(tmp_path: Path):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    _ok_report(lake_root)
+    part = _partition(
+        lake_root, "curated/symbol=BTCUSDT/stream=trade/date=2026-09-13/part-1.parquet"
+    )
+    manifest = _issue(registry_root, part, tier="curated")
+    df = load_curated(
+        manifest["manifest_id"],
+        "BTCUSDT.trade",
+        registry_root=registry_root,
+        lake_root=lake_root,
+    )
+    assert df.height == 2

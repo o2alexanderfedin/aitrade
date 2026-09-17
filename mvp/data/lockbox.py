@@ -72,6 +72,10 @@ from tracking.mlflow_utils import (
 
 PKG_ROOT = Path(__file__).resolve().parents[1]
 
+#: The tier name this module -- and only this module -- resolves manifests
+#: for (`data.store.resolve_manifest(expected_tier=...)`, 03-REVIEW.md CR-04).
+LOCKBOX_TIER = "lockbox"
+
 __all__ = [
     "LockboxTokenError",
     "issue_token",
@@ -305,6 +309,7 @@ def open_lockbox(
             token["dataset"],
             registry_root=resolved_registry_root,
             lake_root=resolved_lake_root,
+            expected_tier=LOCKBOX_TIER,
         )
         frames = [
             pl.read_parquet(resolved_lake_root / part["path"])

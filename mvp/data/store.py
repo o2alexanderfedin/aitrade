@@ -18,8 +18,9 @@ absolute path works for both without inventing a second root concept).
 
 `load_curated` is the ONLY reading path this phase builds that is called
 "the default loader" -- it never constructs a path under the quarantined
-tier (Plan 05 verifies this by construction: no such string appears
-anywhere in this module).
+tier, and it refuses at runtime any manifest whose tier is not `curated` or
+whose partition paths resolve outside `lake_root/curated/` (03-REVIEW.md
+CR-04; see `resolve_manifest`).
 
 DQ pause enforcement (Plan 04, DATA-07): `load_curated` ALSO refuses to
 return rows for any requested day whose data-quality status is
@@ -43,8 +44,10 @@ from pathlib import Path
 import polars as pl
 
 __all__ = [
+    "CURATED_TIER",
     "DQPauseError",
     "ManifestHashMismatch",
+    "ManifestTierError",
     "canonicalize_manifest",
     "compute_manifest_id",
     "dq_acknowledgement_path",
@@ -62,6 +65,21 @@ class DQPauseError(ValueError):
     has an unacknowledged `"failed"`/`"degraded"`/missing-report DQ status
     (DATA-07's mechanical training pause). Add a git-committed
     acknowledgement JSON at `dq_acknowledgement_path(...)` to proceed."""
+
+
+#: The only tier the default loader (`load_curated`) and the by-date index
+#: ever serve. Every other tier is reachable only through its own audited
+#: module, which passes its own tier name to `resolve_manifest`.
+CURATED_TIER = "curated"
+
+
+class ManifestTierError(ValueError):
+    """Raised by `resolve_manifest` BEFORE any partition is read when a
+    manifest's `tier` is not the tier the caller asked for, or when any
+    `partitions[].path` does not resolve (after `..` normalisation and
+    symlink resolution) to a file under `lake_root/<expected_tier>/`
+    (03-REVIEW.md CR-04): the default loader has no code path to another
+    tier, not a flag, not an absolute path, not a symlink."""
 
 
 class ManifestHashMismatch(ValueError):
@@ -210,9 +228,16 @@ def issue_manifest(
 
     _atomic_write_json(manifest_path(registry_root, dataset, manifest_id), manifest)
 
+    # The by-date index is the CURATED tier's date -> manifest pointer, read
+    # by the DQ report and the curated build. A manifest of any other tier
+    # never writes it: a quarantined segment issued for a date must not
+    # silently re-point the curated pointer for that date (03-REVIEW.md
+    # CR-04). Other tiers are addressed by manifest_id only.
     covered_dates = (
         dates if dates is not None else sorted({p["date"] for p in partitions})
     )
+    if tier != CURATED_TIER:
+        covered_dates = []
     for date in covered_dates:
         _atomic_write_json(
             by_date_index_path(registry_root, dataset, symbol, stream, date),
@@ -222,18 +247,52 @@ def issue_manifest(
     return manifest
 
 
+def _enforce_tier_containment(
+    manifest: dict, manifest_file: Path, *, lake_root: Path, expected_tier: str
+) -> None:
+    """Refuse (`ManifestTierError`) a manifest of the wrong tier, or any
+    partition whose path resolves outside `lake_root/<expected_tier>/`.
+    Pure path arithmetic -- never opens a partition file."""
+    tier = manifest.get("tier")
+    if tier != expected_tier:
+        raise ManifestTierError(
+            f"{manifest_file}: manifest tier {tier!r} is not {expected_tier!r} "
+            "-- refusing to resolve it through this loader"
+        )
+    tier_root = (Path(lake_root) / expected_tier).resolve()
+    for part in manifest["partitions"]:
+        rel = Path(part["path"])
+        on_disk = (Path(lake_root) / rel).resolve()
+        if rel.is_absolute() or not on_disk.is_relative_to(tier_root):
+            raise ManifestTierError(
+                f"{manifest_file}: partition path {part['path']!r} resolves to "
+                f"{on_disk}, outside {tier_root} -- refusing to read it"
+            )
+
+
 def resolve_manifest(
-    manifest_id: str, dataset: str, *, registry_root: Path, lake_root: Path
+    manifest_id: str,
+    dataset: str,
+    *,
+    registry_root: Path,
+    lake_root: Path,
+    expected_tier: str,
 ) -> dict:
     """Read the committed manifest JSON and verify every claim it makes
-    BEFORE returning it: the body must still hash to `manifest_id` (guards
-    against a hand-edited `sha256` field inside an otherwise-untouched
-    manifest), and each `partitions[]` entry's recomputed on-disk sha256
-    must match its stored value.
+    BEFORE returning it, in this order:
 
-    Raises `ManifestHashMismatch` on either kind of divergence -- RP-2: a
-    manifest resolves to exactly the bytes it names, never silently
-    returning wrong data on a hash mismatch.
+    1. the body must still hash to `manifest_id` (guards against a
+       hand-edited `sha256` field inside an otherwise-untouched manifest);
+    2. `manifest["tier"] == expected_tier`, and every `partitions[].path`
+       resolves under `lake_root/<expected_tier>/` -- checked before any
+       partition byte is read (`ManifestTierError`, 03-REVIEW.md CR-04).
+       `expected_tier` is required, never defaulted: every caller names the
+       one tier it is allowed to reach;
+    3. each partition's recomputed on-disk sha256 must match its stored
+       value.
+
+    Raises `ManifestHashMismatch` on (1)/(3) -- RP-2: a manifest resolves to
+    exactly the bytes it names, never silently returning wrong data.
     """
     path = manifest_path(registry_root, dataset, manifest_id)
     manifest = json.loads(path.read_text())
@@ -241,6 +300,10 @@ def resolve_manifest(
     recomputed_id = compute_manifest_id(manifest)
     if recomputed_id != manifest_id:
         raise ManifestHashMismatch(str(path), manifest_id, recomputed_id)
+
+    _enforce_tier_containment(
+        manifest, path, lake_root=Path(lake_root), expected_tier=expected_tier
+    )
 
     for part in manifest["partitions"]:
         on_disk_path = Path(lake_root) / part["path"]
@@ -339,14 +402,20 @@ def load_curated(
     curated rows.
 
     The only reading path this phase builds that is called "the default
-    loader" -- it never constructs a path under the quarantined tier (Plan
-    05 verifies this by construction, not by a runtime check inside this
-    function -- no such string appears anywhere in this module). Hash
+    loader". It reaches the curated tier only, enforced at RUNTIME, not just
+    by the absence of a string: `resolve_manifest(expected_tier=CURATED_TIER)`
+    refuses a manifest of any other tier and any partition path that
+    resolves outside `lake_root/curated/` (`..`, absolute paths, symlinks)
+    before a single partition byte is read (03-REVIEW.md CR-04). Hash
     verification runs BEFORE the DQ pause check: a manifest that fails
     integrity must never even reach a DQ conversation.
     """
     manifest = resolve_manifest(
-        manifest_id, dataset, registry_root=registry_root, lake_root=lake_root
+        manifest_id,
+        dataset,
+        registry_root=registry_root,
+        lake_root=lake_root,
+        expected_tier=CURATED_TIER,
     )
     _enforce_dq_pause(manifest, registry_root=registry_root, lake_root=lake_root)
     frames = [

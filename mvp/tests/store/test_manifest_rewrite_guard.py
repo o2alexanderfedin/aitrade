@@ -83,6 +83,7 @@ def test_issue_manifest_resolve_manifest_round_trip_matching_hashes(tmp_path: Pa
         "BTCUSDT.trade",
         registry_root=registry_root,
         lake_root=lake_root,
+        expected_tier="curated",
     )
     assert resolved["manifest_id"] == manifest["manifest_id"]
     assert resolved["partitions"][0]["sha256"] == partition["sha256"]
@@ -192,6 +193,7 @@ def test_rp2_manifest_resolves_to_exactly_the_bytes_it_names(tmp_path: Path):
             "BTCUSDT.trade",
             registry_root=registry_root,
             lake_root=lake_root,
+            expected_tier="curated",
         )
     with pytest.raises(ManifestHashMismatch):
         resolve_manifest(
@@ -199,6 +201,7 @@ def test_rp2_manifest_resolves_to_exactly_the_bytes_it_names(tmp_path: Path):
             "BTCUSDT.trade",
             registry_root=registry_root,
             lake_root=lake_root,
+            expected_tier="curated",
         )
 
 

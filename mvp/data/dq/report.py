@@ -44,7 +44,7 @@ from data.dq.checks import (
 )
 from data.lake_paths import LAKE_REGISTRY_ROOT
 from data.lake_paths import lake_root as default_lake_root
-from data.store import by_date_index_path, resolve_manifest
+from data.store import CURATED_TIER, by_date_index_path, resolve_manifest
 
 STREAMS: tuple[str, ...] = ("trade", "bookTicker")
 
@@ -119,7 +119,11 @@ def _load_manifest_for_date(
         return None
     manifest_id = json.loads(idx_path.read_text())["manifest_id"]
     return resolve_manifest(
-        manifest_id, dataset, registry_root=registry_root, lake_root=lake_root
+        manifest_id,
+        dataset,
+        registry_root=registry_root,
+        lake_root=lake_root,
+        expected_tier=CURATED_TIER,
     )
 
 
