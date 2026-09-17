@@ -200,14 +200,14 @@ def test_checkout_path_containing_tests_is_still_scanned(
     capsys.readouterr()
 
 
-def test_top_level_tests_dir_and_sanctioned_docs_are_exempt(
+def test_sanctioned_docs_and_allowlisted_test_files_are_exempt(
     tmp_path: Path, monkeypatch, capsys
 ):
     root = _tree(
         tmp_path / "mvp",
         {
             **CLEAN,
-            "tests/lockbox/test_x.py": "P = 'lake/lockbox/x'\n",
+            "tests/lockbox/test_token_one_look.py": "P = 'lake/lockbox/x'\n",
             "data/lockbox_POLICY.md": "The lockbox lives at `lake/lockbox/`.\n",
             "spec.md": "DON'T: reference `lake/lockbox/` from agent code.\n",
             "mvp.md": "the lockbox is a held-out quarantine\n",
@@ -220,11 +220,82 @@ def test_top_level_tests_dir_and_sanctioned_docs_are_exempt(
 
 def test_scanning_zero_files_is_a_failure(tmp_path: Path, monkeypatch, capsys):
     root = tmp_path / "mvp"
-    (root / "tests").mkdir(parents=True)
-    (root / "tests" / "test_only.py").write_text("X = 1\n")
+    (root / "__pycache__").mkdir(parents=True)
+    (root / "__pycache__" / "only.py").write_text("X = 1\n")
     monkeypatch.setattr(tool, "PKG_ROOT", root)
     assert tool.main() == 1
     assert "0 files" in capsys.readouterr().out
+
+
+# --- 03-REVIEW-ITER2.md CR-07: the fail-open paths --------------------------
+
+MONKEYPATCH_BODY = (
+    "import data.lockbox as lb\nlb._mlflow_has_consumed = lambda *a: False\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("label", "files"),
+    [
+        (
+            "any python file under tests/ that is not allowlisted",
+            {
+                "tests/agent_probe/run_me.py": MONKEYPATCH_BODY
+                + "open('/Volumes/ProjectsSSD/aihedgefund/lake/lockbox/x.parquet')\n"
+            },
+        ),
+        (
+            "a non-allowlisted test module beside the allowlisted ones",
+            {"tests/lockbox/test_extra.py": MONKEYPATCH_BODY},
+        ),
+        (
+            "extensionless python script with a shebang",
+            {"scripts/agent/reopen": "#!/usr/bin/env python3\n" + MONKEYPATCH_BODY},
+        ),
+        ("pyw script", {"scripts/agent/reopen.pyw": MONKEYPATCH_BODY}),
+        ("python that does not parse", {"scripts/agent/broken.py": "def (:\n"}),
+    ],
+)
+def test_fail_open_paths_now_fail(
+    tmp_path: Path, monkeypatch, capsys, label: str, files: dict[str, str]
+):
+    root = _tree(tmp_path / "mvp", {**CLEAN, **files})
+    monkeypatch.setattr(tool, "PKG_ROOT", root)
+    assert tool.main() == 1, f"{label}: not flagged"
+    assert "FAIL" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("rel", "payload"),
+    [
+        (
+            "scripts/agent/peek.sh",
+            b"# caf\xe9\nls /Volumes/ProjectsSSD/aihedgefund/lake/lockbox/\n",
+        ),
+        ("scripts/agent/latin1.py", b"# caf\xe9\nX = 1\n"),
+        ("notes/innocent.txt", b"caf\xe9 -- no path at all\n"),
+    ],
+)
+def test_a_file_that_is_not_utf8_fails_instead_of_being_skipped(
+    tmp_path: Path, monkeypatch, capsys, rel: str, payload: bytes
+):
+    root = _tree(tmp_path / "mvp", CLEAN)
+    target = root / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(payload)
+    monkeypatch.setattr(tool, "PKG_ROOT", root)
+    assert tool.main() == 1
+    out = capsys.readouterr().out
+    assert rel in out and "UTF-8" in out
+
+
+def test_binary_files_are_still_skipped(tmp_path: Path, monkeypatch, capsys):
+    root = _tree(tmp_path / "mvp", CLEAN)
+    (root / "fixtures").mkdir()
+    (root / "fixtures" / "part.parquet").write_bytes(b"PAR1\x00\xe9lockbox/\x00")
+    monkeypatch.setattr(tool, "PKG_ROOT", root)
+    assert tool.main() == 0
+    capsys.readouterr()
 
 
 def test_real_tree_passes(capsys):

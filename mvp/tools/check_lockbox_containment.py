@@ -8,12 +8,57 @@ Invoked as `uv run --directory mvp python -m tools.check_lockbox_containment`
 (process cwd = mvp/) by both pre-commit and GitHub Actions, byte-identical
 command string in both callers.
 
+WHAT THIS CHECK IS, AND IS NOT (03-REVIEW-ITER2.md CR-07). The lockbox's
+load-bearing barriers are at RUNTIME, not here:
+
+- PRIMARY CONTROL: `chmod 0000` on the lockbox tier. At the same uid it
+  blinds `glob`/`iterdir` and makes `open()` raise `PermissionError`
+  (measured, 03-RESEARCH.md Pitfall 5) -- whatever code is asking and
+  however it spelled the path. Lifting it is a deliberate, out-of-band human
+  step (`data/lockbox_POLICY.md`).
+- LOADER CONTAINMENT (03-REVIEW.md CR-04): `data.store.load_curated`
+  refuses, before reading a byte, any manifest whose tier is not `curated`
+  or whose partition paths resolve outside `lake/curated/`.
+- ONE-LOOK TOKEN with MLflow-first durability: `data.lockbox.open_lockbox`
+  checks the durable MLflow record before the revertible JSON stamp, and
+  refuses a store that is not an initialised MLflow store (WR-06, WR-12).
+
+This static scan is DEFENSE IN DEPTH AGAINST ACCIDENTAL ACCESS: an agent
+that enthusiastically globs "all available data", names the lockbox path,
+or pokes the audited module's private helpers in ordinary code. It does
+NOT claim to stop deliberate circumvention. Known residual class, stated
+so nobody mistakes a green run for more than it is (every item below
+passes this scan; not detected by design, per the phase's locked decision
+that agent-proofing -- a sandbox that never mounts the lockbox -- is Phase
+10's job):
+- importing the PUBLIC `data.lockbox.LOCKBOX_TIER` constant (exported by the
+  CR-04 fix itself) and joining it onto `lake_root()` to glob the tier;
+- `mock.patch.object(lb, "_mlflow_has_consumed", ...)`,
+  `mock.patch("data.lockbox.open_lockbox")`, `sys.modules["data.lockbox"] =
+  fake`, `sys.modules.get(...)`, `inspect.getmodule(...)`;
+- the module object escaping through a value (tuple unpacking, `IfExp`,
+  parameter defaults, list elements, `for`/`with` targets), `from data import
+  *`, `exec` of a literal string, `importlib.import_module(<non-constant>)`;
+- a path or module name assembled at runtime from pieces, or read from data;
+- Python run by a shell/notebook escape (`!python -c "..."`, `sh -c`),
+  reflection that never names the module (`gc.get_referrers`), and a
+  subprocess running code this scanner never sees.
+
+FAIL-CLOSED WHERE THE SCAN ITSELF CANNOT LOOK (CR-07): a text file that is
+not valid UTF-8 and a Python file that does not parse are violations
+("containment unprovable"), never silently skipped. Only a file with a NUL
+byte in its first 8 KiB is treated as binary and skipped (the parquet
+fixtures; Python refuses source containing NUL bytes, and so does a shell).
+Python is AST-scanned in `*.py`, `*.pyw`, `*.ipy` and any file whose first
+line is a `#!...python` shebang.
+
 PATH RESOLUTION RULE: `PKG_ROOT = Path(__file__).resolve().parents[1]`
 anchors every on-disk path scanned by `main()`. Exclusion is decided on the
-path RELATIVE to `PKG_ROOT` (03-REVIEW.md WR-08): only a top-level `tests/`
-directory and cache/venv directories are skipped -- never a `/tests/`
-substring of the absolute path, which silently exempted an entire checkout
-living under any `.../tests/...` directory. A scan that finds zero files
+path RELATIVE to `PKG_ROOT` (03-REVIEW.md WR-08): only cache/venv
+directories (`PRUNE_DIRNAMES`) are skipped -- never a `/tests/` substring of
+the absolute path, which silently exempted an entire checkout living under
+any `.../tests/...` directory. Since CR-07 the top-level `tests/` directory
+is scanned too, except the exact files in `SANCTIONED_TEST_FILES`. A scan that finds zero files
 FAILS: "checked nothing" must never read as "found nothing".
 
 SCOPE -- RESOLVED, never a grep (Phase 2's review found 8 Critical bypasses
@@ -55,18 +100,14 @@ EXEMPTIONS (exact repo-relative path equality, never substring/prefix):
 `SANCTIONED_FILES` (the audited module and this scanner, whose detection
 vocabulary necessarily contains the strings it looks for) and
 `SANCTIONED_DOCS` (the documents whose job is to state the rule:
-`data/lockbox_POLICY.md`, `spec.md`). Top-level `tests/` is excluded
-(tests build synthetic `tmp_path` lockbox fixtures).
+`data/lockbox_POLICY.md`, `spec.md`) and `SANCTIONED_TEST_FILES` (the test
+modules whose job is to build synthetic `tmp_path` lockbox segments and to
+exercise this scanner and the token protocol). `tests/` as a whole is NOT
+exempt (CR-07: any script saved under `mvp/tests/` used to be invisible); a
+new test that needs lockbox fixtures is added to that allowlist in a
+reviewed diff.
 
-KNOWN ACCEPTED GAPS (static analysis cannot close these without executing
-code; stated, not silently unclaimed): a path or module name assembled at
-runtime from pieces (`"lock" + "box"` inside an f-string, a reversed
-literal, a value read from data such as a manifest's `partitions[].path`),
-`importlib.import_module(<non-constant>)`, `eval`/`exec` of a constructed
-string, reflection that never names the module (`gc.get_referrers`,
-walking `sys.modules.values()`), and a subprocess running Python code the
-scanner never sees. The second, physical barrier (`chmod 0000`) and the
-durable MLflow one-look record exist because this scan cannot be complete.
+KNOWN ACCEPTED GAPS: see "WHAT THIS CHECK IS, AND IS NOT" above.
 """
 
 from __future__ import annotations
@@ -81,11 +122,42 @@ from pathlib import Path
 PKG_ROOT = Path(__file__).resolve().parents[1]
 
 PRUNE_DIRNAMES = frozenset(
-    {".venv", "__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".git"}
+    {
+        ".venv",
+        "__pycache__",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".mypy_cache",
+        ".git",
+        ".hypothesis",  # gitignored example database (binary, machine-written)
+    }
 )
 
-#: Top-level directories (relative to PKG_ROOT) excluded from the scan.
-EXCLUDED_TOP_LEVEL_DIRS = frozenset({"tests"})
+#: Top-level directories (relative to PKG_ROOT) excluded from the scan. Empty
+#: since 03-REVIEW-ITER2.md CR-07: `tests/` is scanned like everything else,
+#: except the exact files in `SANCTIONED_TEST_FILES`.
+EXCLUDED_TOP_LEVEL_DIRS: frozenset[str] = frozenset()
+
+#: Test modules permitted to name the lockbox path / reach data.lockbox
+#: internals -- exact repo-relative equality, one reason each.
+SANCTIONED_TEST_FILES: dict[str, str] = {
+    "tests/lockbox/test_containment.py": (
+        "builds a chmod-0000 synthetic lockbox segment to prove both barriers"
+    ),
+    "tests/lockbox/test_containment_scan.py": (
+        "feeds this scanner the very bypass strings it must flag"
+    ),
+    "tests/lockbox/test_token_one_look.py": (
+        "builds a readable synthetic lockbox segment and drives the token "
+        "protocol's private helpers (lock, MLflow store checks)"
+    ),
+    "tests/store/test_loader_tier_containment.py": (
+        "hand-writes lockbox-tier and ../lockbox manifests the loader must refuse"
+    ),
+}
+
+#: Suffixes AST-scanned as Python, besides a `#!...python` shebang.
+PYTHON_SUFFIXES = frozenset({".py", ".pyw", ".ipy"})
 
 #: Files permitted to reference the lockbox path / data.lockbox internals --
 #: exact repo-relative equality. `data/lockbox.py` is the audited module;
@@ -422,15 +494,21 @@ def _iter_files(root: Path) -> list[Path]:
     return files
 
 
-def _read_text(path: Path) -> str | None:
-    """Return the file's text, or None for a binary / non-UTF-8 file."""
+def _read_bytes_as_text(path: Path) -> tuple[str | None, bool]:
+    """`(text, is_binary)`. A NUL byte in the first 8 KiB means binary
+    (`(None, True)`); otherwise the file must decode as UTF-8, else
+    `UnicodeDecodeError` propagates to the caller, which fails the scan."""
     data = path.read_bytes()
     if b"\x00" in data[:_SNIFF_BYTES]:
-        return None
-    try:
-        return data.decode("utf-8")
-    except UnicodeDecodeError:
-        return None
+        return None, True
+    return data.decode("utf-8"), False
+
+
+def _is_python(path: Path, text: str) -> bool:
+    if path.suffix in PYTHON_SUFFIXES:
+        return True
+    first_line = text.split("\n", 1)[0]
+    return first_line.startswith("#!") and "python" in first_line
 
 
 def main() -> int:
@@ -441,14 +519,35 @@ def main() -> int:
     python_count = text_count = 0
     for path in files:
         rel = path.relative_to(root).as_posix()
-        if rel in SANCTIONED_FILES:
+        if rel in SANCTIONED_FILES or rel in SANCTIONED_TEST_FILES:
             continue
-        if path.suffix == ".py":
+        try:
+            text, is_binary = _read_bytes_as_text(path)
+        except UnicodeDecodeError as exc:
+            text_count += 1
+            all_violations.append(
+                Violation(
+                    rel,
+                    0,
+                    f"not valid UTF-8 ({exc.reason} at byte {exc.start}) -- "
+                    "containment unprovable, refusing to skip it",
+                )
+            )
+            continue
+        if is_binary or text is None:
+            continue
+        if _is_python(path, text):
             python_count += 1
-            all_violations.extend(scan_source(path.read_text(), rel))
-            continue
-        text = _read_text(path)
-        if text is None:
+            try:
+                all_violations.extend(scan_source(text, rel))
+            except (SyntaxError, ValueError) as exc:
+                all_violations.append(
+                    Violation(
+                        rel,
+                        getattr(exc, "lineno", None) or 0,
+                        "python source does not parse -- containment unprovable",
+                    )
+                )
             continue
         text_count += 1
         if rel in SANCTIONED_DOCS:
