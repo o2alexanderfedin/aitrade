@@ -39,7 +39,9 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
+import posixpath
 import time
+import unicodedata
 from pathlib import Path
 
 import polars as pl
@@ -60,6 +62,7 @@ __all__ = [
     "load_curated",
     "manifest_path",
     "by_date_index_path",
+    "partition_path_key",
 ]
 
 
@@ -159,6 +162,17 @@ def by_date_index_path(
     )
 
 
+def partition_path_key(path: str) -> str:
+    """The identity of a lake-relative partition path for write-once
+    comparisons (03-REVIEW-ITER2.md WR-13): `posixpath.normpath` (so
+    `curated/./x`, `curated//x`, `curated/y/../x` and `curated/x/` are one
+    path, as they are to `pathlib` and `open`), Unicode NFC, then casefold
+    (APFS, where the lake lives, is case- and normalisation-insensitive by
+    default). Over-approximates on a case-sensitive filesystem, which this
+    layout never relies on."""
+    return unicodedata.normalize("NFC", posixpath.normpath(path)).casefold()
+
+
 def _atomic_write_json(path: Path, body: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(path.suffix + ".tmp")
@@ -193,16 +207,20 @@ def issue_manifest(
     Refuses (`ValueError`) a `partitions[].path` that any manifest already
     issued for `dataset` names (03-REVIEW.md CR-02): a partition path is
     write-once, so a second manifest naming it can only mean the file was
-    rewritten in place. A rebuild writes a NEW `part-<ns>` file.
+    rewritten in place. A rebuild writes a NEW `part-<ns>` file. Paths are
+    compared by `partition_path_key`, never as raw strings (WR-13).
 
     Returns the full manifest dict (including the computed `manifest_id`).
     """
-    new_paths = {p["path"] for p in partitions}
+    new_paths = {partition_path_key(p["path"]): p["path"] for p in partitions}
     dataset_dir = Path(registry_root) / "manifests" / dataset
     if new_paths and dataset_dir.exists():
         for existing_file in dataset_dir.glob("*.json"):
             existing = json.loads(existing_file.read_text())
-            reused = new_paths & {p["path"] for p in existing.get("partitions", [])}
+            existing_keys = {
+                partition_path_key(p["path"]) for p in existing.get("partitions", [])
+            }
+            reused = {new_paths[k] for k in new_paths.keys() & existing_keys}
             if reused:
                 raise ValueError(
                     f"issue_manifest: partition path(s) {sorted(reused)} already "

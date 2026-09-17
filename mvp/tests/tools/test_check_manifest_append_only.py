@@ -389,3 +389,45 @@ def test_pointer_exemption_is_exactly_by_date(tmp_path: Path):
     _commit_all(repo, "delete it")
     errors, _ = check_append_only(registry)
     assert any("by-date-archive" in e and "deleted" in e for e in errors), errors
+
+
+# --- 03-REVIEW-ITER2.md WR-13: partition paths compared normalised ---------
+
+
+def _hand_reissue(registry: Path, old: dict, part: dict) -> str:
+    body = {k: v for k, v in old.items() if k != "manifest_id"}
+    body["partitions"] = [part]
+    new_id = compute_manifest_id(body)
+    _manifest_file(registry, new_id).write_text(
+        json.dumps({"manifest_id": new_id, **body}, sort_keys=True, indent=2)
+    )
+    return new_id
+
+
+@pytest.mark.parametrize(
+    "spelling",
+    [
+        "curated/./date=2026-01-01/part-1.parquet",
+        "curated//date=2026-01-01/part-1.parquet",
+        "curated/date=2026-01-01/../date=2026-01-01/part-1.parquet",
+        "CURATED/date=2026-01-01/part-1.parquet",
+    ],
+)
+def test_reissue_under_an_equivalent_spelling_is_caught(tmp_path: Path, spelling: str):
+    repo, registry, lake, old = _repo(tmp_path)
+    part = _write_partition(lake, old["partitions"][0]["path"], 42420.0)
+    _hand_reissue(registry, old, {**part, "path": spelling})
+    _commit_all(repo, "reissue under another spelling, old manifest kept")
+    errors, _ = check_append_only(registry)
+    assert any("rewritten in place" in e for e in errors), errors
+
+
+def test_non_canonical_partition_path_spelling_is_itself_a_violation(tmp_path: Path):
+    repo, registry, lake, old = _repo(tmp_path)
+    part = _write_partition(lake, "curated/date=2026-01-02/part-2.parquet", 1.0)
+    _hand_reissue(
+        registry, old, {**part, "path": "curated/./date=2026-01-02/part-2.parquet"}
+    )
+    _commit_all(repo, "non-canonical spelling")
+    errors, _ = check_append_only(registry)
+    assert any("not canonical" in e for e in errors), errors

@@ -395,3 +395,37 @@ def test_existing_but_empty_registry_root_is_a_hard_fail(tmp_path: Path, capsys)
     ]
     assert main(argv) == 1
     assert "0 manifest" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "spelling",
+    [
+        "curated/./part-1.parquet",
+        "curated//part-1.parquet",
+        "curated/x/../part-1.parquet",
+        "curated/part-1.parquet/",
+    ],
+)
+def test_issue_manifest_refuses_reuse_of_a_partition_path_under_another_spelling(
+    tmp_path: Path, spelling: str
+):
+    """03-REVIEW-ITER2.md WR-13: `pathlib` opens every spelling below as the
+    same file, so a raw string comparison let a rewritten partition be
+    re-manifested next to the original."""
+    lake_root = tmp_path / "lake"
+    registry_root = tmp_path / "registry"
+    first = _write_partition(lake_root, "curated/part-1.parquet", _sample_df())
+    kwargs = dict(
+        dataset="BTCUSDT.trade",
+        symbol="BTCUSDT",
+        stream="trade",
+        tier="curated",
+        schema_version=1,
+        inputs=[],
+        code_hash="deadbeef",
+        registry_root=registry_root,
+    )
+    issue_manifest(partitions=[first], **kwargs)
+    rewritten = _write_partition(lake_root, "curated/part-1.parquet", _sample_df(7))
+    with pytest.raises(ValueError, match="already"):
+        issue_manifest(partitions=[{**rewritten, "path": spelling}], **kwargs)

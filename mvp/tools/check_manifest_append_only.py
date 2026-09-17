@@ -49,7 +49,10 @@ RULES (all resolved against real git objects, every subprocess through
    in a pre-commit run the working tree is the content being committed).
 4. No two manifests in the working tree may name the same
    `partitions[].path` with different `sha256` -- the in-place rewrite plus
-   a reissued manifest, even when the old manifest is kept.
+   a reissued manifest, even when the old manifest is kept. Paths are
+   compared by `data.store.partition_path_key` (normpath, NFC, casefold --
+   03-REVIEW-ITER2.md WR-13: `curated/./x` is the same file as `curated/x`),
+   and a non-canonical or absolute spelling is itself a violation.
 5. `HEAD` must track at least one manifest: a path bug that matched nothing
    must not read as "nothing was rewritten".
 6. Nothing under `manifests/` may be a symlink or any other non-regular
@@ -73,11 +76,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import posixpath
 import stat
 import subprocess
 from pathlib import Path
 
 from data.lake_paths import LAKE_REGISTRY_ROOT
+from data.store import partition_path_key
 from tools.git_env import scrubbed_git_env
 
 PKG_ROOT = Path(__file__).resolve().parents[1]
@@ -293,9 +298,18 @@ def check_append_only(registry_root: Path) -> tuple[list[str], int]:
         manifest = json.loads(manifest_file.read_text())
         for part in manifest.get("partitions", []):
             path, sha = part.get("path"), part.get("sha256")
-            prior = seen.get(path)
+            if not isinstance(path, str) or not path:
+                errors.append(f"{rel}: partition path {path!r} is not a string")
+                continue
+            if path.startswith("/") or posixpath.normpath(path) != path:
+                errors.append(
+                    f"{rel}: partition path {path!r} is not canonical "
+                    f"(expected {posixpath.normpath(path)!r}, lake-relative)"
+                )
+            key = partition_path_key(path)
+            prior = seen.get(key)
             if prior is None:
-                seen[path] = (sha, rel)
+                seen[key] = (sha, rel)
             elif prior[0] != sha:
                 errors.append(
                     f"partition {path} is named by {prior[1]} with sha256 "
