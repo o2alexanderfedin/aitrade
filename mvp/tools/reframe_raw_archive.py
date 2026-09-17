@@ -465,12 +465,22 @@ def main(argv: list[str] | None = None) -> int:
     skipped = 0
     empty = 0
     truncated_untouched = 0
+    corrupt = 0
     for path in candidates:
         if args.skip_active and is_active_file(path):
             skipped += 1
             print(f"SKIP (active): {path} mtime={path.stat().st_mtime}")
             continue
-        stats = reframe_file(path, accept_truncated=args.accept_truncated)
+        try:
+            stats = reframe_file(path, accept_truncated=args.accept_truncated)
+        except zstandard.ZstdError as exc:
+            # 03-REVIEW-ITER3.md IN-18: data corruption (not a truncation) in
+            # one segment used to abort the batch, so later files were never
+            # processed or reported. `reframe_file` leaves it untouched (no
+            # swap happens before a full decode); report it and go on.
+            corrupt += 1
+            print(f"CORRUPT: {path} ({exc}); left untouched")
+            continue
         if stats["status"] == "empty":
             empty += 1
             print(f"SKIP (empty segment): {path} is 0 bytes (benign)")
@@ -509,10 +519,11 @@ def main(argv: list[str] | None = None) -> int:
     print(
         f"done: {processed} file(s) reframed, {skipped} skipped (active), "
         f"{empty} empty, {truncated_untouched} truncated and left untouched, "
+        f"{corrupt} corrupt and left untouched, "
         f"total_before={total_before} total_after={total_after} "
         f"overall_ratio={overall_ratio:.2f}x"
     )
-    return 1 if truncated_untouched else 0
+    return 1 if truncated_untouched or corrupt else 0
 
 
 if __name__ == "__main__":

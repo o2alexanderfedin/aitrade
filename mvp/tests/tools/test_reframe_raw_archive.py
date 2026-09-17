@@ -373,3 +373,36 @@ def test_accept_truncated_reframes_recovered_lines_and_keeps_the_original(
     assert list(iter_lines(segment)) == recovered
     assert _zstd_cli_says_truncated(segment) in (False, None)
     assert "truncated tail" in capsys.readouterr().out
+
+
+# --- IN-18 (03-REVIEW-ITER3.md): one corrupt segment must not end the batch --
+
+
+def test_main_reports_a_corrupt_segment_keeps_going_and_exits_nonzero(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+):
+    import os
+
+    from tools.reframe_raw_archive import main
+
+    old = time.time() - (ACTIVE_FILE_MIN_AGE_SECONDS + 3600)
+    day = tmp_path / "date=2020-01-01"
+    corrupt = day / "a_corrupt.ndjson.zst"
+    _write_old_format_fixture(corrupt, [_archive_line(i) for i in range(20)])
+    with open(corrupt, "ab") as fh:
+        fh.write(b"\x01\x02\x03\x04\x05\x06\x07\x08")  # data corruption, not a cut
+    clean = day / "c_clean.ndjson.zst"
+    _write_old_format_fixture(clean, [_archive_line(i) for i in range(20)])
+    for path in (corrupt, clean):
+        os.utime(path, (old, old))
+    corrupt_before = corrupt.read_bytes()
+
+    exit_code = main([str(day / "*.ndjson.zst")])
+
+    out = capsys.readouterr().out
+    assert exit_code == 1
+    assert f"CORRUPT: {corrupt}" in out
+    assert f"REFRAMED: {clean}" in out  # sorted after the corrupt one: still done
+    assert "1 corrupt" in out  # the summary line counts it
+    assert corrupt.read_bytes() == corrupt_before
+    assert sorted(p.name for p in day.iterdir()) == [corrupt.name, clean.name]
