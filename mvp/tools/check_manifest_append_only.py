@@ -22,11 +22,20 @@ RULES (all resolved against real git objects, every subprocess through
    (`actions/checkout` `fetch-depth: 0`, which `ci.yml` already sets) --
    never a SKIP, which would be exactly the always-green path 03-VERIFICATION
    flagged and 03-07 closed.
-2. No manifest (anything under `manifests/` outside `by-date/` pointer
-   directories) may ever have been DELETED, MODIFIED or TYPE-CHANGED
-   (e.g. replaced by a symlink) in the history of `HEAD`. Two independent
-   views, because a merge commit hides changes from a plain `git log`
-   (03-REVIEW-ITER2.md CR-08):
+2. No manifest may ever have been DELETED, MODIFIED or TYPE-CHANGED
+   (e.g. replaced by a symlink) in the history of `HEAD`. "Manifest" is a
+   path SHAPE, not a location (03-REVIEW-ITER3.md WR-17): any `*.json` with
+   a `manifests` directory among its ancestors, outside `by-date/` pointer
+   directories, ANYWHERE in the repository. The registry's current path is
+   not trusted: moving the registry (`git mv` plus a new
+   `LAKE_REGISTRY_ROOT`, or a symlink to a copy) leaves every old manifest
+   path recorded as a delete, and a check filtered to today's location never
+   looked there. Consequences: relocating the registry is itself a
+   violation (manifests are write-once at their path), and the test
+   fixture registry under `tests/fixtures/lake_registry/manifests/` is
+   append-only too (regenerating a fixture issues a new manifest). Two
+   independent views, because a merge commit hides changes from a plain
+   `git log` (03-REVIEW-ITER2.md CR-08):
    a. every commit reachable from `HEAD`, each diffed against EVERY parent
       (`--diff-merges=separate`), with NO pathspec on the walk: a pathspec
       turns on history simplification, which drops a merge whose manifest
@@ -58,6 +67,9 @@ RULES (all resolved against real git objects, every subprocess through
 6. Nothing under `manifests/` may be a symlink or any other non-regular
    file, neither in `HEAD`'s tree (mode 120000 / gitlink) nor in the
    working tree: a symlink makes rule 4 read some other manifest's bytes.
+   The same holds for the registry root and every ancestor of it inside
+   the repository (WR-17: a committed `lake_registry -> registry_v2`
+   symlink used to be followed by `Path.resolve()` before any rule ran).
 
 Only a directory named exactly `by-date` holds mutable pointers (a rebuild
 repoints them); it is excluded from rules 2-4 (03-REVIEW-ITER2.md IN-13: a
@@ -88,6 +100,7 @@ from tools.git_env import scrubbed_git_env
 PKG_ROOT = Path(__file__).resolve().parents[1]
 
 POINTER_DIR_NAME = "by-date"
+MANIFESTS_DIR_NAME = "manifests"
 
 #: Refs whose merge-base with HEAD is rule 2b's base, in order.
 BASE_BRANCH_REFS: tuple[str, ...] = ("develop", "origin/develop")
@@ -133,9 +146,23 @@ def _is_pointer(rel_to_manifests: str) -> bool:
 
 
 def _is_manifest_path(repo_rel: str, manifests_rel: str) -> bool:
+    """Is `repo_rel` a manifest of the registry at `manifests_rel`?"""
     if not repo_rel.startswith(manifests_rel + "/") or not repo_rel.endswith(".json"):
         return False
     return not _is_pointer(repo_rel[len(manifests_rel) + 1 :])
+
+
+def _is_manifest_shaped(repo_rel: str) -> bool:
+    """Is `repo_rel` a manifest of ANY registry, wherever it lives (rule 2,
+    WR-17)? A `.json` below a `manifests` directory, not inside a pointer
+    directory below it."""
+    if not repo_rel.endswith(".json"):
+        return False
+    dirs = repo_rel.split("/")[:-1]
+    if MANIFESTS_DIR_NAME not in dirs:
+        return False
+    rest = repo_rel.split("/")[dirs.index(MANIFESTS_DIR_NAME) + 1 :]
+    return not _is_pointer("/".join(rest))
 
 
 def resolve_base(toplevel: Path) -> tuple[str, str]:
@@ -180,6 +207,48 @@ def _non_regular_entries(manifests_dir: Path, manifests_rel: str) -> list[str]:
     return errors
 
 
+def _in_repo_chain(
+    registry_abs: Path, toplevel: Path
+) -> tuple[Path, list[Path]] | None:
+    """`(top, chain)`: `top` is the highest lexical ancestor of `registry_abs`
+    that resolves to `toplevel` (robust to `/tmp -> /private/tmp` ABOVE the
+    repository), `chain` every path from just below `top` down to
+    `registry_abs` itself -- the in-repository components, never resolved.
+    `None` if no ancestor is the repository."""
+    lineage = [registry_abs, *registry_abs.parents]
+    for index in range(len(lineage) - 1, -1, -1):
+        if lineage[index].resolve() == toplevel:
+            return lineage[index], list(reversed(lineage[:index]))
+    return None
+
+
+def _symlinked_registry_components(registry_abs: Path, toplevel: Path) -> list[str]:
+    """Rule 6 for the registry root and its in-repository ancestors: none may
+    be a symlink in the working tree (`lstat`, never followed) or a symlink
+    blob (mode 120000) in `HEAD` (WR-17)."""
+    located = _in_repo_chain(registry_abs, toplevel)
+    if located is None:
+        return [f"{registry_abs}: registry root is not inside repository {toplevel}"]
+    top, chain = located
+    errors: list[str] = []
+    for component in chain:
+        rel = component.relative_to(top).as_posix()
+        if component.is_symlink():
+            errors.append(
+                f"{rel}: registry root or its ancestor is a symlink in the working "
+                "tree -- the registry must be a real directory at its own path"
+            )
+        listing = _git(["ls-tree", "-z", "HEAD", "--", rel], toplevel)
+        for record in listing.split("\0"):
+            meta, _, path = record.partition("\t")
+            if path == rel and meta.split()[:1] == ["120000"]:
+                errors.append(
+                    f"{rel}: registry root or its ancestor is a symlink in HEAD -- "
+                    "the registry must be a real directory at its own path"
+                )
+    return errors
+
+
 def check_append_only(registry_root: Path) -> tuple[list[str], int]:
     """Return `(violations, n_manifests_tracked_in_HEAD)`; an empty violation
     list means append-only holds. Raises `GitHistoryUnavailable` if history
@@ -194,11 +263,17 @@ def check_append_only(registry_root: Path) -> tuple[list[str], int]:
             "`fetch-depth: 0`, or `git fetch --unshallow`)."
         )
 
-    # Resolve the registry root but NOT the manifests directory: a symlinked
-    # manifests/ must be seen as a symlink (rule 6), not silently followed.
-    manifests_dir = registry_abs.resolve() / "manifests"
-    manifests_rel = manifests_dir.relative_to(toplevel).as_posix()
-    errors: list[str] = []
+    # Never resolve the registry path (WR-17): a symlinked registry root or
+    # ancestor is a rule-6 violation, not a redirect to follow. The manifests
+    # directory is addressed by its LEXICAL in-repository path.
+    symlinked = _symlinked_registry_components(registry_abs, toplevel)
+    errors: list[str] = list(symlinked)
+    located = _in_repo_chain(registry_abs, toplevel)
+    if located is None:
+        return errors, 0
+    top, _chain = located
+    manifests_dir = registry_abs / MANIFESTS_DIR_NAME
+    manifests_rel = manifests_dir.relative_to(top).as_posix()
 
     # Rule 6 (HEAD side) + rule 5 + input to rule 3: manifests tracked in HEAD.
     tracked: list[str] = []
@@ -220,7 +295,6 @@ def check_append_only(registry_root: Path) -> tuple[list[str], int]:
         errors.append(
             f"HEAD tracks 0 manifests under {manifests_rel}/ -- refusing a vacuous pass"
         )
-        return errors, 0
 
     # Rule 2a: every commit, every parent, whole-tree walk (no pathspec).
     history = _git(
@@ -241,7 +315,7 @@ def check_append_only(registry_root: Path) -> tuple[list[str], int]:
             commit = line.split()[1][:12]
             continue
         fields = line.split("\t")
-        if len(fields) == 2 and _is_manifest_path(fields[1], manifests_rel):
+        if len(fields) == 2 and _is_manifest_shaped(fields[1]):
             errors.append(
                 f"{fields[1]}: committed manifest {_CHANGE_WORDS[fields[0][0]]} "
                 f"in commit {commit} (manifests are write-once; issue a new "
@@ -258,36 +332,35 @@ def check_append_only(registry_root: Path) -> tuple[list[str], int]:
             "--name-status",
             base,
             "HEAD",
-            "--",
-            manifests_rel,
         ],
         toplevel,
     ).splitlines():
         fields = line.split("\t")
-        if len(fields) == 2 and _is_manifest_path(fields[1], manifests_rel):
+        if len(fields) == 2 and _is_manifest_shaped(fields[1]):
             errors.append(
                 f"{fields[1]}: committed manifest {_CHANGE_WORDS[fields[0][0]]} "
                 f"between {base_desc} and HEAD"
             )
 
     # Rule 3: working tree still has every HEAD manifest, byte-identical.
-    changed = _git(
-        ["diff", "--no-renames", "--name-status", "HEAD", "--", manifests_rel],
-        toplevel,
-    )
+    # No pathspec (WR-17): a staged registry move shows as deletes at the old
+    # path before it is ever committed.
+    changed = _git(["diff", "--no-renames", "--name-status", "HEAD"], toplevel)
     for line in changed.splitlines():
         fields = line.split("\t")
-        if len(fields) != 2 or not _is_manifest_path(fields[1], manifests_rel):
+        if len(fields) != 2 or not _is_manifest_shaped(fields[1]):
             continue
         word = _CHANGE_WORDS.get(fields[0][0])
         if word is not None:
             errors.append(f"{fields[1]}: committed manifest {word} in the working tree")
 
     # Rule 6 (working-tree side), before rule 4 reads any file.
-    non_regular = _non_regular_entries(registry_abs / "manifests", manifests_rel)
+    non_regular = _non_regular_entries(manifests_dir, manifests_rel)
     errors.extend(non_regular)
-    if non_regular:
-        return errors, len(tracked)
+    if non_regular or symlinked:
+        # Rule 4 reads manifest bodies; through a symlink what it would read
+        # is not the committed registry.
+        return list(dict.fromkeys(errors)), len(tracked)
 
     # Rule 4: one sha256 per partition path across all manifests.
     seen: dict[str, tuple[str, str]] = {}

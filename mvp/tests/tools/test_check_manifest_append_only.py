@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -431,3 +432,108 @@ def test_non_canonical_partition_path_spelling_is_itself_a_violation(tmp_path: P
     _commit_all(repo, "non-canonical spelling")
     errors, _ = check_append_only(registry)
     assert any("not canonical" in e for e in errors), errors
+
+
+# --- 03-REVIEW-ITER3.md WR-17: registry relocation / symlinked registry -----
+
+
+def _repo_with_two_manifests(tmp_path: Path):
+    repo, registry, lake, m0 = _repo(tmp_path)
+    m1 = _issue(
+        registry, _write_partition(lake, "curated/date=2026-01-02/part-2.parquet", 2.0)
+    )
+    _commit_all(repo, "manifest 2")
+    return repo, registry, lake, m0, m1
+
+
+def test_registry_git_mv_dropping_a_manifest_fails(tmp_path: Path):
+    """F2: `git mv` the registry (and repoint LAKE_REGISTRY_ROOT) while
+    dropping one manifest. The new location has no history, so a check
+    anchored to the registry's current path saw nothing."""
+    repo, registry, lake, _m0, m1 = _repo_with_two_manifests(tmp_path)
+    moved = registry.parent / "registry_v2"
+    _git(["mv", str(registry), str(moved)], repo)
+    _git(
+        [
+            "rm",
+            "-qf",
+            str(moved / "manifests" / "BTCUSDT.trade" / f"{m1['manifest_id']}.json"),
+        ],
+        repo,
+    )
+    _commit_all(repo, "relocate registry")
+
+    errors, _ = check_append_only(moved)
+    assert any(
+        m1["manifest_id"] in e and "lake_registry" in e and "deleted" in e
+        for e in errors
+    ), errors
+    assert main(["--registry-root", str(moved)]) == 1
+
+
+def test_staged_registry_move_dropping_a_manifest_fails_before_commit(tmp_path: Path):
+    """The pre-commit view of F2: the move is staged, not yet committed."""
+    repo, registry, lake, _m0, m1 = _repo_with_two_manifests(tmp_path)
+    moved = registry.parent / "registry_v2"
+    _git(["mv", str(registry), str(moved)], repo)
+    _git(
+        [
+            "rm",
+            "-qf",
+            str(moved / "manifests" / "BTCUSDT.trade" / f"{m1['manifest_id']}.json"),
+        ],
+        repo,
+    )
+    errors, _ = check_append_only(moved)
+    assert any(
+        m1["manifest_id"] in e and "deleted in the working tree" in e for e in errors
+    ), errors
+
+
+def test_registry_replaced_by_a_committed_symlink_to_a_thinner_copy_fails(
+    tmp_path: Path,
+):
+    """F1: `lake_registry` becomes a committed symlink to a copy missing one
+    manifest; `registry.resolve()` used to follow it to the copy."""
+    repo, registry, lake, _m0, m1 = _repo_with_two_manifests(tmp_path)
+    copy = registry.parent / "registry_v2"
+    shutil.copytree(registry, copy)
+    (copy / "manifests" / "BTCUSDT.trade" / f"{m1['manifest_id']}.json").unlink()
+    _git(["rm", "-rq", str(registry)], repo)
+    registry.symlink_to("registry_v2")
+    _commit_all(repo, "move registry behind a symlink")
+    assert "120000" in _git(["ls-tree", "HEAD", "--", "mvp/data/lake_registry"], repo)
+
+    errors, _ = check_append_only(registry)
+    assert any(m1["manifest_id"] in e and "deleted" in e for e in errors), errors
+    assert any("lake_registry" in e and "symlink" in e for e in errors), errors
+    assert main(["--registry-root", str(registry)]) == 1
+
+
+def test_registry_that_was_a_symlink_from_the_first_commit_fails(tmp_path: Path):
+    """No delete anywhere in history: only the symlink rule can see it."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(["init", "-q"], repo)
+    _git(["config", "user.email", "t@t"], repo)
+    _git(["config", "user.name", "t"], repo)
+    real = repo / "mvp" / "data" / "registry_real"
+    _issue(real, _write_partition(tmp_path / "lake", "curated/d/part-1.parquet", 1.0))
+    registry = repo / "mvp" / "data" / "lake_registry"
+    registry.symlink_to("registry_real")
+    _commit_all(repo, "registry is a symlink from day one")
+
+    errors, _ = check_append_only(registry)
+    assert any("is a symlink in HEAD" in e and "lake_registry" in e for e in errors), (
+        errors
+    )
+    assert any("symlink in the working tree" in e for e in errors), errors
+
+
+def test_uncommitted_symlinked_ancestor_of_the_registry_fails(tmp_path: Path):
+    repo, registry, lake, _m0 = _repo(tmp_path)
+    (repo / "alias").symlink_to("mvp")
+    errors, _ = check_append_only(repo / "alias" / "data" / "lake_registry")
+    assert any("alias" in e and "symlink in the working tree" in e for e in errors), (
+        errors
+    )
