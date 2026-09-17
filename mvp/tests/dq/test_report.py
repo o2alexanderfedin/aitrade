@@ -86,7 +86,9 @@ def _issue_and_write_build_stats(
     if build_stats is not None:
         stats_path = build_stats_path(lake_root, symbol, stream, date)
         stats_path.parent.mkdir(parents=True, exist_ok=True)
-        stats_path.write_text(json.dumps(build_stats))
+        # Bound to this build unless the test deliberately supplies another id.
+        body = {"manifest_id": manifest["manifest_id"], **build_stats}
+        stats_path.write_text(json.dumps(body))
     return manifest
 
 
@@ -323,3 +325,121 @@ def test_spec_md_dq_block_round_trips_through_check_spec_diff():
     dq_thresholds = load_dq_thresholds_raw()
     drift = check_drift(SPEC_MD, features, labels, dq_thresholds)
     assert drift is None, drift
+
+
+# --- WR-02 (03-REVIEW.md): missing or stale build_stats fails closed -------
+
+
+def _statuses(rows: list[dict], stream: str) -> dict[str, str]:
+    return {r["check"]: r["dq_status"] for r in rows if r["stream"] == stream}
+
+
+def test_trade_day_with_missing_build_stats_is_failed_not_ok(tmp_path: Path):
+    """03-REVIEW.md WR-02 reproduction: a manifest issued but build_stats.json
+    never written (crash window) used to yield only gap_coverage and
+    etime_plausibility rows, both ok -- so the day scored ok with the
+    reconciliation and NA checks silently absent."""
+    lake_root = tmp_path / "lake"
+    registry_root = tmp_path / "registry"
+    trade_df = pl.DataFrame(
+        {"trade_id": [1, 2], "etime": [1_000, 2_000], "price": [1.0, 2.0]}
+    )
+    _issue_and_write_build_stats(
+        lake_root, registry_root, SYMBOL, "trade", DATE, trade_df, build_stats=None
+    )
+    rows = build_report_rows_for_date(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_empty_ledger(),
+    )
+    assert _statuses(rows, "trade").get("build_stats") == "failed"
+
+
+def test_trade_day_with_build_stats_for_a_different_manifest_is_failed(tmp_path: Path):
+    lake_root = tmp_path / "lake"
+    registry_root = tmp_path / "registry"
+    trade_df = pl.DataFrame(
+        {"trade_id": [1, 2], "etime": [1_000, 2_000], "price": [1.0, 2.0]}
+    )
+    _issue_and_write_build_stats(
+        lake_root,
+        registry_root,
+        SYMBOL,
+        "trade",
+        DATE,
+        trade_df,
+        build_stats={
+            "chosen_source": "archive",
+            "capture_available": False,
+            "manifest_id": "0" * 64,  # stale: some earlier build's manifest
+            "reconciliation_missing_from_capture": None,
+            "reconciliation_missing_from_archive": None,
+            "reconciliation_overlap_rows": None,
+            "na_placeholder_dropped": 0,
+            "na_placeholder_rate": 0.0,
+        },
+    )
+    rows = build_report_rows_for_date(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_empty_ledger(),
+    )
+    assert _statuses(rows, "trade").get("build_stats") == "failed"
+
+
+def test_build_curated_day_writes_build_stats_before_issuing_the_manifest(
+    tmp_path: Path, monkeypatch
+):
+    """A crash between issuing the manifest and writing build_stats.json must
+    be impossible: the stats (bound to the partition's sha256) exist first."""
+    import data.ingest.curated_build as cb
+
+    lake_root = tmp_path / "lake"
+    archive_dir = (
+        lake_root / "raw/symbol=BTCUSDT/stream=trade/source=archive/date=2026-09-12"
+    )
+    archive_dir.mkdir(parents=True)
+    pl.DataFrame(
+        {
+            "trade_id": [1, 2],
+            "etime": [1_000, 2_000],
+            "event_time": [1_000, 2_000],
+            "price": [1.0, 2.0],
+            "qty": [1.0, 1.0],
+            "is_buyer_maker": [True, False],
+            "seq": [-1, -1],
+            "rtime": [0, 0],
+            "source": ["archive", "archive"],
+            "schema_version": [1, 1],
+        }
+    ).write_parquet(archive_dir / "part-1.parquet")
+
+    def crash(*_a, **_k):
+        raise RuntimeError("simulated crash inside issue_manifest")
+
+    monkeypatch.setattr(cb, "issue_manifest", crash)
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        cb.build_curated_day(
+            "BTCUSDT",
+            "trade",
+            "2026-09-12",
+            lake_root,
+            tmp_path / "capture",
+            registry_root=tmp_path / "registry",
+            code_hash="deadbeef",
+        )
+    stats = json.loads(
+        build_stats_path(lake_root, SYMBOL, "trade", "2026-09-12").read_text()
+    )
+    part = next(
+        (lake_root / "curated/symbol=BTCUSDT/stream=trade/date=2026-09-12").glob(
+            "part-*.parquet"
+        )
+    )
+    assert stats["partition_sha256"] == hashlib.sha256(part.read_bytes()).hexdigest()

@@ -68,6 +68,7 @@ __all__ = [
     "dq_report_markdown_path",
     "build_stats_path",
     "build_report_rows_for_date",
+    "build_stats_problem",
     "normalize_row",
     "render_report_markdown",
     "write_report",
@@ -127,6 +128,25 @@ def _load_manifest_for_date(
     )
 
 
+def build_stats_problem(build_stats: dict | None, manifest: dict) -> str | None:
+    """`None` if `build_stats` exists and belongs to `manifest`'s build, else
+    why not. Bound by `manifest_id`, or -- for a build that crashed after
+    issuing the manifest but before recording its id -- by the partition
+    sha256 written before issuance. A stats file from an earlier build of
+    the same date (e.g. before a supersede) is stale, not evidence."""
+    if build_stats is None:
+        return "build_stats.json missing -- reconciliation/NA checks cannot run"
+    if build_stats.get("manifest_id") == manifest["manifest_id"]:
+        return None
+    partition_hashes = {p["sha256"] for p in manifest["partitions"]}
+    if build_stats.get("partition_sha256") in partition_hashes:
+        return None
+    return (
+        "build_stats.json belongs to a different build (manifest_id="
+        f"{build_stats.get('manifest_id')}) than manifest {manifest['manifest_id']}"
+    )
+
+
 def _read_curated(manifest: dict, lake_root: Path) -> pl.DataFrame:
     frames = [
         pl.read_parquet(Path(lake_root) / part["path"])
@@ -174,7 +194,22 @@ def build_report_rows_for_date(
         )
 
         if stream == "trade":
-            if build_stats is not None:
+            stats_problem = build_stats_problem(build_stats, manifest)
+            if stats_problem is not None:
+                # Fail closed (03-REVIEW.md WR-02): without the precomputed
+                # stats the reconciliation and NA checks cannot run, and
+                # their absence must never read as "ok".
+                rows.append(
+                    {
+                        "date": date,
+                        "symbol": symbol,
+                        "stream": stream,
+                        "check": "build_stats",
+                        "dq_status": "failed",
+                        "reason": stats_problem,
+                    }
+                )
+            else:
                 recon = check_reconciliation(build_stats, thresholds)
                 rows.append({"date": date, "symbol": symbol, "stream": stream, **recon})
                 na = check_na_placeholder(build_stats, thresholds)

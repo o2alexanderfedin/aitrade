@@ -336,6 +336,23 @@ def build_curated_day(
 
     schema_version = int(chosen_df["schema_version"].max())
 
+    # build_stats.json is written BEFORE the manifest (03-REVIEW.md WR-02):
+    # issuing the manifest also repoints the by-date index, so a crash
+    # between the two used to leave a resolvable curated day with no stats,
+    # and the DQ report silently dropped the reconciliation and NA checks.
+    # The pre-manifest write binds the stats to the partition's sha256; the
+    # manifest_id is filled in right after issuance.
+    build_stats = {
+        **stats,
+        "na_placeholder_dropped": na_dropped,
+        "na_placeholder_rate": na_rate,
+        "partition_path": partition_entry["path"],
+        "partition_sha256": partition_entry["sha256"],
+        "manifest_id": None,
+    }
+    stats_path = _curated_build_stats_path(lake_root, symbol, stream, date)
+    _atomic_write_json(stats_path, build_stats)
+
     manifest = issue_manifest(
         dataset=f"{symbol}.{stream}",
         symbol=symbol,
@@ -349,20 +366,7 @@ def build_curated_day(
         dates=[date],
     )
 
-    build_stats = {
-        **stats,
-        "na_placeholder_dropped": na_dropped,
-        "na_placeholder_rate": na_rate,
-        "manifest_id": manifest["manifest_id"],
-    }
-    stats_path = (
-        lake_root
-        / "curated_meta"
-        / f"symbol={symbol}"
-        / f"stream={stream}"
-        / f"date={date}"
-        / "build_stats.json"
-    )
+    build_stats["manifest_id"] = manifest["manifest_id"]
     _atomic_write_json(stats_path, build_stats)
 
     return manifest
