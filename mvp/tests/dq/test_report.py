@@ -448,11 +448,14 @@ def test_build_curated_day_writes_build_stats_before_issuing_the_manifest(
 # --- WR-04 (03-REVIEW.md): each check measures the source it is about ------
 
 
-def _archive_day(lake_root, registry_root, trade_ids, *, capture_available):
+def _archive_day(
+    lake_root, registry_root, trade_ids, *, capture_available, etimes=None
+):
     trade_df = pl.DataFrame(
         {
             "trade_id": trade_ids,
-            "etime": [1_789_171_200_000_000_000 + i for i in range(len(trade_ids))],
+            "etime": etimes
+            or [1_789_171_200_000_000_000 + i for i in range(len(trade_ids))],
             "price": [1.0] * len(trade_ids),
         }
     )
@@ -510,6 +513,70 @@ def test_capture_outage_does_not_fail_an_archive_sourced_trade_day(tmp_path: Pat
     assert _statuses(rows, "trade")["gap_coverage"] == "n/a"
 
 
+def _pre_capture_day_with_skip(lake_root, registry_root, run_ids, span_ns):
+    t0, ms = 1_789_171_200_000_000_000, 1_000_000
+    ids = list(range(1, 11)) + [10 + run_ids + 1 + i for i in range(10)]
+    etimes = [t0 + i * ms for i in range(10)] + [
+        t0 + 9 * ms + span_ns + i * ms for i in range(10)
+    ]
+    return _archive_day(
+        lake_root, registry_root, ids, capture_available=False, etimes=etimes
+    )
+
+
+def _probable_loss_row_and_load(lake_root, registry_root, manifest):
+    """Write the real report, then go through the real pause path:
+    `load_curated` with no acknowledgement present."""
+    from data.store import _dq_status_for_date, load_curated
+
+    write_report(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_empty_ledger(),
+    )
+    report = pl.read_parquet(dq_report_path(lake_root, DATE))
+    row = report.filter(
+        (pl.col("stream") == "trade") & (pl.col("check") == "probable_loss")
+    ).row(0, named=True)
+    status, _detail = _dq_status_for_date(lake_root, SYMBOL, "trade", DATE)
+    assert not (registry_root / "dq_acknowledgements").exists()
+    df = load_curated(
+        manifest["manifest_id"],
+        f"{SYMBOL}.trade",
+        registry_root=registry_root,
+        lake_root=lake_root,
+    )
+    return row, status, df
+
+
+def test_na_shaped_skips_do_not_flag_or_pause_a_pre_capture_day(tmp_path: Path):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    manifest = _pre_capture_day_with_skip(lake_root, registry_root, 16, 5_000_000)
+    row, status, df = _probable_loss_row_and_load(lake_root, registry_root, manifest)
+    assert row["dq_status"] == "ok"
+    assert row["count"] == 0
+    assert status == "ok"
+    assert df.height == 20
+
+
+def test_genuine_loss_is_reported_but_never_pauses_the_day(tmp_path: Path):
+    """A 5,000-id skip across 30 s is flagged with its size and span, and the
+    day still loads with no acknowledgement: probable_loss is informational."""
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    manifest = _pre_capture_day_with_skip(
+        lake_root, registry_root, 5_000, 30 * 1_000_000_000
+    )
+    row, status, df = _probable_loss_row_and_load(lake_root, registry_root, manifest)
+    assert row["count"] == 1
+    assert "run_ids=5000 span_s=30.000" in row["detail"]
+    assert row["dq_status"] == "ok"
+    assert status == "ok"
+    assert df.height == 20
+
+
 def test_pre_capture_archive_day_reports_probable_loss(tmp_path: Path):
     lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
     _archive_day(lake_root, registry_root, [1, 2, 3, 40, 41], capture_available=False)
@@ -521,4 +588,4 @@ def test_pre_capture_archive_day_reports_probable_loss(tmp_path: Path):
         thresholds=THRESHOLDS,
         ledger_df=_empty_ledger(),
     )
-    assert _statuses(rows, "trade").get("probable_loss") == "degraded"
+    assert _statuses(rows, "trade").get("probable_loss") == "ok"

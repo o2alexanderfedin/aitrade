@@ -401,21 +401,105 @@ def test_resync_windows_empty_ledger_has_the_same_etime_approx_schema():
 
 
 # --- WR-04 (03-REVIEW.md): probable-loss on pre-capture archive days --------
+# Informational since the 2026-09-17 re-measure: a run is flagged only when it
+# is implausible as an X="NA" placeholder burst on BOTH axes (ids AND etime
+# span), and the check never reports degraded/failed.
+
+_T0 = 1_789_171_200_000_000_000  # 2026-09-12T00:00:00Z
+_MS = 1_000_000
 
 
-def test_probable_loss_flags_skip_runs_longer_than_the_max_observed_na_run():
+def _trades(points: list[tuple[int, int]]) -> pl.DataFrame:
+    """(trade_id, etime) pairs -> the two columns check_probable_loss reads."""
+    return pl.DataFrame(
+        {"trade_id": [p[0] for p in points], "etime": [p[1] for p in points]},
+        schema={"trade_id": pl.Int64, "etime": pl.Int64},
+    )
+
+
+def _with_skip(run_ids: int, span_ns: int) -> pl.DataFrame:
+    """Contiguous trades, then one skip of `run_ids` ids whose etime step is
+    `span_ns`, then contiguous trades again."""
+    head = [(i, _T0 + i * _MS) for i in range(1, 11)]
+    last_id, last_t = head[-1]
+    first_id = last_id + run_ids + 1
+    tail = [(first_id + i, last_t + span_ns + i * _MS) for i in range(10)]
+    return _trades(head + tail)
+
+
+def test_probable_loss_thresholds_are_the_measured_two_axis_values():
+    assert THRESHOLDS.probable_loss.flag_run_ids_over == 100
+    assert THRESHOLDS.probable_loss.flag_span_seconds_over == 1
+
+
+def test_probable_loss_ignores_na_shaped_bursts_and_quiet_market_skips():
+    """The shapes measured over all 107 archive days: fast bursts of up to 16
+    ids within ~20 ms, and 1-5 id skips spanning up to ~11 s in a quiet
+    market. None is flagged; status is ok."""
     from data.dq.checks import check_probable_loss
 
-    limit = THRESHOLDS.probable_loss.max_na_run_ids
-    ok_ids = pl.Series([1, 2, 2 + limit + 1, 2 + limit + 2])  # skip run == limit
-    assert check_probable_loss(ok_ids, THRESHOLDS)["dq_status"] == "ok"
+    points, tid, t = [], 1, _T0
+    for run, step_ns in [
+        (16, 5 * _MS),
+        (15, 11 * _MS),
+        (6, 21 * _MS),
+        (1, 10_886 * _MS),
+        (5, 900 * _MS),
+    ]:
+        points.append((tid, t))
+        tid, t = tid + run + 1, t + step_ns
+        points.append((tid, t))
+        tid, t = tid + 1, t + _MS
+    result = check_probable_loss(_trades(points), THRESHOLDS)
+    assert result["dq_status"] == "ok"
+    assert result["count"] == 0
+    assert "max_run_ids=16" in result["reason"]
+    assert "max_run_span_s=10.886" in result["reason"]
 
-    lossy = pl.Series([1, 2, 2 + limit + 2, 2 + limit + 3, 100])  # skips limit+1 and 89
-    result = check_probable_loss(lossy, THRESHOLDS)
-    assert result["dq_status"] == "degraded"  # never "failed"
-    assert result["count"] == 2
-    assert "max_skip_run_ids=89" in result["reason"]
+
+def test_probable_loss_flags_a_genuine_loss_but_stays_informational():
+    from data.dq.checks import check_probable_loss
+
+    result = check_probable_loss(_with_skip(5_000, 30 * NS_PER_SECOND), THRESHOLDS)
+    assert result["count"] == 1
+    assert result["dq_status"] == "ok"  # informational: never degraded/failed
+    assert "largest_flagged: run_ids=5000 span_s=30.000" in result["reason"]
+    assert "ids_in_flagged_runs=5000" in result["reason"]
 
 
-def test_probable_loss_threshold_is_the_measured_max_na_run():
-    assert THRESHOLDS.probable_loss.max_na_run_ids == 5
+def test_probable_loss_large_ids_in_a_tiny_span_is_not_flagged():
+    """Pinned choice: a big id skip within a few ms is indistinguishable
+    from a placeholder storm, so the size axis alone does not flag."""
+    from data.dq.checks import check_probable_loss
+
+    result = check_probable_loss(_with_skip(500, 5 * _MS), THRESHOLDS)
+    assert result["count"] == 0
+    assert "max_run_ids=500" in result["reason"]
+
+
+def test_probable_loss_small_ids_over_a_long_span_is_not_flagged():
+    """Pinned choice: 87,733 real archive skip runs span > 1 s, all of 1-5
+    ids (a lone placeholder in a quiet market), so the span axis alone does
+    not flag."""
+    from data.dq.checks import check_probable_loss
+
+    result = check_probable_loss(_with_skip(2, 10 * NS_PER_SECOND), THRESHOLDS)
+    assert result["count"] == 0
+
+
+def test_probable_loss_both_thresholds_are_strict():
+    from data.dq.checks import check_probable_loss
+
+    at_limit = _with_skip(100, 1 * NS_PER_SECOND)
+    assert check_probable_loss(at_limit, THRESHOLDS)["count"] == 0
+    just_over = _with_skip(101, 1 * NS_PER_SECOND + 1)
+    assert check_probable_loss(just_over, THRESHOLDS)["count"] == 1
+
+
+def test_probable_loss_sorts_by_trade_id_and_needs_two_trades():
+    from data.dq.checks import check_probable_loss
+
+    shuffled = _with_skip(5_000, 30 * NS_PER_SECOND).reverse()
+    assert check_probable_loss(shuffled, THRESHOLDS)["count"] == 1
+    single = check_probable_loss(_trades([(1, _T0)]), THRESHOLDS)
+    assert single["dq_status"] == "n/a"

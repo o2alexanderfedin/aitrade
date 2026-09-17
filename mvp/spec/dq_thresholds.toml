@@ -12,7 +12,7 @@
 #   (1) gap_coverage        -- capture-outage seconds/day (ledger-derived)
 #   (2) reconciliation      -- capture<->archive trade_id mismatch, curated/precomputed
 #   (3) na_placeholder      -- X="NA" placeholder trade drop rate, curated/precomputed
-#   (3b) probable_loss      -- trade-id skip runs on pre-capture archive days
+#   (3b) probable_loss      -- trade-id skip runs on pre-capture archive days (informational)
 #   (4) crossed_locked_book -- bid_price >= ask_price count (informational)
 #   (5) l1_sparsity         -- max inter-arrival gap in bookTicker etime
 #   (6) etime_plausibility  -- manifest etime_range within [date-1d, date+1d]
@@ -66,22 +66,34 @@ capture-side rates: 0.75% (09-12), 0.48% (09-13), 0.44% (09-14),
 """
 
 [probable_loss]
-max_na_run_ids = 5
+flag_run_ids_over = 100
+flag_span_seconds_over = 1
 notes = """
 03-CONTEXT.md (locked): on pre-capture archive days (chosen source archive,
-no capture partition for the day), trade-id skip runs (diff(trade_id) - 1)
-longer than the maximum observed X="NA" placeholder run are flagged
-probable-loss -- dq_status "degraded", never "failed". Placeholder rows
-consume trade ids the archive omits, so shorter skips are expected.
-max_na_run_ids=5 is MEASURED (2026-09-17, read-only over every captured
-trade day): longest run of consecutive placeholder trade ids per day was
-5 (09-12), 5 (09-13), 3 (09-14), 3 (09-15), 4 (09-16), 2 (09-17 partial),
-over 55,905 placeholder rows. Days with a capture overlap report n/a here:
-reconciliation against capture is the loss detector there. First real
-run flagged 6 of the 103 pre-capture days (2026-06-07, 07-06, 07-10, 08-19,
-08-22, 08-25; longest skip 16 ids) -- paused pending a human decision, not
-auto-acknowledged. Re-measure as capture history grows: a longer observed
-placeholder run raises this number.
+no capture partition for the day) trade-id skip runs are flagged
+probable-loss and never hard-fail. INFORMATIONAL: dq_status is always "ok"
+(like crossed_locked_book) -- it never pauses the loader. On archive data an
+X="NA" placeholder burst and a genuine loss are indistinguishable by trade
+ids alone, so a pausing version made a human acknowledge noise on volatile
+days. The report still carries the flagged-run count, the largest run, the
+largest span and the largest flagged run, so a real loss is visible.
+A skip run is diff(trade_id) - 1 > 0 over the day sorted by trade_id; its
+span is the etime step across the skip. A run is flagged only when BOTH
+run_ids > flag_run_ids_over AND span > flag_span_seconds_over.
+MEASURED 2026-09-17, read-only over all 107 curated archive trade days
+(2026-06-01..2026-09-15, 857,144 skip runs): run sizes 1: 837,907;
+2-5: 19,137; 6-20: 100; >20: 0 -- max 16 ids (2026-08-19). The 100 runs of
+6-20 ids span at most 0.021 s (single-second NA bursts in fast markets).
+Neither axis alone is a discriminator: 87,733 runs span > 1 s, all of 1-5
+ids, up to 10.886 s (a lone placeholder in a quiet market; consecutive
+trades with no skip are up to 15.378 s apart), and a >100-id placeholder
+storm inside a few ms cannot be ruled out from three months of data.
+Margins: 100 ids is 6x the 16-id ceiling; 1 s is ~48x the 0.021 s span
+ceiling of runs above 5 ids. Runs satisfying both: 0 of 857,144. The first
+version (max_na_run_ids=5, measured over 6 capture days, degraded) paused
+2026-06-07, 07-06, 07-10, 08-19, 08-22, 08-25 -- all false positives (runs
+of 6-16 ids within 0.00-0.02 s). Days with a capture overlap report n/a
+here: reconciliation against capture is the loss detector there.
 """
 
 [crossed_locked_book]

@@ -223,9 +223,7 @@ def build_report_rows_for_date(
                 }
             else:
                 loss = check_probable_loss(
-                    _read_curated(manifest, lake_root, columns=["trade_id"])[
-                        "trade_id"
-                    ],
+                    _read_curated(manifest, lake_root, columns=["trade_id", "etime"]),
                     thresholds,
                 )
             rows.append({"date": date, "symbol": symbol, "stream": stream, **loss})

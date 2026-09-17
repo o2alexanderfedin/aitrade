@@ -163,7 +163,8 @@ class NaPlaceholderThresholds:
 
 @dataclass(frozen=True)
 class ProbableLossThresholds:
-    max_na_run_ids: int
+    flag_run_ids_over: int
+    flag_span_seconds_over: int
     notes: str
 
 
@@ -469,41 +470,72 @@ def check_na_placeholder(build_stats: dict, thresholds: DQThresholds) -> dict:
 # --------------------------------------------------------------------------
 
 
-def check_probable_loss(trade_ids: pl.Series, thresholds: DQThresholds) -> dict:
+def check_probable_loss(trades: pl.DataFrame, thresholds: DQThresholds) -> dict:
     """03-CONTEXT.md (locked): "on pre-capture days, skip runs longer than the
     maximum observed NA run are flagged `probable-loss` in the DQ report and
     never hard-fail."
 
-    Trade-id contiguity is not a loss detector on the archive by itself: the
-    archive omits X="NA" placeholder rows, which still consume ids, so every
-    placeholder leaves a skip. But placeholders come in short runs -- the
-    longest run of consecutive placeholder ids measured over every captured
-    day is `thresholds.probable_loss.max_na_run_ids`. A skip run
-    (`diff(trade_id) - 1`) longer than that is not explained by placeholders
-    alone and is flagged. Status is `"degraded"` (pauses the loader until a
-    human acknowledges it), never `"failed"`. `count` = number of flagged
-    runs; `value_pct` is not used."""
-    ids = trade_ids.sort()
-    if ids.len() < 2:
+    INFORMATIONAL, like `check_crossed_locked_book`: `dq_status` is always
+    `"ok"` (or `"n/a"` for fewer than 2 trades) and never contributes
+    `degraded`/`failed` to a day's pause decision. On archive data an X="NA"
+    placeholder burst and a genuine loss both appear only as a trade-id skip,
+    so pausing on this signal would make a human acknowledge noise on every
+    volatile day (six false-positive pauses under the first, 5-id version).
+
+    A skip run is `diff(trade_id) - 1 > 0` over `trades` sorted by
+    `trade_id`; its span is the etime step across the skip. A run is flagged
+    only when it is implausible as a placeholder burst on BOTH axes:
+    `run_ids > flag_run_ids_over` AND `span > flag_span_seconds_over`.
+    Neither axis alone discriminates (measured over all 107 archive days in
+    `dq_thresholds.toml`): long spans are ordinary for 1-5 id skips in a
+    quiet market, and a large id skip in a few ms is what a liquidation-burst
+    placeholder storm would look like. `count` = flagged runs; the reason
+    carries the largest run, the largest span, and the largest flagged run,
+    so a real loss is visible in the report."""
+    if trades.height < 2:
         return {
             "check": "probable_loss",
             "dq_status": "n/a",
             "count": None,
-            "reason": f"fewer than 2 trade ids ({ids.len()})",
+            "reason": f"fewer than 2 trade ids ({trades.height})",
         }
-    skips = ids.diff().drop_nulls() - 1
-    limit = thresholds.probable_loss.max_na_run_ids
-    flagged = skips.filter(skips > limit)
-    max_skip = int(skips.max())
-    status = "degraded" if flagged.len() else "ok"
+    cfg = thresholds.probable_loss
+    runs = (
+        trades.select("trade_id", "etime")
+        .sort("trade_id")
+        .select(
+            run_ids=pl.col("trade_id").diff() - 1,
+            span_ns=pl.col("etime").diff(),
+            etime=pl.col("etime").shift(1),
+        )
+        .drop_nulls()
+        .filter(pl.col("run_ids") > 0)
+    )
+    flagged = runs.filter(
+        (pl.col("run_ids") > cfg.flag_run_ids_over)
+        & (pl.col("span_ns") > cfg.flag_span_seconds_over * NS_PER_SECOND)
+    )
+    max_run = int(runs["run_ids"].max()) if runs.height else 0
+    max_span_s = runs["span_ns"].max() / NS_PER_SECOND if runs.height else 0.0
+    reason = (
+        f"skip_runs={runs.height}; max_run_ids={max_run}; "
+        f"max_run_span_s={max_span_s:.3f}; flagged_runs(run_ids>"
+        f"{cfg.flag_run_ids_over} and span_s>{cfg.flag_span_seconds_over})="
+        f"{flagged.height}"
+    )
+    if flagged.height:
+        worst = flagged.sort("run_ids", descending=True).row(0, named=True)
+        reason += (
+            f"; largest_flagged: run_ids={worst['run_ids']} "
+            f"span_s={worst['span_ns'] / NS_PER_SECOND:.3f} "
+            f"after_etime={worst['etime']}; "
+            f"ids_in_flagged_runs={int(flagged['run_ids'].sum())}"
+        )
     return {
         "check": "probable_loss",
-        "dq_status": status,
-        "count": int(flagged.len()),
-        "reason": (
-            f"max_skip_run_ids={max_skip}; runs_over_max_na_run({limit})="
-            f"{flagged.len()}; ids_in_flagged_runs={int(flagged.sum()) if flagged.len() else 0}"
-        ),
+        "dq_status": "ok",
+        "count": flagged.height,
+        "reason": reason,
     }
 
 
