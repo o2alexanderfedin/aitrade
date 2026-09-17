@@ -32,11 +32,13 @@ PKG_ROOT = pathlib.Path(__file__).resolve().parents[1]
 # re-raises it unmodified for a bad tracking root.
 __all__ = [
     "MANDATORY_TAG_KEYS",
+    "PROVENANCE_TAG_KEYS",
     "MissingTagError",
     "DataRootError",
     "build_tracking_uri",
     "compute_code_hash",
     "compute_env_hash",
+    "log_data_provenance",
     "start_tracked_run",
 ]
 
@@ -157,3 +159,56 @@ def start_tracked_run(
     if dq_ack_ids is not None:
         run_tags["dq_ack_ids"] = ",".join(sorted(set(dq_ack_ids))) or "none"
     return mlflow.start_run(experiment_id=experiment_id, tags=run_tags)
+
+
+#: Tag keys `log_data_provenance` writes. Not part of `MANDATORY_TAG_KEYS`:
+#: they are recorded by the LOADER, at the moment data is actually read, and
+#: a run that reads no curated data legitimately has none of them.
+PROVENANCE_TAG_KEYS: tuple[str, ...] = (
+    "dq_ack_ids",
+    "dq_ack_sha256",
+    "data_manifest_ids",
+)
+
+
+def log_data_provenance(
+    *,
+    manifest_ids: list[str],
+    dq_ack_ids: list[str],
+    dq_ack_sha256: list[str],
+) -> bool:
+    """Record on the CURRENTLY ACTIVE run what a `load_curated` call actually
+    relied on. Returns whether a run was active (nothing is logged when none
+    is, and that is not an error).
+
+    03-CONTEXT.md DATA-07 requires acknowledgement ids to be logged as an
+    MLflow run tag. Until now nothing outside tests ever called
+    `dq_acknowledgement_ids`: `load_curated` computed the ids and threw them
+    away, so a training run's provenance never showed which DQ findings had
+    been waived to let it read that data. `data.store.load_curated` now calls
+    this, so the record is written by the code that did the reading.
+
+    WHY `set_tags` AND NOT `start_run(tags=...)`: the atomicity rule this
+    module enforces is about the MANDATORY tag schema -- a run must never be
+    CREATED with a partial mandatory tag set, so those eight keys go in at
+    creation. These three are different: they are not known at run start (the
+    loader may be called many times, for many manifests, during a run), they
+    are additive, and each value accumulates across calls rather than
+    replacing what an earlier read recorded.
+    """
+    run = mlflow.active_run()
+    if run is None:
+        return False
+    client = mlflow.tracking.MlflowClient()
+    existing = client.get_run(run.info.run_id).data.tags
+    for key, values in (
+        ("dq_ack_ids", dq_ack_ids),
+        ("dq_ack_sha256", dq_ack_sha256),
+        ("data_manifest_ids", manifest_ids),
+    ):
+        merged = {v for v in values if v}
+        previous = existing.get(key)
+        if previous and previous != "none":
+            merged |= set(previous.split(","))
+        mlflow.set_tag(key, ",".join(sorted(merged)) or "none")
+    return True

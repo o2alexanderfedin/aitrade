@@ -322,3 +322,64 @@ def test_dq_ack_ids_are_logged_as_a_run_tag_at_creation(tmp_path):
         )
     finally:
         mlflow.end_run()
+
+
+# --- 03-FOLLOWUPS.md item 3 (WR-16 remainder): the loader logs provenance ---
+
+
+def test_log_data_provenance_writes_all_three_tags_on_the_active_run(tmp_path):
+    from tracking.mlflow_utils import log_data_provenance
+
+    tracking_uri = build_tracking_uri(str(tmp_path))
+    try:
+        run = start_tracked_run(
+            str(tmp_path), dict(VALID_TAGS), "test-experiment", min_free_gb=0.0
+        )
+        assert (
+            log_data_provenance(
+                manifest_ids=["m1"],
+                dq_ack_ids=["BTCUSDT__trade__2026-09-14"],
+                dq_ack_sha256=["a" * 64],
+            )
+            is True
+        )
+        tags = MlflowClient(tracking_uri).get_run(run.info.run_id).data.tags
+        assert tags["data_manifest_ids"] == "m1"
+        assert tags["dq_ack_ids"] == "BTCUSDT__trade__2026-09-14"
+        assert tags["dq_ack_sha256"] == "a" * 64
+    finally:
+        mlflow.end_run()
+
+
+def test_log_data_provenance_accumulates_across_reads(tmp_path):
+    """A run may read several manifests; the second read must not erase the
+    first one's provenance."""
+    from tracking.mlflow_utils import log_data_provenance
+
+    tracking_uri = build_tracking_uri(str(tmp_path))
+    try:
+        run = start_tracked_run(
+            str(tmp_path), dict(VALID_TAGS), "test-experiment", min_free_gb=0.0
+        )
+        log_data_provenance(
+            manifest_ids=["m1"], dq_ack_ids=["ack1"], dq_ack_sha256=["a" * 64]
+        )
+        log_data_provenance(manifest_ids=["m2"], dq_ack_ids=[], dq_ack_sha256=[])
+        tags = MlflowClient(tracking_uri).get_run(run.info.run_id).data.tags
+        assert tags["data_manifest_ids"] == "m1,m2"
+        assert tags["dq_ack_ids"] == "ack1"
+    finally:
+        mlflow.end_run()
+
+
+def test_log_data_provenance_is_a_no_op_without_an_active_run(tmp_path):
+    """Reading curated data outside a tracked run is legitimate and must not
+    raise."""
+    from tracking.mlflow_utils import log_data_provenance
+
+    mlflow.set_tracking_uri(build_tracking_uri(str(tmp_path)))
+    assert mlflow.active_run() is None
+    assert (
+        log_data_provenance(manifest_ids=["m1"], dq_ack_ids=["a"], dq_ack_sha256=["b"])
+        is False
+    )
