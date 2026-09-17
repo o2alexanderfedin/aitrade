@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import time
 from pathlib import Path
 
@@ -162,6 +163,56 @@ def issue_token(
     return body
 
 
+#: Tables every initialised MLflow SQLite tracking store has; a file without
+#: them is not a store whose silence means anything.
+MLFLOW_STORE_REQUIRED_TABLES: frozenset[str] = frozenset(
+    {"alembic_version", "experiments", "runs", "tags"}
+)
+
+_SQLITE_HEADER = b"SQLite format 3\x00"
+
+
+def _require_initialised_mlflow_store(store_file: Path) -> None:
+    """Refuse (`LockboxTokenError`) a `mlflow.db` that is not an already
+    initialised MLflow SQLite store (03-REVIEW-ITER2.md WR-12): a zero-byte
+    file or a SQLite file without MLflow's schema used to be initialised by
+    MLflow on first use as a fresh, empty store -- which then answered
+    "never consumed". Opened read-only; never modifies the file."""
+    problem: str | None = None
+    try:
+        with open(store_file, "rb") as fh:
+            header = fh.read(len(_SQLITE_HEADER))
+        if header != _SQLITE_HEADER:
+            problem = f"no SQLite header ({store_file.stat().st_size} bytes)"
+        else:
+            uri = f"{store_file.resolve().as_uri()}?mode=ro"
+            con = sqlite3.connect(uri, uri=True)
+            try:
+                tables = {
+                    row[0]
+                    for row in con.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'table'"
+                    )
+                }
+                missing = MLFLOW_STORE_REQUIRED_TABLES - tables
+                if missing:
+                    problem = f"missing MLflow tables {sorted(missing)}"
+                elif (
+                    con.execute("SELECT COUNT(*) FROM alembic_version").fetchone()[0]
+                    < 1
+                ):
+                    problem = "alembic_version is empty (schema never migrated)"
+            finally:
+                con.close()
+    except (OSError, sqlite3.Error) as exc:
+        problem = f"{exc.__class__.__name__}: {exc}"
+    if problem is not None:
+        raise LockboxTokenError(
+            f"{store_file} is not an initialised MLflow store ({problem}) -- "
+            "refusing to treat its silence as 'token never consumed'"
+        )
+
+
 def _mlflow_has_consumed(token_id: str, tracking_root: str) -> bool:
     """Return whether any MLflow run, in any experiment at `tracking_root`,
     carries `tags.lockbox_token_id == token_id` -- INCLUDING soft-deleted
@@ -174,9 +225,16 @@ def _mlflow_has_consumed(token_id: str, tracking_root: str) -> bool:
     `mlflow.search_runs()` convenience API (spec.md DONT).
 
     Refuses (`LockboxTokenError`) a `tracking_root` that does not ALREADY
-    contain `mlflow.db` (WR-06): constructing a client there would silently
-    create a fresh, empty store and answer "never consumed" -- a fail-open.
-    The check runs before any MLflow object is constructed.
+    contain `mlflow.db` (WR-06), or whose `mlflow.db` is not an initialised
+    MLflow SQLite store -- zero bytes, not SQLite, or missing MLflow's
+    tables (03-REVIEW-ITER2.md WR-12): constructing a client there would
+    silently create a fresh, empty store and answer "never consumed" -- a
+    fail-open. The check runs before any MLflow object is constructed.
+
+    Residual, stated: a DIFFERENT, genuinely initialised MLflow store (some
+    other project's tracking root) is still accepted; this function does
+    not pin the canonical tracking root. The JSON `consumed_at` stamp still
+    refuses a second look in that case unless it is reverted as well.
 
     Any exception raised by `MlflowClient(...)`, `.search_experiments()`, or
     `.search_runs()` PROPAGATES UNMODIFIED -- `False` here means "the query
@@ -194,6 +252,7 @@ def _mlflow_has_consumed(token_id: str, tracking_root: str) -> bool:
             f"tracking root {tracking_root} has no existing mlflow.db -- refusing "
             "to create a fresh store and treat the token as never consumed"
         )
+    _require_initialised_mlflow_store(store_file)
     client = MlflowClient(build_tracking_uri(str(tracking_root)))
     experiment_ids = [
         exp.experiment_id for exp in client.search_experiments(view_type=ViewType.ALL)
@@ -245,9 +304,9 @@ def open_lockbox(
     Order of operations (exact, per 03-RESEARCH.md Pitfall 4 -- do not
     reorder):
 
-    1. Read the token file; raise `LockboxTokenError` if absent. Then take
-       an exclusive `<token>.lock` for everything below (WR-06), released on
-       exit.
+    1. Raise `LockboxTokenError` if the token file is absent. Then take an
+       exclusive `<token>.lock` for everything below (WR-06), released on
+       exit, and read the token JSON only under it (WR-12).
     2. Verify `requested_by` matches the token's own stored `requested_by`
        -- an identity check beyond CONTEXT.md's literal spec (Rule 2:
        missing critical -- the token names who it was issued to; silently
@@ -278,17 +337,19 @@ def open_lockbox(
     path = token_path(token_id, registry_root=registry_root)
     if not path.exists():
         raise LockboxTokenError(f"lockbox token not found: {token_id}")
-    token = json.loads(path.read_text())
-
-    if token["requested_by"] != requested_by:
-        raise LockboxTokenError(
-            f"token {token_id} was issued to requested_by="
-            f"{token['requested_by']!r}, not {requested_by!r} -- refusing "
-            "to open"
-        )
 
     lock_path = _acquire_open_lock(path, token_id)
     try:
+        # Read the token only while holding the lock (03-REVIEW-ITER2.md
+        # WR-12): a copy read before the lock may predate another caller's
+        # consumed_at stamp.
+        token = json.loads(path.read_text())
+        if token["requested_by"] != requested_by:
+            raise LockboxTokenError(
+                f"token {token_id} was issued to requested_by="
+                f"{token['requested_by']!r}, not {requested_by!r} -- refusing "
+                "to open"
+            )
         return _open_locked(
             token_id,
             token,

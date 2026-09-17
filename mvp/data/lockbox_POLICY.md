@@ -108,7 +108,10 @@ would make "every look appears in a diff" false):
   closed: confirm the token's MLflow record, then remove it by hand.
 - Refuses a `tracking_root` that does not already contain `mlflow.db`
   (pointing the call at any other directory used to create a fresh, empty
-  store there and answer "never consumed").
+  store there and answer "never consumed"), and one whose `mlflow.db` is
+  not an initialised MLflow SQLite store -- zero bytes, not SQLite, or
+  missing MLflow's tables (03-REVIEW-ITER2.md WR-12). The token JSON is
+  read only while the lock is held.
 - Checks consumption **MLflow-first**: `MlflowClient().search_runs(...)`
   across every experiment at `tracking_root`, **including soft-deleted runs
   and experiments** (`ViewType.ALL` -- MLflow's default is active-only, so
@@ -137,7 +140,9 @@ replaced by an empty (or different) store, or its rows are purged with
 `mlflow gc`, AND the token JSON's `consumed_at` stamp is simultaneously
 reverted, the two signals together are indistinguishable from "never
 consumed." Either signal alone (an intact tracking store OR an unreverted
-JSON stamp) still catches it.
+JSON stamp) still catches it. The same holds when the caller simply passes a
+`tracking_root` holding some OTHER initialised MLflow store: the canonical
+tracking root is not pinned, so only the JSON stamp refuses that second look.
 
 ## Agent containment (PITFALLS #14)
 

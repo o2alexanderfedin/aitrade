@@ -389,3 +389,66 @@ def test_concurrent_open_is_refused_while_another_open_holds_the_lock(tmp_path: 
         token_path("lb-wr06-lock", registry_root=registry_root).read_text()
     )
     assert on_disk["consumed_at"] is None
+
+
+# --- WR-12 (03-REVIEW-ITER2.md): the store must BE an MLflow store ---------
+
+
+def _write_sqlite_with_unrelated_table(path: Path) -> None:
+    import sqlite3
+
+    con = sqlite3.connect(path)
+    con.execute("CREATE TABLE notes (x TEXT)")
+    con.commit()
+    con.close()
+
+
+@pytest.mark.parametrize(
+    "label, make_store",
+    [
+        ("zero-byte file", lambda p: p.write_bytes(b"")),
+        ("random bytes", lambda p: p.write_bytes(b"not a database at all\n" * 40)),
+        ("sqlite without the MLflow schema", _write_sqlite_with_unrelated_table),
+    ],
+)
+def test_a_store_that_is_not_an_mlflow_store_is_refused_not_read_as_unconsumed(
+    tmp_path: Path, label: str, make_store
+):
+    registry_root, lake_root, _tracking_root, _m, _t = _build_segment(
+        tmp_path, token_id="lb-wr12-store"
+    )
+    fake_root = tmp_path / "fake_mlflow_root"
+    fake_root.mkdir()
+    make_store(fake_root / "mlflow.db")
+    before = (fake_root / "mlflow.db").read_bytes()
+
+    with pytest.raises(LockboxTokenError, match="not an initialised MLflow store"):
+        _open("lb-wr12-store", registry_root, lake_root, fake_root)
+
+    # Not silently initialised into a fresh store, and the token is not burned.
+    assert (fake_root / "mlflow.db").read_bytes() == before, label
+    on_disk = json.loads(
+        token_path("lb-wr12-store", registry_root=registry_root).read_text()
+    )
+    assert on_disk["consumed_at"] is None
+
+
+def test_token_json_is_reread_under_the_lock(tmp_path: Path, monkeypatch):
+    """Caller B read the token before caller A stamped it; B then waits on the
+    lock. B must check A's stamp, not its own stale copy."""
+    import data.lockbox as lockbox_module
+
+    registry_root, lake_root, tracking_root, _m, _t = _build_segment(
+        tmp_path, token_id="lb-wr12-stale"
+    )
+    real_acquire = lockbox_module._acquire_open_lock
+
+    def stamp_then_acquire(path, token_id):
+        body = json.loads(path.read_text())
+        body["consumed_at"] = 123  # caller A's stamp lands while B waits
+        path.write_text(json.dumps(body, sort_keys=True, indent=2))
+        return real_acquire(path, token_id)
+
+    monkeypatch.setattr(lockbox_module, "_acquire_open_lock", stamp_then_acquire)
+    with pytest.raises(LockboxTokenError, match="already consumed"):
+        _open("lb-wr12-stale", registry_root, lake_root, tracking_root)
