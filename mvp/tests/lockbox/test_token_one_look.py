@@ -142,6 +142,7 @@ def test_open_lockbox_raises_if_token_missing(tmp_path: Path):
             "purpose",
             "alex",
             str(tracking_root),
+            canonical_tracking_root=str(tracking_root),
             lake_root=tmp_path / "lake",
             registry_root=tmp_path / "registry",
             min_free_gb=0.0,
@@ -158,6 +159,7 @@ def test_open_lockbox_raises_on_requested_by_mismatch(tmp_path: Path):
             "purpose",
             "someone-else",
             str(tracking_root),
+            canonical_tracking_root=str(tracking_root),
             lake_root=lake_root,
             registry_root=registry_root,
             min_free_gb=0.0,
@@ -176,6 +178,7 @@ def test_open_lockbox_succeeds_once_and_returns_data(tmp_path: Path):
         "purpose",
         "alex",
         str(tracking_root),
+        canonical_tracking_root=str(tracking_root),
         lake_root=lake_root,
         registry_root=registry_root,
         min_free_gb=0.0,
@@ -207,6 +210,7 @@ def test_second_open_lockbox_raises_json_already_shows_consumed(tmp_path: Path):
         "purpose",
         "alex",
         str(tracking_root),
+        canonical_tracking_root=str(tracking_root),
         lake_root=lake_root,
         registry_root=registry_root,
         min_free_gb=0.0,
@@ -217,6 +221,7 @@ def test_second_open_lockbox_raises_json_already_shows_consumed(tmp_path: Path):
             "purpose",
             "alex",
             str(tracking_root),
+            canonical_tracking_root=str(tracking_root),
             lake_root=lake_root,
             registry_root=registry_root,
             min_free_gb=0.0,
@@ -238,6 +243,7 @@ def test_second_open_lockbox_raises_after_json_revert_because_mlflow_still_has_r
         "purpose",
         "alex",
         str(tracking_root),
+        canonical_tracking_root=str(tracking_root),
         lake_root=lake_root,
         registry_root=registry_root,
         min_free_gb=0.0,
@@ -256,6 +262,7 @@ def test_second_open_lockbox_raises_after_json_revert_because_mlflow_still_has_r
             "purpose",
             "alex",
             str(tracking_root),
+            canonical_tracking_root=str(tracking_root),
             lake_root=lake_root,
             registry_root=registry_root,
             min_free_gb=0.0,
@@ -293,6 +300,7 @@ def test_open_lockbox_propagates_mlflow_query_error_never_treats_as_not_consumed
             "purpose",
             "alex",
             str(tracking_root),
+            canonical_tracking_root=str(tracking_root),
             lake_root=lake_root,
             registry_root=registry_root,
             min_free_gb=0.0,
@@ -313,6 +321,7 @@ def _open(token_id, registry_root, lake_root, tracking_root):
         "purpose",
         "alex",
         str(tracking_root),
+        canonical_tracking_root=str(tracking_root),
         lake_root=lake_root,
         registry_root=registry_root,
         min_free_gb=0.0,
@@ -452,3 +461,88 @@ def test_token_json_is_reread_under_the_lock(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(lockbox_module, "_acquire_open_lock", stamp_then_acquire)
     with pytest.raises(LockboxTokenError, match="already consumed"):
         _open("lb-wr12-stale", registry_root, lake_root, tracking_root)
+
+
+# --- 03-FOLLOWUPS.md item 2 (WR-12 remainder): the tracking root is pinned ---
+
+
+def test_a_different_but_valid_mlflow_store_is_refused(tmp_path: Path):
+    """A genuinely initialised MLflow store belonging to something else
+    answers "never consumed" about a token it has never heard of -- and the
+    access run would then be logged there, so the durable record never
+    reaches the real store. The one-look check must verify it is reading the
+    store it claims to."""
+    registry_root, lake_root, tracking_root, _m, _t = _build_segment(
+        tmp_path, token_id="lb-pin-001"
+    )
+    other_root = tmp_path / "someone_elses_mlflow"
+    other_root.mkdir()
+    _seed_tracking_db(other_root)  # a real, fully initialised MLflow store
+    before = (other_root / "mlflow.db").read_bytes()
+
+    with pytest.raises(LockboxTokenError, match="canonical MLflow store"):
+        open_lockbox(
+            "lb-pin-001",
+            "purpose",
+            "alex",
+            str(other_root),
+            canonical_tracking_root=str(tracking_root),
+            lake_root=lake_root,
+            registry_root=registry_root,
+            min_free_gb=0.0,
+        )
+
+    # Nothing was read from, written to, or logged into the foreign store,
+    # and the token is still unconsumed.
+    assert (other_root / "mlflow.db").read_bytes() == before
+    on_disk = json.loads(
+        token_path("lb-pin-001", registry_root=registry_root).read_text()
+    )
+    assert on_disk["consumed_at"] is None
+
+
+def test_the_pin_defaults_to_the_projects_canonical_tracking_root(tmp_path: Path):
+    """No `canonical_tracking_root=` means the real one -- a caller cannot
+    reach a throwaway store by simply not mentioning it."""
+    from data.lake_paths import DEFAULT_MLFLOW_TRACKING_ROOT
+
+    registry_root, lake_root, tracking_root, _m, _t = _build_segment(
+        tmp_path, token_id="lb-pin-002"
+    )
+    assert Path(tracking_root).resolve() != Path(DEFAULT_MLFLOW_TRACKING_ROOT)
+    with pytest.raises(LockboxTokenError, match="canonical MLflow store"):
+        open_lockbox(
+            "lb-pin-002",
+            "purpose",
+            "alex",
+            str(tracking_root),
+            lake_root=lake_root,
+            registry_root=registry_root,
+            min_free_gb=0.0,
+        )
+
+
+def test_the_pin_compares_resolved_paths(tmp_path: Path):
+    """The pin must not fail on spelling: `/tmp` vs `/private/tmp` (macOS), or
+    a symlink to the canonical root, is the same root.
+
+    A `.`/trailing-slash spelling would NOT prove this -- `pathlib` already
+    normalises those before any `resolve()` -- so the case is a real symlink,
+    which only `resolve()` collapses."""
+    registry_root, lake_root, tracking_root, _m, _t = _build_segment(
+        tmp_path, token_id="lb-pin-003"
+    )
+    link = tmp_path / "mlflow_link"
+    link.symlink_to(tracking_root, target_is_directory=True)
+    spelled = str(link)
+    df = open_lockbox(
+        "lb-pin-003",
+        "purpose",
+        "alex",
+        spelled,
+        canonical_tracking_root=str(tracking_root),
+        lake_root=lake_root,
+        registry_root=registry_root,
+        min_free_gb=0.0,
+    )
+    assert df.height == 3

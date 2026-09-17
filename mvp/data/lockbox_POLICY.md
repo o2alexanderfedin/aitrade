@@ -140,9 +140,16 @@ replaced by an empty (or different) store, or its rows are purged with
 `mlflow gc`, AND the token JSON's `consumed_at` stamp is simultaneously
 reverted, the two signals together are indistinguishable from "never
 consumed." Either signal alone (an intact tracking store OR an unreverted
-JSON stamp) still catches it. The same holds when the caller simply passes a
-`tracking_root` holding some OTHER initialised MLflow store: the canonical
-tracking root is not pinned, so only the JSON stamp refuses that second look.
+JSON stamp) still catches it.
+
+Passing a `tracking_root` holding some OTHER initialised MLflow store is no
+longer such a case: the canonical tracking root is now **pinned** to
+`data.lake_paths.DEFAULT_MLFLOW_TRACKING_ROOT`
+(`/Volumes/ProjectsSSD/aihedgefund/mlflow`), compared after `resolve()`, and
+any other root raises `LockboxTokenError` before a single MLflow object is
+built -- so the durable record can neither be consulted in, nor written to,
+a throwaway store. Only `tests/lockbox/test_token_one_look.py` overrides it,
+through the explicit `canonical_tracking_root=` argument.
 
 ## Agent containment (PITFALLS #14)
 
