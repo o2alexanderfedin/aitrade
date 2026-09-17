@@ -816,3 +816,79 @@ def test_committed_regular_ack_still_unpauses_with_the_byte_check(tmp_path: Path
     )
     _write_acknowledgement(registry_root, "BTCUSDT", "trade", date, "outage")
     assert _load(manifest, lake_root, registry_root).height == 1
+
+
+# --- 03-FOLLOWUPS.md item 3 (WR-16 remainder): load_curated logs what it
+# --- relied on, so a training run's provenance names the waived findings ----
+
+
+def test_load_curated_logs_the_acknowledgements_it_relied_on(tmp_path: Path):
+    import mlflow
+    from mlflow.tracking import MlflowClient
+
+    from tracking.mlflow_utils import build_tracking_uri, start_tracked_run
+
+    lake_root = tmp_path / "lake"
+    registry_root = tmp_path / "registry"
+    tracking_root = tmp_path / "mlflow_root"
+    tracking_root.mkdir()
+    date = "2026-09-12"
+    manifest = _issue_manifest(lake_root, registry_root, date)
+    _write_report(
+        lake_root, "BTCUSDT", "trade", date, "failed", manifest["manifest_id"]
+    )
+    ack_path = _write_acknowledgement(
+        registry_root, "BTCUSDT", "trade", date, "known outage"
+    )
+    expected_sha = hashlib.sha256(Path(ack_path).read_bytes()).hexdigest()
+
+    tags = {
+        "code_hash": "abc",
+        "data_hash": manifest["manifest_id"],
+        "seed": "0",
+        "env_hash": "def",
+        "segment_manifest_id": "n/a",
+        "model_class": "n/a",
+        "fold_config": "n/a",
+        "stage": "test",
+    }
+    try:
+        run = start_tracked_run(
+            str(tracking_root), tags, "followups-item-3", min_free_gb=0.0
+        )
+        load_curated(
+            manifest["manifest_id"],
+            "BTCUSDT.trade",
+            registry_root=registry_root,
+            lake_root=lake_root,
+        )
+        logged = (
+            MlflowClient(build_tracking_uri(str(tracking_root)))
+            .get_run(run.info.run_id)
+            .data.tags
+        )
+    finally:
+        mlflow.end_run()
+
+    assert logged["dq_ack_ids"] == "BTCUSDT__trade__2026-09-12"
+    assert logged["dq_ack_sha256"] == expected_sha
+    assert logged["data_manifest_ids"] == manifest["manifest_id"]
+
+
+def test_load_curated_without_an_active_run_neither_logs_nor_raises(tmp_path: Path):
+    lake_root = tmp_path / "lake"
+    registry_root = tmp_path / "registry"
+    date = "2026-09-12"
+    manifest = _issue_manifest(lake_root, registry_root, date)
+    _write_report(lake_root, "BTCUSDT", "trade", date, "ok", manifest["manifest_id"])
+
+    import mlflow
+
+    assert mlflow.active_run() is None
+    df = load_curated(
+        manifest["manifest_id"],
+        "BTCUSDT.trade",
+        registry_root=registry_root,
+        lake_root=lake_root,
+    )
+    assert df.height > 0

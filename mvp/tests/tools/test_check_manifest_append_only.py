@@ -379,13 +379,22 @@ def test_single_commit_repo_is_checked_not_vacuous(tmp_path: Path, capsys):
 
 def test_pointer_exemption_is_exactly_by_date(tmp_path: Path):
     """03-REVIEW-ITER2.md IN-13: a `by-date-archive/` directory is not a
-    pointer directory, so a manifest inside it is protected."""
-    repo, registry, lake, m0 = _repo(tmp_path)
+    pointer directory, so a manifest inside it is protected.
+
+    The manifest is MOVED there rather than copied: since item 5 the check is
+    content-anchored, so deleting a byte-identical duplicate loses nothing and
+    is not a violation. Deleting the only copy of these bytes is."""
+    repo, registry, lake, _m0 = _repo(tmp_path)
+    m1 = _issue(
+        registry, _write_partition(lake, "curated/date=2026-01-02/part-2.parquet", 2.0)
+    )
+    _commit_all(repo, "manifest 2")
     archive = registry / "manifests" / "BTCUSDT.trade" / "by-date-archive"
     archive.mkdir()
-    hidden = archive / _manifest_file(registry, m0["manifest_id"]).name
-    hidden.write_text(_manifest_file(registry, m0["manifest_id"]).read_text())
-    _commit_all(repo, "copy into by-date-archive")
+    hidden = archive / _manifest_file(registry, m1["manifest_id"]).name
+    _git(["mv", str(_manifest_file(registry, m1["manifest_id"])), str(hidden)], repo)
+    _commit_all(repo, "move into by-date-archive")
+    assert check_append_only(registry)[0] == [], "a content-preserving move is legal"
     hidden.unlink()
     _commit_all(repo, "delete it")
     errors, _ = check_append_only(registry)
@@ -599,3 +608,246 @@ def test_partition_path_escaping_the_lake_root_is_a_violation(
     _commit_all(repo, "escaping spelling")
     errors, _ = check_append_only(registry)
     assert any("escapes the lake root" in e for e in errors), errors
+
+
+# --- 03-FOLLOWUPS.md item 5: append-only is about CONTENT, not paths -------
+
+
+def _move_registry(repo: Path, registry: Path) -> Path:
+    moved = registry.parent / "registry_v2"
+    _git(["mv", str(registry), str(moved)], repo)
+    return moved
+
+
+def test_registry_move_that_preserves_every_manifest_passes(tmp_path: Path, capsys):
+    """WR-17's fix made ANY relocation a violation, which is over-strict: a
+    `git mv` that carries every manifest body across loses nothing. Only the
+    loss of content is a violation."""
+    repo, registry, lake, m0, m1 = _repo_with_two_manifests(tmp_path)
+    moved = _move_registry(repo, registry)
+    _commit_all(repo, "relocate registry, nothing dropped")
+
+    errors, tracked = check_append_only(moved)
+    assert errors == [], errors
+    assert tracked == 2
+    assert main(["--registry-root", str(moved)]) == 0
+    assert "PASS" in capsys.readouterr().out
+
+
+def test_staged_registry_move_preserving_every_manifest_passes(tmp_path: Path):
+    """The pre-commit view of the same move."""
+    repo, registry, lake, _m0, _m1 = _repo_with_two_manifests(tmp_path)
+    moved = _move_registry(repo, registry)
+    errors, _ = check_append_only(moved)
+    assert errors == [], errors
+
+
+def test_registry_move_that_edits_one_manifest_body_fails(tmp_path: Path):
+    """A move is not a licence to rewrite: the edited manifest's ORIGINAL
+    bytes no longer exist at any manifest path, and that is the violation."""
+    repo, registry, lake, _m0, m1 = _repo_with_two_manifests(tmp_path)
+    moved = _move_registry(repo, registry)
+    target = moved / "manifests" / "BTCUSDT.trade" / f"{m1['manifest_id']}.json"
+    body = json.loads(target.read_text())
+    body["partitions"][0]["sha256"] = "0" * 64
+    target.write_text(json.dumps(body, sort_keys=True, indent=2))
+    _commit_all(repo, "relocate registry and edit one manifest")
+
+    errors, _ = check_append_only(moved)
+    assert any(m1["manifest_id"] in e and "deleted" in e for e in errors), errors
+    assert main(["--registry-root", str(moved)]) == 1
+
+
+def test_an_in_place_edit_is_still_a_violation(tmp_path: Path):
+    """No move involved: the content-anchored rule must not have weakened the
+    plain case."""
+    repo, registry, lake, _m0, m1 = _repo_with_two_manifests(tmp_path)
+    target = _manifest_file(registry, m1["manifest_id"])
+    body = json.loads(target.read_text())
+    body["partitions"][0]["sha256"] = "1" * 64
+    target.write_text(json.dumps(body, sort_keys=True, indent=2))
+    _commit_all(repo, "edit a committed manifest in place")
+
+    errors, _ = check_append_only(registry)
+    assert any(m1["manifest_id"] in e and "modified" in e for e in errors), errors
+
+
+def test_a_move_out_of_any_manifests_directory_is_a_violation(tmp_path: Path):
+    """ "Content survives" means "survives AS A MANIFEST". Moving the registry
+    somewhere with no `manifests` component hides every body from every rule
+    that protects it."""
+    repo, registry, lake, _m0, _m1 = _repo_with_two_manifests(tmp_path)
+    flat = registry.parent / "registry_v2" / "json_blobs"
+    flat.parent.mkdir(parents=True, exist_ok=True)
+    _git(["mv", str(registry / "manifests"), str(flat)], repo)
+    _commit_all(repo, "flatten the registry")
+
+    errors, _ = check_append_only(registry.parent / "registry_v2")
+    assert any("deleted" in e for e in errors), errors
+
+
+def test_laundering_a_manifest_into_the_test_fixture_registry_fails(tmp_path: Path):
+    """Content anchoring asked repo-wide let a REAL manifest be `git mv`-ed
+    into `tests/fixtures/lake_registry/manifests/`: the bytes survived, so the
+    move passed, while the production registry silently lost a manifest and
+    the day it addressed stopped resolving (red-proved 2026-09-17 against the
+    real repo: "PASS: 110 committed manifest(s)" after laundering one of 111).
+    Survival is judged within a realm, so this must fail."""
+    repo, registry, lake, _m0, m1 = _repo_with_two_manifests(tmp_path)
+    fixture_dir = (
+        repo
+        / "mvp"
+        / "tests"
+        / "fixtures"
+        / "lake_registry"
+        / "manifests"
+        / "BTCUSDT.trade"
+    )
+    fixture_dir.mkdir(parents=True)
+    victim = _manifest_file(registry, m1["manifest_id"])
+    _git(["mv", str(victim), str(fixture_dir / victim.name)], repo)
+    _commit_all(repo, "launder a production manifest into the test fixtures")
+
+    errors, tracked = check_append_only(registry)
+    assert any(m1["manifest_id"] in e and "deleted" in e for e in errors), errors
+    assert tracked == 1, "the production registry really did lose a manifest"
+    assert main(["--registry-root", str(registry)]) == 1
+
+
+def test_laundering_a_fixture_manifest_into_the_real_registry_fails(tmp_path: Path):
+    """The reverse direction: a fixture manifest may not vanish into the
+    production registry either, or a CI fixture leg could be hollowed out
+    while the production run vouches for the bytes."""
+    repo, registry, lake, _m0, _m1 = _repo_with_two_manifests(tmp_path)
+    fixture_registry = repo / "mvp" / "tests" / "fixtures" / "lake_registry"
+    fixture_part = _write_partition(
+        lake, "curated/date=2026-01-09/part-9.parquet", 99.0
+    )
+    fixture_manifest = _issue(fixture_registry, fixture_part)
+    _commit_all(repo, "fixture manifest")
+
+    source = (
+        fixture_registry
+        / "manifests"
+        / "BTCUSDT.trade"
+        / f"{fixture_manifest['manifest_id']}.json"
+    )
+    _git(
+        [
+            "mv",
+            str(source),
+            str(_manifest_file(registry, fixture_manifest["manifest_id"])),
+        ],
+        repo,
+    )
+    _commit_all(repo, "launder a fixture manifest into the production registry")
+
+    errors, _ = check_append_only(fixture_registry)
+    assert any(
+        fixture_manifest["manifest_id"] in e and "deleted" in e for e in errors
+    ), errors
+
+
+# --- 03-REVIEW-FOLLOWUPS.md CR-02 / WR-02: the realm rule, done properly ----
+
+
+@pytest.mark.parametrize(
+    ("label", "destination"),
+    [
+        ("planning evidence", (".planning", "phases", "03-x", "evidence", "manifests")),
+        ("docs", ("docs", "manifests")),
+        ("examples", ("mvp", "examples", "manifests")),
+        ("scratch", ("scratch", "manifests")),
+        ("backup", ("backup", "lake_registry", "manifests")),
+    ],
+    ids=["planning-evidence", "docs", "examples", "scratch", "backup"],
+)
+def test_laundering_into_a_non_registry_location_fails(
+    tmp_path: Path, label: str, destination: tuple[str, ...]
+):
+    """CR-02's reproduction, generalised. Keying "fixture" on `tests` AND
+    `fixtures` left every other manifest-shaped path in the repository in one
+    production pool, so dropping a real manifest into
+    `.planning/.../evidence/manifests/` and then deleting it from the registry
+    left the registry one short, a by-date pointer dangling, and all three
+    manifest guardrails green.
+
+    Surviving now means surviving at a path that still looks like a REAL
+    REGISTRY location -- not under any of the non-registry markers."""
+    repo, registry, lake, _m0, m1 = _repo_with_two_manifests(tmp_path)
+    target_dir = repo.joinpath(*destination) / "BTCUSDT.trade"
+    target_dir.mkdir(parents=True)
+    victim = _manifest_file(registry, m1["manifest_id"])
+    _git(["mv", str(victim), str(target_dir / victim.name)], repo)
+    _commit_all(repo, f"launder a production manifest into {label}")
+
+    errors, tracked = check_append_only(registry)
+    assert any(m1["manifest_id"] in e and "deleted" in e for e in errors), errors
+    assert tracked == 1, "the production registry really did lose a manifest"
+    assert main(["--registry-root", str(registry)]) == 1
+
+
+def test_renaming_the_fixture_directory_is_not_a_destroyed_manifest(tmp_path: Path):
+    """WR-02: realm scoping reintroduced, for the fixture realm, exactly the
+    over-strictness item 5 removed. A content-preserving `git mv` of
+    `mvp/tests/fixtures` carried every byte across and still failed, on every
+    later commit, accusing the author of destroying data they never touched.
+
+    The fixture realm is recognised by the `tests` component, so the fixture
+    directory's own name is free to change."""
+    repo, registry, lake, _m0, _m1 = _repo_with_two_manifests(tmp_path)
+    fixture_registry = repo / "mvp" / "tests" / "fixtures" / "lake_registry"
+    fixture_part = _write_partition(
+        lake, "curated/date=2026-01-09/part-9.parquet", 99.0
+    )
+    _issue(fixture_registry, fixture_part)
+    _commit_all(repo, "fixture manifest")
+
+    _git(["mv", "mvp/tests/fixtures", "mvp/tests/data"], repo)
+    _commit_all(repo, "rename the fixture directory")
+
+    renamed = repo / "mvp" / "tests" / "data" / "lake_registry"
+    errors, tracked = check_append_only(renamed)
+    assert errors == [], errors
+    assert tracked == 1
+    # ...and the production registry is unaffected by the rename.
+    assert check_append_only(registry)[0] == []
+
+
+def test_a_fixture_registry_not_spelled_fixtures_is_still_the_fixture_realm(
+    tmp_path: Path,
+):
+    """CR-02's second half: `mvp/tests/data/lake_registry/manifests/x.json`
+    used to classify as PRODUCTION, so it was both an unprotected registry and
+    a valid laundering destination for a real manifest."""
+    repo, registry, lake, _m0, m1 = _repo_with_two_manifests(tmp_path)
+    target_dir = (
+        repo
+        / "mvp"
+        / "tests"
+        / "data"
+        / "lake_registry"
+        / "manifests"
+        / "BTCUSDT.trade"
+    )
+    target_dir.mkdir(parents=True)
+    victim = _manifest_file(registry, m1["manifest_id"])
+    _git(["mv", str(victim), str(target_dir / victim.name)], repo)
+    _commit_all(repo, "launder into a fixture registry not spelled 'fixtures'")
+
+    errors, _ = check_append_only(registry)
+    assert any(m1["manifest_id"] in e and "deleted" in e for e in errors), errors
+
+
+def test_relocating_the_registry_to_an_ordinary_location_still_passes(tmp_path: Path):
+    """The point of content anchoring (item 5), restated against the marker
+    list: `mvp/data/registry_v2/` is an ordinary location, so the move needs
+    no table edit and no allowlist entry -- it just passes."""
+    repo, registry, lake, _m0, _m1 = _repo_with_two_manifests(tmp_path)
+    moved = registry.parent / "registry_v2"
+    _git(["mv", str(registry), str(moved)], repo)
+    _commit_all(repo, "relocate the registry to an ordinary location")
+
+    errors, tracked = check_append_only(moved)
+    assert errors == [], errors
+    assert tracked == 2

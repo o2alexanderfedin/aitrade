@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import sqlite3
 import time
 from pathlib import Path
@@ -65,7 +66,7 @@ from mlflow.tracking import MlflowClient
 from data import lake_paths
 from data.capture.config import DEFAULT_MIN_FREE_GB
 from data.lake_paths import LAKE_REGISTRY_ROOT
-from data.store import resolve_manifest
+from data.store import read_verified_partitions, resolve_manifest
 from tracking.mlflow_utils import (
     build_tracking_uri,
     compute_code_hash,
@@ -213,7 +214,35 @@ def _require_initialised_mlflow_store(store_file: Path) -> None:
         )
 
 
-def _mlflow_has_consumed(token_id: str, tracking_root: str) -> bool:
+def _require_canonical_tracking_root(tracking_root: str, allowed_root: Path) -> None:
+    """Refuse a `tracking_root` that is not the project's canonical MLflow
+    store (03-REVIEW-ITER2.md WR-12 remainder).
+
+    `_require_initialised_mlflow_store` closed the empty/foreign-file
+    fail-open, but any OTHER genuinely initialised MLflow database still
+    answered "never consumed" about a token it has never heard of -- and the
+    access run was then logged into that throwaway store, so the durable
+    record never reached the real one. Pinning the root closes that: the
+    one-look barrier now verifies it is reading the store it claims to.
+
+    Compared after `Path.resolve()` on both sides, so `/tmp` vs
+    `/private/tmp`, a trailing slash, and a symlink to the real store are
+    the same root. `allowed_root` is resolved by
+    `lake_paths.mlflow_tracking_root()` before it gets here.
+    """
+    resolved = Path(tracking_root).resolve()
+    allowed = Path(allowed_root).resolve()
+    if resolved != allowed:
+        raise LockboxTokenError(
+            f"tracking root {resolved} is not the project's canonical MLflow "
+            f"store {allowed} -- refusing to ask a different store whether this "
+            "token was consumed, and refusing to log the access run there"
+        )
+
+
+def _mlflow_has_consumed(
+    token_id: str, tracking_root: str, *, allowed_root: str | None = None
+) -> bool:
     """Return whether any MLflow run, in any experiment at `tracking_root`,
     carries `tags.lockbox_token_id == token_id` -- INCLUDING soft-deleted
     runs and runs in soft-deleted experiments (`ViewType.ALL`, 03-REVIEW.md
@@ -231,10 +260,23 @@ def _mlflow_has_consumed(token_id: str, tracking_root: str) -> bool:
     silently create a fresh, empty store and answer "never consumed" -- a
     fail-open. The check runs before any MLflow object is constructed.
 
-    Residual, stated: a DIFFERENT, genuinely initialised MLflow store (some
-    other project's tracking root) is still accepted; this function does
-    not pin the canonical tracking root. The JSON `consumed_at` stamp still
-    refuses a second look in that case unless it is reverted as well.
+    Also refuses a `tracking_root` that is not the project's CANONICAL
+    MLflow store (03-REVIEW-ITER2.md WR-12 remainder). "Initialised MLflow
+    store" is not enough: any other project's perfectly valid store answers
+    "never consumed" about a token it has never heard of, and the access run
+    is then logged there, so the durable record never reaches the real one.
+
+    The canonical root comes from `lake_paths.mlflow_tracking_root()`:
+    `$AIHF_MLFLOW_TRACKING_ROOT` if set, else
+    `DEFAULT_MLFLOW_TRACKING_ROOT`. `allowed_root` is a MODULE-PRIVATE
+    parameter on a module-private function and is not reachable from the
+    public API -- `open_lockbox` no longer has a
+    `canonical_tracking_root=` keyword at all (03-REVIEW-FOLLOWUPS.md
+    WR-04: one keyword on the public signature restored exactly the pre-fix
+    behaviour the pin was written to remove, and nothing but a docstring
+    said not to use it). A host whose store lives elsewhere sets the
+    documented environment variable, which is a configuration decision
+    rather than a per-call escape hatch.
 
     Any exception raised by `MlflowClient(...)`, `.search_experiments()`, or
     `.search_runs()` PROPAGATES UNMODIFIED -- `False` here means "the query
@@ -246,6 +288,9 @@ def _mlflow_has_consumed(token_id: str, tracking_root: str) -> bool:
     tell "never consumed" from "history destroyed". Either signal alone
     still catches it. Documented in `data/lockbox_POLICY.md`.
     """
+    _require_canonical_tracking_root(
+        tracking_root, lake_paths.mlflow_tracking_root(allowed_root)
+    )
     store_file = Path(tracking_root).resolve() / "mlflow.db"
     if not store_file.exists():
         raise LockboxTokenError(
@@ -267,24 +312,70 @@ def _mlflow_has_consumed(token_id: str, tracking_root: str) -> bool:
     return len(runs) > 0
 
 
+#: Locks live in their own directory, NOT beside the token JSON
+#: (03-REVIEW-ITER2.md IN-14): `lockbox_tokens/` is git-tracked, so a lock
+#: left by a crash used to be picked up by `git add -A` and committed, after
+#: which every clone refused that token until someone deleted it by hand.
+#: This directory is gitignored.
+LOCK_DIR_NAME = ".locks"
+
+
+def lock_path_for(token_path_: Path) -> Path:
+    """Where `_acquire_open_lock` puts the lock for a token JSON."""
+    return token_path_.parent / LOCK_DIR_NAME / f"{token_path_.stem}.lock"
+
+
+def _holder_liveness(lock_path: Path) -> str:
+    """A human-readable hint about whether the recorded holder is still
+    alive. A lock is never removed automatically on its strength -- it only
+    tells the human which of the two situations they are in."""
+    try:
+        body = dict(
+            field.split("=", 1)
+            for field in lock_path.read_text().split()
+            if "=" in field
+        )
+    except OSError:
+        return "could not read the lock file"
+    pid, host = body.get("pid"), body.get("host")
+    if host != socket.gethostname():
+        return f"held by pid {pid} on host {host!r}, not this host"
+    try:
+        os.kill(int(pid), 0)
+    except (ValueError, TypeError):
+        return f"lock file records no usable pid ({pid!r})"
+    except ProcessLookupError:
+        return f"pid {pid} on this host is NOT running -- the lock is stale"
+    except PermissionError:
+        return f"pid {pid} on this host is running (owned by another user)"
+    return f"pid {pid} on this host IS still running -- do not remove the lock"
+
+
 def _acquire_open_lock(path: Path, token_id: str) -> Path:
-    """Exclusive-create `<token>.lock` beside the token JSON for the whole
+    """Exclusive-create the token's lock for the whole
     check-then-stamp-then-read sequence (03-REVIEW.md WR-06: two concurrent
     callers could both pass the consumed checks). A leftover lock after a
     crash fails CLOSED: the human confirms the token's MLflow record and
-    removes it."""
-    lock_path = path.with_suffix(".lock")
+    removes it.
+
+    The lock lives in the gitignored `lockbox_tokens/.locks/`, never beside
+    the git-tracked token JSON (IN-14), and records `pid`, `host` and the
+    open time so the refusal can say whether the holder is still alive
+    instead of leaving the human to guess.
+    """
+    lock_path = lock_path_for(path)
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
     except FileExistsError:
         raise LockboxTokenError(
             f"an open of token {token_id} is already in progress (lock file "
-            f"{lock_path} exists); if no other process holds it, confirm the "
-            "token's MLflow record before removing the stale lock"
+            f"{lock_path} exists; {_holder_liveness(lock_path)}); if no other "
+            "process holds it, confirm the token's MLflow record before "
+            "removing the stale lock"
         ) from None
     with os.fdopen(fd, "w") as fh:
-        fh.write(f"pid={os.getpid()} at={time.time_ns()}\n")
+        fh.write(f"pid={os.getpid()} host={socket.gethostname()} at={time.time_ns()}\n")
     return lock_path
 
 
@@ -434,10 +525,8 @@ def _open_locked(
             lake_root=resolved_lake_root,
             expected_tier=LOCKBOX_TIER,
         )
-        frames = [
-            pl.read_parquet(resolved_lake_root / part["path"])
-            for part in manifest["partitions"]
-        ]
+        # IN-10: hash and parse the SAME buffer, never two opens.
+        frames = read_verified_partitions(manifest, lake_root=resolved_lake_root)
         df = pl.concat(frames, how="vertical")
 
     return df

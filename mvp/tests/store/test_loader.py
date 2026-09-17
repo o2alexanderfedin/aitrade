@@ -135,3 +135,104 @@ def test_load_curated_raises_on_hash_mismatch_never_returns_wrong_data(tmp_path:
             registry_root=registry_root,
             lake_root=lake_root,
         )
+
+
+# --- 03-REVIEW-FOLLOWUPS.md WR-08: the loader must not need mlflow ---------
+
+
+def _blockade_mlflow(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Simulate an environment where `mlflow` is not installed, for code that
+    imports it lazily. A `None` entry in `sys.modules` is exactly what the
+    import machinery leaves when a module is absent, and it makes any later
+    `import mlflow` raise `ImportError`."""
+    import sys
+
+    monkeypatch.delitem(sys.modules, "tracking.mlflow_utils", raising=False)
+    monkeypatch.delitem(sys.modules, "mlflow", raising=False)
+    monkeypatch.setitem(sys.modules, "mlflow", None)
+
+
+def test_load_curated_works_without_mlflow_installed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`load_curated` gained a hard runtime dependency it did not have on
+    `develop`: the lazy `from tracking.mlflow_utils import
+    log_data_provenance` fires before anything has asked whether a run is
+    even active, so reading data in an environment without mlflow raised
+    `ModuleNotFoundError`."""
+    lake_root = tmp_path / "lake"
+    registry_root = tmp_path / "registry"
+    df = pl.DataFrame(
+        {"trade_id": [1, 2], "etime": [1_000, 2_000], "price": [1.0, 2.0]}
+    )
+    part = _write_partition(lake_root, "curated/part-1.parquet", df)
+    manifest = issue_manifest(
+        dataset="BTCUSDT.trade",
+        symbol="BTCUSDT",
+        stream="trade",
+        tier="curated",
+        schema_version=1,
+        inputs=[],
+        partitions=[part],
+        code_hash="deadbeef",
+        registry_root=registry_root,
+    )
+    _write_ok_dq_report(
+        lake_root, "BTCUSDT", "trade", "2026-09-12", manifest["manifest_id"]
+    )
+
+    _blockade_mlflow(monkeypatch)
+    loaded = load_curated(
+        manifest["manifest_id"],
+        "BTCUSDT.trade",
+        registry_root=registry_root,
+        lake_root=lake_root,
+    )
+    assert loaded.height == 2
+
+
+def test_a_broken_tracking_module_still_propagates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The guard must be narrow. Swallowing every `ImportError` would turn a
+    real bug inside `tracking.mlflow_utils` -- a mistyped or missing import of
+    some OTHER module -- into a silent skip of the provenance record.
+
+    Near-miss worth keeping: the first version of this test put a fake module
+    in `sys.modules` and had its `log_data_provenance` raise. The import then
+    succeeded and the exception came from the CALL, outside the guard, so the
+    test passed against a mutant that swallowed every `ImportError`. It now
+    blocks a module `tracking.mlflow_utils` imports at module level, so the
+    failure happens where the guard is."""
+    import sys
+
+    monkeypatch.delitem(sys.modules, "tracking.mlflow_utils", raising=False)
+    monkeypatch.delitem(sys.modules, "tools.git_env", raising=False)
+    monkeypatch.setitem(sys.modules, "tools.git_env", None)
+
+    lake_root = tmp_path / "lake"
+    registry_root = tmp_path / "registry"
+    df = pl.DataFrame({"trade_id": [1], "etime": [1_000], "price": [1.0]})
+    part = _write_partition(lake_root, "curated/part-1.parquet", df)
+    manifest = issue_manifest(
+        dataset="BTCUSDT.trade",
+        symbol="BTCUSDT",
+        stream="trade",
+        tier="curated",
+        schema_version=1,
+        inputs=[],
+        partitions=[part],
+        code_hash="deadbeef",
+        registry_root=registry_root,
+    )
+    _write_ok_dq_report(
+        lake_root, "BTCUSDT", "trade", "2026-09-12", manifest["manifest_id"]
+    )
+
+    with pytest.raises(ImportError, match="git_env"):
+        load_curated(
+            manifest["manifest_id"],
+            "BTCUSDT.trade",
+            registry_root=registry_root,
+            lake_root=lake_root,
+        )

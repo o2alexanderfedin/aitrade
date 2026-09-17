@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from pathlib import Path
 
 import polars as pl
@@ -23,7 +24,7 @@ from data.dq.report import (
     normalize_row,
     write_report,
 )
-from data.store import issue_manifest
+from data.store import issue_manifest, manifest_source
 from tools.check_spec_diff import check_drift
 from tools.git_env import scrubbed_git_env  # noqa: F401  (import-sanity; env used indirectly)
 
@@ -147,11 +148,13 @@ def test_build_report_rows_for_date_covers_all_six_checks(tmp_path: Path):
         ("trade", "gap_coverage"),
         ("trade", "etime_plausibility"),
         ("trade", "event_time_plausibility"),  # IN-20 (n/a: no column here)
+        ("trade", "rtime_plausibility"),  # item 4 (n/a: no column here)
         ("trade", "reconciliation"),
         ("trade", "na_placeholder"),
         ("bookTicker", "gap_coverage"),
         ("bookTicker", "etime_plausibility"),
         ("bookTicker", "event_time_plausibility"),
+        ("bookTicker", "rtime_plausibility"),
         ("bookTicker", "crossed_locked_book"),
         ("bookTicker", "l1_sparsity"),
     }
@@ -161,6 +164,7 @@ def test_build_report_rows_for_date_covers_all_six_checks(tmp_path: Path):
         "gap_coverage",
         "etime_plausibility",
         "event_time_plausibility",
+        "rtime_plausibility",
         "reconciliation",
         "na_placeholder",
         "crossed_locked_book",
@@ -697,6 +701,143 @@ def test_wrongly_scaled_event_time_pauses_the_loader(tmp_path: Path):
         ledger_df=_empty_ledger(),
     )
     with pytest.raises(DQPauseError, match="event_time_plausibility=failed"):
+        load_curated(
+            manifest["manifest_id"],
+            f"{SYMBOL}.trade",
+            registry_root=registry_root,
+            lake_root=lake_root,
+        )
+
+
+# --- 03-FOLLOWUPS.md item 4: rtime plausibility, source-dependent -----------
+
+
+def _trade_day_with_rtime(lake_root, registry_root, rtimes, *, inputs=None):
+    t0 = 1_789_171_200_000_000_000  # 2026-09-12T00:00:00Z in ns
+    trade_df = pl.DataFrame(
+        {
+            "trade_id": [1, 2],
+            "etime": [t0 + 1_000_000, t0 + 2_000_000],
+            "rtime": rtimes,
+            "price": [1.0, 1.0],
+        },
+        schema_overrides={"rtime": pl.Int64},
+    )
+    part = _write_curated_partition(lake_root, SYMBOL, "trade", DATE, trade_df)
+    return issue_manifest(
+        dataset=f"{SYMBOL}.trade",
+        symbol=SYMBOL,
+        stream="trade",
+        tier="curated",
+        schema_version=1,
+        inputs=inputs if inputs is not None else _CAPTURE_INPUT,
+        partitions=[part],
+        code_hash="deadbeef",
+        registry_root=registry_root,
+    )
+
+
+#: A capture-sourced input, spelled the way `curated_build` records one: an
+#: absolute path into the capture daemon's own tree, with no `source=`
+#: component. These fixtures used to pass `inputs=[]` and rely on
+#: `manifest_source`'s "everything else is capture" fall-through, which is
+#: exactly what 03-REVIEW-FOLLOWUPS.md WR-03 removed -- an empty inputs list
+#: now scores `unknown`, so the capture days have to say they are capture.
+_CAPTURE_INPUT = [
+    {
+        "path": "/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-12/part-1.parquet",
+        "rows": 2,
+        "sha256": "1" * 64,
+    }
+]
+
+_ARCHIVE_INPUT = [
+    {
+        "path": "/lake/raw/symbol=BTCUSDT/stream=trade/source=archive/date=2026-09-12/p.parquet",
+        "rows": 2,
+        "sha256": "0" * 64,
+    }
+]
+
+
+def _rtime_status_of(lake_root, registry_root):
+    rows = build_report_rows_for_date(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_empty_ledger(),
+    )
+    return _statuses(rows, "trade")["rtime_plausibility"]
+
+
+def test_report_scores_rtime_plausibility_for_a_capture_day(tmp_path: Path):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    t0 = 1_789_171_200_000_000_000
+    _trade_day_with_rtime(lake_root, registry_root, [t0 + 1_100_000, t0 + 2_100_000])
+    assert _rtime_status_of(lake_root, registry_root) == "ok"
+
+
+def test_report_fails_a_capture_day_whose_rtime_was_never_scaled(tmp_path: Path):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    t0 = 1_789_171_200_000_000_000
+    raw_ms = t0 // 1_000_000
+    _trade_day_with_rtime(lake_root, registry_root, [raw_ms, raw_ms + 1])
+    assert _rtime_status_of(lake_root, registry_root) == "failed"
+
+
+def test_report_accepts_an_archive_day_downloaded_months_later(tmp_path: Path):
+    """The same rtime that fails as capture passes as archive: the check
+    reads the manifest's own inputs, not the day's calendar distance."""
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    # Just before now: after the day's last event, before the manifest's own
+    # built_at (which `issue_manifest` stamps with the wall clock).
+    downloaded = time.time_ns() - 10**9
+    manifest = _trade_day_with_rtime(
+        lake_root, registry_root, [downloaded, downloaded], inputs=_ARCHIVE_INPUT
+    )
+    assert manifest_source(manifest) == "archive"
+    assert _rtime_status_of(lake_root, registry_root) == "ok"
+
+
+def test_report_fails_an_archive_day_whose_download_predates_its_data(
+    tmp_path: Path,
+):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    t0 = 1_789_171_200_000_000_000
+    stale = t0 - 86_400 * 10**9
+    _trade_day_with_rtime(
+        lake_root, registry_root, [stale, stale], inputs=_ARCHIVE_INPUT
+    )
+    assert _rtime_status_of(lake_root, registry_root) == "failed"
+
+
+def test_report_rtime_is_na_when_the_partition_has_no_rtime(tmp_path: Path):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    trade_df = pl.DataFrame({"trade_id": [1], "etime": [1_000], "price": [1.0]})
+    _issue_and_write_build_stats(
+        lake_root, registry_root, SYMBOL, "trade", DATE, trade_df, build_stats=None
+    )
+    assert _rtime_status_of(lake_root, registry_root) == "n/a"
+
+
+def test_wrongly_scaled_rtime_pauses_the_loader(tmp_path: Path):
+    from data.store import DQPauseError, load_curated
+
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    t0 = 1_789_171_200_000_000_000
+    raw_ms = t0 // 1_000_000
+    manifest = _trade_day_with_rtime(lake_root, registry_root, [raw_ms, raw_ms + 1])
+    write_report(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_empty_ledger(),
+    )
+    with pytest.raises(DQPauseError, match="rtime_plausibility=failed"):
         load_curated(
             manifest["manifest_id"],
             f"{SYMBOL}.trade",

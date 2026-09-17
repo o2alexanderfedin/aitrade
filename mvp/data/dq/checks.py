@@ -187,6 +187,13 @@ class EtimePlausibilityThresholds:
 
 
 @dataclass(frozen=True)
+class RtimePlausibilityThresholds:
+    capture_skew_min_seconds: float
+    capture_skew_max_seconds: float
+    notes: str
+
+
+@dataclass(frozen=True)
 class ResyncWarmupConfig:
     seconds: int
     notes: str
@@ -202,6 +209,7 @@ class DQThresholds:
     l1_sparsity: L1SparsityThresholds
     etime_plausibility: EtimePlausibilityThresholds
     event_time_plausibility: EtimePlausibilityThresholds
+    rtime_plausibility: RtimePlausibilityThresholds
     resync_warmup: ResyncWarmupConfig
 
 
@@ -228,6 +236,7 @@ def load_dq_thresholds(path: Path = DQ_THRESHOLDS_TOML) -> DQThresholds:
             event_time_plausibility=EtimePlausibilityThresholds(
                 **raw["event_time_plausibility"]
             ),
+            rtime_plausibility=RtimePlausibilityThresholds(**raw["rtime_plausibility"]),
             resync_warmup=ResyncWarmupConfig(**raw["resync_warmup"]),
         )
     except (KeyError, TypeError) as exc:
@@ -697,4 +706,135 @@ def check_event_time_plausibility(
         "dq_status": "ok" if plausible else "failed",
         "event_time_min": event_time_min,
         "event_time_max": event_time_max,
+    }
+
+
+# --------------------------------------------------------------------------
+# Check (6c): rtime plausibility -- SOURCE-DEPENDENT, unlike (6)/(6b)
+# --------------------------------------------------------------------------
+
+
+def check_rtime_plausibility(
+    rtime_stats: dict[str, int | None],
+    source: str,
+    manifest: dict,
+    thresholds: DQThresholds,
+) -> dict:
+    """`rtime` (the local receive clock) judged against the ONE thing it
+    means for this manifest's source -- there is no single window that fits
+    both (03-FOLLOWUPS item 4; measured over all 111 real by-date manifests):
+
+    - **capture**: `rtime` is a real per-message arrival time, so it must sit
+      close to `etime`. Measured skew (`rtime - etime`) over the 4 real
+      capture days: min -0.192 s (the local clock running slightly ahead of
+      Binance's), max +307.069 s -- a backlog of frames buffered during the
+      host's own battery sleep flushing on wake, not a slow network. Bounds
+      come from `[rtime_plausibility] capture_skew_{min,max}_seconds`.
+    - **archive**: `rtime` is the DOWNLOAD time -- `normalize_archive_frame`
+      stamps every row of the day with the staged file's own mtime, a single
+      literal (verified: `rtime_min == rtime_max` on all 107 real archive
+      days). It is legitimately far from `etime` (measured 21.5 h to 107.9
+      days), so a skew window is meaningless. What must hold is the
+      ORDERING: the file was downloaded after the day's last event and
+      before the manifest was issued.
+
+    Both sources additionally require `rtime_max <= manifest["built_at"]`:
+    data cannot have arrived after the manifest that describes it was
+    written. That is the bound that catches a wrongly scaled `rtime` in the
+    other direction (a seconds-as-ns or over-multiplied value lands
+    centuries in the future).
+
+    - **anything else**: `"failed"`, with a reason that says the source has
+      no bounds and names where to add them. 03-REVIEW-FOLLOWUPS.md WR-03:
+      `manifest_source` used to answer `"capture"` for everything that was
+      not provably archive -- no `inputs` key, an empty list, a mixed list,
+      a future `/source=tardis/` -- so the first vendor-sourced dataset
+      would have been judged by the capture skew window and paused on every
+      single day, with the report blaming a window that was never meant for
+      it. The pause is the same; what changes is that the message is
+      actionable. Measured read-only over all 111 committed by-date
+      manifests: 4 capture, 107 archive, zero unknown -- no real day
+      changes verdict (pinned by
+      `tests/dq/test_checks.py::test_every_real_manifest_still_has_a_known_source`).
+
+    `"failed"` (pauses `load_curated`) on any violation; `"n/a"` when the
+    partitions have no non-null `rtime`. No degraded tier: a receive clock
+    outside these bounds is a unit/ordering defect, not a matter of degree.
+    """
+    rtime_min = rtime_stats.get("rtime_min")
+    rtime_max = rtime_stats.get("rtime_max")
+    if rtime_min is None or rtime_max is None:
+        return {
+            "check": "rtime_plausibility",
+            "dq_status": "n/a",
+            "reason": "no non-null rtime values in the partition",
+            "rtime_source": source,
+        }
+
+    built_at = manifest["built_at"]
+    _etime_min, etime_max = manifest["etime_range"]
+    problems: list[str] = []
+
+    if rtime_max > built_at:
+        problems.append(
+            f"rtime_max {rtime_max} is after the manifest's own built_at {built_at}"
+        )
+
+    # Imported inside the function so this module keeps importing nothing
+    # from `data.*` -- it is a pure-function module by design, and
+    # `data.store` pulls in git and polars IO. The vocabulary has exactly one
+    # owner (`manifest_source`), so it is read from there rather than
+    # restated here and left to drift.
+    from data.store import KNOWN_MANIFEST_SOURCES
+
+    if source not in KNOWN_MANIFEST_SOURCES:
+        problems.append(
+            f"source {source!r} has no rtime bounds: the manifest's own "
+            "`inputs` do not all name one known /source=<name>/ (missing, "
+            "empty, mixed, or a source this codebase has never scored). "
+            "Refusing to judge the receive clock by a window meant for a "
+            "different population -- a vendor download's rtime is a DOWNLOAD "
+            "time, days from etime, and the capture skew window would pause "
+            "every single day. Add bounds for this source under "
+            "[rtime_plausibility] in mvp/spec/dq_thresholds.toml (e.g. "
+            f"`{source}_skew_min_seconds`/`{source}_skew_max_seconds`, or an "
+            "ordering rule like the archive branch's) and the matching branch "
+            "in data.dq.checks.check_rtime_plausibility"
+        )
+    elif source == "archive":
+        if rtime_min < etime_max:
+            problems.append(
+                f"archive-sourced: rtime_min {rtime_min} precedes the day's last "
+                f"event etime_max {etime_max} -- the staged download cannot "
+                "predate the data it contains"
+            )
+    else:
+        lo = int(thresholds.rtime_plausibility.capture_skew_min_seconds * NS_PER_SECOND)
+        hi = int(thresholds.rtime_plausibility.capture_skew_max_seconds * NS_PER_SECOND)
+        skew_min = rtime_stats.get("skew_min")
+        skew_max = rtime_stats.get("skew_max")
+        if skew_min is None or skew_max is None:
+            problems.append(
+                "capture-sourced: rtime is present but the rtime-etime skew "
+                "could not be computed -- refusing to call that plausible"
+            )
+        else:
+            if skew_min < lo:
+                problems.append(
+                    f"capture-sourced: min rtime-etime skew {skew_min} ns is below "
+                    f"{lo} ns ({thresholds.rtime_plausibility.capture_skew_min_seconds}s)"
+                )
+            if skew_max > hi:
+                problems.append(
+                    f"capture-sourced: max rtime-etime skew {skew_max} ns is above "
+                    f"{hi} ns ({thresholds.rtime_plausibility.capture_skew_max_seconds}s)"
+                )
+
+    return {
+        "check": "rtime_plausibility",
+        "dq_status": "failed" if problems else "ok",
+        "rtime_min": rtime_min,
+        "rtime_max": rtime_max,
+        "rtime_source": source,
+        **({"reason": "; ".join(problems)} if problems else {}),
     }

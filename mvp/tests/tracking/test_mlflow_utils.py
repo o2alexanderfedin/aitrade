@@ -322,3 +322,131 @@ def test_dq_ack_ids_are_logged_as_a_run_tag_at_creation(tmp_path):
         )
     finally:
         mlflow.end_run()
+
+
+# --- 03-FOLLOWUPS.md item 3 (WR-16 remainder): the loader logs provenance ---
+
+
+def test_log_data_provenance_writes_all_three_tags_on_the_active_run(tmp_path):
+    from tracking.mlflow_utils import log_data_provenance
+
+    tracking_uri = build_tracking_uri(str(tmp_path))
+    try:
+        run = start_tracked_run(
+            str(tmp_path), dict(VALID_TAGS), "test-experiment", min_free_gb=0.0
+        )
+        assert (
+            log_data_provenance(
+                manifest_ids=["m1"],
+                dq_ack_ids=["BTCUSDT__trade__2026-09-14"],
+                dq_ack_sha256=["a" * 64],
+            )
+            is True
+        )
+        tags = MlflowClient(tracking_uri).get_run(run.info.run_id).data.tags
+        assert tags["data_manifest_ids"] == "m1"
+        assert tags["dq_ack_ids"] == "BTCUSDT__trade__2026-09-14"
+        assert tags["dq_ack_sha256"] == "a" * 64
+    finally:
+        mlflow.end_run()
+
+
+def test_log_data_provenance_accumulates_across_reads(tmp_path):
+    """A run may read several manifests; the second read must not erase the
+    first one's provenance."""
+    from tracking.mlflow_utils import log_data_provenance
+
+    tracking_uri = build_tracking_uri(str(tmp_path))
+    try:
+        run = start_tracked_run(
+            str(tmp_path), dict(VALID_TAGS), "test-experiment", min_free_gb=0.0
+        )
+        log_data_provenance(
+            manifest_ids=["m1"], dq_ack_ids=["ack1"], dq_ack_sha256=["a" * 64]
+        )
+        log_data_provenance(manifest_ids=["m2"], dq_ack_ids=[], dq_ack_sha256=[])
+        tags = MlflowClient(tracking_uri).get_run(run.info.run_id).data.tags
+        assert tags["data_manifest_ids"] == "m1,m2"
+        assert tags["dq_ack_ids"] == "ack1"
+    finally:
+        mlflow.end_run()
+
+
+def test_log_data_provenance_is_a_no_op_without_an_active_run(tmp_path):
+    """Reading curated data outside a tracked run is legitimate and must not
+    raise."""
+    from tracking.mlflow_utils import log_data_provenance
+
+    mlflow.set_tracking_uri(build_tracking_uri(str(tmp_path)))
+    assert mlflow.active_run() is None
+    assert (
+        log_data_provenance(manifest_ids=["m1"], dq_ack_ids=["a"], dq_ack_sha256=["b"])
+        is False
+    )
+
+
+# --- 03-REVIEW-FOLLOWUPS.md WR-01: provenance must not stop at 123 ids ------
+
+
+def test_provenance_survives_more_ids_than_one_tag_can_hold(tmp_path):
+    """MLflow caps a tag value at 8000 characters and does not raise -- it
+    TRUNCATES and logs a WARNING. A manifest id is 64 hex plus a separator, so
+    the ceiling was 123 ids: a walk-forward run over the current 111-day lake
+    was already at 90% of it, and the 124th id was written as the fragment
+    `8bcbb`, which the next call's merge then re-committed forever. The record
+    was written, complete-looking, and wrong."""
+    from tracking.mlflow_utils import log_data_provenance, read_provenance_tag
+
+    tracking_uri = build_tracking_uri(str(tmp_path))
+    expected = [f"{i:064x}" for i in range(200)]
+    try:
+        run = start_tracked_run(
+            str(tmp_path), dict(VALID_TAGS), "test-experiment", min_free_gb=0.0
+        )
+        for manifest_id in expected:
+            log_data_provenance(
+                manifest_ids=[manifest_id], dq_ack_ids=[], dq_ack_sha256=[]
+            )
+        tags = MlflowClient(tracking_uri).get_run(run.info.run_id).data.tags
+    finally:
+        mlflow.end_run()
+
+    recovered = read_provenance_tag(tags, "data_manifest_ids")
+    assert recovered == sorted(expected), (
+        f"{len(expected) - len(set(recovered) & set(expected))} id(s) lost"
+    )
+    malformed = [v for v in recovered if len(v) != 64]
+    assert malformed == [], f"truncated fragments written as real ids: {malformed}"
+    assert all(len(v) <= 8000 for v in tags.values() if isinstance(v, str))
+
+
+def test_a_single_value_too_long_for_a_tag_fails_loudly(tmp_path):
+    """The one thing that must never happen quietly is a truncated id that
+    looks real. A value no shard can hold is refused, not trimmed."""
+    from tracking.mlflow_utils import ProvenanceValueTooLong, log_data_provenance
+
+    try:
+        start_tracked_run(
+            str(tmp_path), dict(VALID_TAGS), "test-experiment", min_free_gb=0.0
+        )
+        with pytest.raises(ProvenanceValueTooLong):
+            log_data_provenance(
+                manifest_ids=["x" * 9000], dq_ack_ids=[], dq_ack_sha256=[]
+            )
+    finally:
+        mlflow.end_run()
+
+
+def test_read_provenance_tag_merges_shards_and_ignores_none(tmp_path):
+    from tracking.mlflow_utils import read_provenance_tag
+
+    tags = {
+        "data_manifest_ids": "a,b",
+        "data_manifest_ids_0002": "c",
+        "data_manifest_ids_0003": "d,e",
+        "dq_ack_ids": "none",
+        "data_manifest_ids_extra": "not-a-shard",
+    }
+    assert read_provenance_tag(tags, "data_manifest_ids") == ["a", "b", "c", "d", "e"]
+    assert read_provenance_tag(tags, "dq_ack_ids") == []
+    assert read_provenance_tag(tags, "absent") == []

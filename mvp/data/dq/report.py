@@ -41,12 +41,18 @@ from data.dq.checks import (
     check_na_placeholder,
     check_probable_loss,
     check_reconciliation,
+    check_rtime_plausibility,
     load_dq_thresholds,
     resync_windows_for_date,
 )
 from data.lake_paths import LAKE_REGISTRY_ROOT
 from data.lake_paths import lake_root as default_lake_root
-from data.store import CURATED_TIER, by_date_index_path, resolve_manifest
+from data.store import (
+    CURATED_TIER,
+    by_date_index_path,
+    manifest_source,
+    resolve_manifest,
+)
 
 STREAMS: tuple[str, ...] = ("trade", "bookTicker")
 
@@ -162,21 +168,23 @@ def _read_curated(
     return pl.concat(frames, how="vertical")
 
 
-def _event_time_range(manifest: dict, lake_root: Path) -> tuple[int | None, int | None]:
-    """`(min, max)` of the manifest's non-null `event_time` values, or
-    `(None, None)` when its partitions have no such column or no value."""
+def _column_range(
+    manifest: dict, lake_root: Path, column: str
+) -> tuple[int | None, int | None]:
+    """`(min, max)` of the manifest's non-null `column` values, or
+    `(None, None)` when its partitions have no such column or no value.
+
+    One lazy scan of that single column; Parquet column statistics make it
+    cheap even on a 42M-row day (measured: 1.0 s for the largest real one)."""
     frames = [
         pl.scan_parquet(Path(lake_root) / part["path"])
         for part in manifest["partitions"]
     ]
-    if any("event_time" not in f.collect_schema().names() for f in frames):
+    if any(column not in f.collect_schema().names() for f in frames):
         return None, None
     bounds = (
-        pl.concat([f.select("event_time") for f in frames], how="vertical")
-        .select(
-            pl.col("event_time").min().alias("lo"),
-            pl.col("event_time").max().alias("hi"),
-        )
+        pl.concat([f.select(column) for f in frames], how="vertical")
+        .select(pl.col(column).min().alias("lo"), pl.col(column).max().alias("hi"))
         .collect()
         .row(0)
     )
@@ -184,6 +192,47 @@ def _event_time_range(manifest: dict, lake_root: Path) -> tuple[int | None, int 
         int(bounds[0]) if bounds[0] is not None else None,
         int(bounds[1]) if bounds[1] is not None else None,
     )
+
+
+def _event_time_range(manifest: dict, lake_root: Path) -> tuple[int | None, int | None]:
+    """`(min, max)` of the manifest's non-null `event_time` values."""
+    return _column_range(manifest, lake_root, "event_time")
+
+
+def _rtime_stats(manifest: dict, lake_root: Path) -> dict[str, int | None]:
+    """`rtime`'s bounds plus the `rtime - etime` skew bounds the
+    capture-sourced branch of `check_rtime_plausibility` needs.
+
+    The skew is computed only when BOTH columns exist; a partition with
+    `rtime` but no `etime` returns `skew_min/skew_max = None`, which the
+    check treats as "could not judge it" -> failed, never a silent ok."""
+    rtime_min, rtime_max = _column_range(manifest, lake_root, "rtime")
+    stats: dict[str, int | None] = {
+        "rtime_min": rtime_min,
+        "rtime_max": rtime_max,
+        "skew_min": None,
+        "skew_max": None,
+    }
+    if rtime_min is None:
+        return stats
+    frames = [
+        pl.scan_parquet(Path(lake_root) / part["path"])
+        for part in manifest["partitions"]
+    ]
+    if any(
+        {"rtime", "etime"} - set(f.collect_schema().names()) for f in frames
+    ):  # missing either column
+        return stats
+    skew = pl.col("rtime") - pl.col("etime")
+    bounds = (
+        pl.concat([f.select("rtime", "etime") for f in frames], how="vertical")
+        .select(skew.min().alias("lo"), skew.max().alias("hi"))
+        .collect()
+        .row(0)
+    )
+    stats["skew_min"] = int(bounds[0]) if bounds[0] is not None else None
+    stats["skew_max"] = int(bounds[1]) if bounds[1] is not None else None
+    return stats
 
 
 def build_report_rows_for_date(
@@ -248,6 +297,13 @@ def build_report_rows_for_date(
         rows.append(
             {"date": date, "symbol": symbol, "stream": stream, **event_time_check}
         )
+        rtime_check = check_rtime_plausibility(
+            _rtime_stats(manifest, lake_root),
+            manifest_source(manifest),
+            manifest,
+            thresholds,
+        )
+        rows.append({"date": date, "symbol": symbol, "stream": stream, **rtime_check})
 
         if archive_sourced_trades:
             if build_stats.get("capture_available"):
@@ -331,6 +387,12 @@ def normalize_row(row: dict) -> dict:
             f"event_time_min={row['event_time_min']} "
             f"event_time_max={row['event_time_max']}"
         )
+    if "rtime_min" in row:
+        detail_parts.append(
+            f"rtime_min={row['rtime_min']} rtime_max={row['rtime_max']}"
+        )
+    if row.get("rtime_source") is not None:
+        detail_parts.append(f"rtime_source={row['rtime_source']}")
 
     return {
         "date": row["date"],

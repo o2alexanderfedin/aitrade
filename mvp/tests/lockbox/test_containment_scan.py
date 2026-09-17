@@ -86,6 +86,73 @@ BYPASSES = [
         "from data import lockbox\nvars(lockbox)['_mlflow_has_consumed'] = None\n",
     ),
     ("from-import of a private name", "from data.lockbox import _atomic_write_json\n"),
+    # --- 03-FOLLOWUPS.md item 1: the classes ITER2 CR-07 left open ---------
+    (
+        "LOCKBOX_TIER join (the CR-04 fix exported this constant)",
+        "from data.lockbox import LOCKBOX_TIER\n"
+        "from data.lake_paths import lake_root\n"
+        "import polars as pl\n"
+        "pl.scan_parquet(lake_root() / LOCKBOX_TIER / '**' / '*.parquet')\n",
+    ),
+    (
+        "LOCKBOX_TIER read through the module object",
+        "import data.lockbox as lb\nfrom data.lake_paths import lake_root\n"
+        "tier = lake_root() / lb.LOCKBOX_TIER\n",
+    ),
+    (
+        "LOCKBOX_TIER aliased on import",
+        "from data.lockbox import LOCKBOX_TIER as T\n"
+        "from data.lake_paths import lake_root\n"
+        "p = lake_root() / T\n",
+    ),
+    (
+        "sys.modules store replaces the module",
+        "import sys\nclass Fake: pass\nsys.modules['data.lockbox'] = Fake()\n",
+    ),
+    (
+        "sys.modules del",
+        "import sys\ndel sys.modules['data.lockbox']\n",
+    ),
+    (
+        "sys.modules store with an unresolvable key",
+        "import sys\nimport os\nsys.modules[os.environ['M']] = None\n",
+    ),
+    (
+        "sys.modules.get then private attr",
+        "import sys\n"
+        "lb = sys.modules.get('data.lockbox')\n"
+        "lb._mlflow_has_consumed = lambda *a: False\n",
+    ),
+    (
+        "sys.modules.pop then private attr",
+        "import sys\nlb = sys.modules.pop('data.lockbox')\nlb._atomic_write_json(p, {})\n",
+    ),
+    (
+        "mock.patch.object on a private helper",
+        "from unittest import mock\nimport data.lockbox as lb\n"
+        "with mock.patch.object(lb, '_mlflow_has_consumed', return_value=False):\n"
+        "    pass\n",
+    ),
+    (
+        "patch.object imported bare",
+        "from unittest.mock import patch\nimport data.lockbox as lb\n"
+        "with patch.object(lb, '_mlflow_has_consumed'):\n    pass\n",
+    ),
+    (
+        "mock.patch.object on a PUBLIC entry point",
+        "from unittest import mock\nfrom data import lockbox\n"
+        "with mock.patch.object(lockbox, 'open_lockbox'):\n    pass\n",
+    ),
+    (
+        "mock.patch of a public target string",
+        "from unittest import mock\n"
+        "with mock.patch('data.lockbox.open_lockbox'):\n    pass\n",
+    ),
+    (
+        "patch.dict on the module",
+        "from unittest import mock\nimport data.lockbox as lb\n"
+        "mock.patch.dict(lb.__dict__, {'open_lockbox': None})\n",
+    ),
 ]
 
 
@@ -403,3 +470,138 @@ def test_in17_no_false_positive_on_bom_and_opaque_caches(
     target.write_bytes(payload)
     monkeypatch.setattr(tool, "PKG_ROOT", root)
     assert tool.main() == 0, f"{label}: {capsys.readouterr().out}"
+
+
+# --- 03-REVIEW-FOLLOWUPS.md WR-05: the method forms of a sys.modules store --
+
+SYS_MODULES_METHOD_BYPASSES = [
+    (
+        "pop + setdefault",
+        "import sys\n"
+        "sys.modules.pop('data.lockbox', None)\n"
+        "sys.modules.setdefault('data.lockbox', Fake())\n"
+        "import data.lockbox as lb\n",
+    ),
+    (
+        "pop alone",
+        "import sys\nsys.modules.pop('data.lockbox', None)\n",
+    ),
+    (
+        "update with a dict literal",
+        "import sys\nsys.modules.update({'data.lockbox': Fake()})\n",
+    ),
+    (
+        "__setitem__ spelled out",
+        "import sys\nsys.modules.__setitem__('data.lockbox', Fake())\n",
+    ),
+    (
+        "an unresolvable key",
+        "import sys\ndef f(name):\n    sys.modules.pop(name, None)\n",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("label", "source"),
+    SYS_MODULES_METHOD_BYPASSES,
+    ids=[label for label, _ in SYS_MODULES_METHOD_BYPASSES],
+)
+def test_sys_modules_method_mutation_is_a_violation(label: str, source: str):
+    """Only the SUBSCRIPT form was flagged. `03-FOLLOWUPS.md` item 1b claims
+    the door is closed -- "`sys.modules.get/pop/setdefault` now RESOLVE to the
+    module so whatever happens to it afterwards is tracked" -- but
+    `setdefault(key, fake)` is a STORE, and two lines replaced the audited
+    module and scanned clean. The same two lines are what an agent writes
+    ACCIDENTALLY when stubbing a module in a helper."""
+    violations = tool.scan_source(source, "scripts/agent_script.py")
+    assert violations, f"{label}: sys.modules method mutation passed the scan"
+
+
+@pytest.mark.parametrize(
+    ("label", "source"),
+    [
+        ("a literal unrelated key", "import sys\nm = sys.modules.get('json')\n"),
+        (
+            "a computed key",
+            "import sys\ndef load(name):\n    return sys.modules.get(name)\n",
+        ),
+        (
+            "membership test on a computed key",
+            "import sys\ndef loaded(name):\n    return name in sys.modules\n",
+        ),
+    ],
+    ids=["literal-key", "computed-key", "membership"],
+)
+def test_reading_sys_modules_is_not_a_mutation(label: str, source: str):
+    """`.get` READS. The line this scanner draws is at the STORE: replacing a
+    module changes what every later importer gets, which is the bypass. An
+    unresolvable READ is in the same family as
+    `importlib.import_module(<non-constant>)`, which the docstring already
+    lists under STILL NOT DETECTED.
+
+    The computed-key case is the load-bearing one: a mutation rule that also
+    covered `.get` would flag every dynamic module lookup in the repository --
+    the WR-06 mistake in a different place. It is what caught a mutant that
+    added `get` to `SYS_MODULES_MUTATORS`, which the literal-key case alone
+    did not."""
+    assert tool.scan_source(source, "scripts/agent_script.py") == [], label
+
+
+def test_mutating_sys_modules_for_an_unrelated_module_is_not_a_violation():
+    source = "import sys\nsys.modules.pop('mlflow', None)\n"
+    assert tool.scan_source(source, "scripts/agent_script.py") == []
+
+
+# --- WR-06: a narrow, per-rule escape hatch for dynamic registration -------
+
+
+DYNAMIC_REGISTRATION = [
+    (
+        "subscript store of a computed name",
+        "import sys, types\ndef register(name):\n"
+        "    sys.modules[name] = types.ModuleType(name)\n",
+    ),
+    (
+        "pop of a computed name",
+        "import sys\ndef unregister(name):\n    sys.modules.pop(name, None)\n",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("label", "source"),
+    DYNAMIC_REGISTRATION,
+    ids=[label for label, _ in DYNAMIC_REGISTRATION],
+)
+def test_dynamic_sys_modules_allowlist_is_per_rule(
+    monkeypatch, label: str, source: str
+):
+    """An unresolvable `sys.modules` key fails closed repo-wide, and the only
+    suppression was `SANCTIONED_TEST_FILES` -- which grants the file FULL
+    lockbox access. Whoever writes the first conftest stub or plugin registry
+    would reach for a blanket sanction to silence one rule."""
+    rel = "features/probe.py"
+    assert tool.scan_source(source, rel), f"{label}: not flagged without an entry"
+
+    monkeypatch.setitem(
+        tool.DYNAMIC_SYS_MODULES_ALLOWED, rel, "plugin registry, reviewed"
+    )
+    assert tool.scan_source(source, rel) == [], f"{label}: allowlist entry ignored"
+
+
+def test_the_dynamic_allowlist_does_not_grant_any_other_lockbox_access(monkeypatch):
+    """The point of a per-RULE hatch: an allowlisted file that names the
+    lockbox explicitly is still caught by every other rule."""
+    rel = "features/probe.py"
+    monkeypatch.setitem(
+        tool.DYNAMIC_SYS_MODULES_ALLOWED, rel, "plugin registry, reviewed"
+    )
+    assert tool.scan_source(
+        "import sys\nsys.modules['data.lockbox'] = Fake()\n", rel
+    ), "a literal lockbox key must still be flagged in an allowlisted file"
+    assert tool.scan_source("from data.lockbox import _mlflow_has_consumed\n", rel), (
+        "the private-import rule must still apply in an allowlisted file"
+    )
+    assert tool.scan_source("p = 'lake/lockbox/x'\n", rel), (
+        "the path-literal rule must still apply in an allowlisted file"
+    )

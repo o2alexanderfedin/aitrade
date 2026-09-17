@@ -76,6 +76,75 @@ def test_is_on_battery_none_when_pmset_fails_or_is_unparseable() -> None:
     assert power.is_on_battery(_boom) is None
 
 
+#: `pmset -g live` is the only place macOS actually reports the effect of
+#: `pmset -b disablesleep 1` (measured on this host 2026-09-17: `pmset -g
+#: custom` prints no `disablesleep` line at all, even while it is in effect).
+_LIVE_SLEEP_DISABLED = (
+    "System-wide power settings:\n SleepDisabled\t\t1\n"
+    "Currently in use:\n standby              1\n sleep                1\n"
+)
+_LIVE_SLEEP_ENABLED = (
+    "System-wide power settings:\n SleepDisabled\t\t0\n"
+    "Currently in use:\n standby              1\n sleep                1\n"
+)
+#: The real, measured shape when `disablesleep` is NOT set: macOS omits the
+#: whole "System-wide power settings" key rather than printing a 0.
+_LIVE_NO_KEY = "Currently in use:\n standby              1\n sleep                1\n"
+
+
+def test_battery_sleep_disabled_reads_pmset_live_sleepdisabled() -> None:
+    """The probe must read `pmset -g live`, the only output that reports the
+    effect of `pmset -b disablesleep 1` (measured on this host: `pmset -g
+    custom` never prints `disablesleep`, so the old parse could only ever
+    answer False -- a permanently false SLEEP RISK alarm)."""
+    assert (
+        power.battery_sleep_disabled(_runner_for({"live": _LIVE_SLEEP_DISABLED}))
+        is True
+    )
+    assert (
+        power.battery_sleep_disabled(_runner_for({"live": _LIVE_SLEEP_ENABLED}))
+        is False
+    )
+
+
+def test_battery_sleep_disabled_falls_back_to_custom_when_live_lacks_the_key() -> None:
+    assert (
+        power.battery_sleep_disabled(
+            _runner_for(
+                {"live": _LIVE_NO_KEY, "custom": _CUSTOM_BATTERY_SLEEP_DISABLED}
+            )
+        )
+        is True
+    ), "a host/OS version that DOES print disablesleep must still be honoured"
+
+
+def test_battery_sleep_disabled_false_when_a_command_answered_without_the_key() -> None:
+    assert (
+        power.battery_sleep_disabled(
+            _runner_for({"live": _LIVE_NO_KEY, "custom": _CUSTOM_SLEEP_ENABLED})
+        )
+        is False
+    ), "both answered and neither names the key: checked, and it is not set"
+
+
+def test_battery_sleep_disabled_none_when_neither_command_answers() -> None:
+    """WR-11's contract: None means 'could not tell', never 'checked and it
+    is off'."""
+    assert power.battery_sleep_disabled(_runner_codes({})) is None
+
+    def _boom(*_a, **_k):
+        raise OSError("pmset not found")
+
+    assert power.battery_sleep_disabled(_boom) is None
+
+
+def test_sleep_risk_silent_on_battery_when_live_says_sleep_disabled() -> None:
+    assert (
+        power.sleep_risk(_runner_for({"ps": _PS_BATT, "live": _LIVE_SLEEP_DISABLED}))
+        is None
+    ), "battery + `pmset -b disablesleep 1` in effect is not a risk to report"
+
+
 def test_battery_sleep_disabled_reads_the_battery_block_not_the_ac_block() -> None:
     assert (
         power.battery_sleep_disabled(

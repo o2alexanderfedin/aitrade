@@ -20,6 +20,24 @@ than a silent one.
 
 The OS-level fix is `sudo pmset -b disablesleep 1`; this module is the
 detection that makes its absence visible.
+
+WHERE macOS ACTUALLY REPORTS `disablesleep` (measured on this host
+2026-09-17, with `pmset -b disablesleep 1` in effect): `pmset -g custom`
+prints NO `disablesleep` line at all, in either the `Battery Power` or the
+`AC Power` block. The setting surfaces only in `pmset -g live`, as a
+`System-wide power settings:` section with ` SleepDisabled\t\t1`. The first
+version of `battery_sleep_disabled` parsed `pmset -g custom` only, so it
+could never return True: the startup SLEEP RISK warning and the watchdog's
+`__power__` gap-ledger rows fired permanently and falsely, on a host where
+the risk had actually been fixed -- a boy-who-cried-wolf failure in the one
+alarm that exists to make an invisible data-loss condition visible.
+
+`pmset -g live` is therefore the primary source, with the `pmset -g custom`
+battery-block parse kept as a fallback for hosts/OS versions that do print
+it there. The WR-11 contract is unchanged: None means "could not tell",
+never "checked and it is off". If either command answered and neither names
+the key, that IS an answer (the setting is not in effect) and the result is
+False; None is returned only when no `pmset` call answered at all.
 """
 
 from __future__ import annotations
@@ -58,26 +76,39 @@ def is_on_battery(runner=subprocess.run) -> bool | None:
     return None
 
 
-def battery_sleep_disabled(runner=subprocess.run) -> bool | None:
-    """Return True if `pmset -b disablesleep 1` is in effect (battery sleep
-    suppressed at OS level), False if it is not, None if undeterminable.
-
-    When this is True, being on battery is no longer a capture risk, so the
-    watchdog stays quiet.
-    """
-    if platform.system() != "Darwin":
-        return None
+def _pmset(runner, subcommand: str) -> str | None:
+    """`pmset -g <subcommand>`'s stdout, or None if it could not be asked or
+    answered nothing usable (missing binary, non-zero exit, empty output)."""
     try:
         result = runner(
-            ["pmset", "-g", "custom"], capture_output=True, text=True, timeout=5
+            ["pmset", "-g", subcommand], capture_output=True, text=True, timeout=5
         )
     except (OSError, subprocess.SubprocessError):
         return None
     if result.returncode != 0 or not result.stdout:
         return None
+    return result.stdout
 
+
+def _sleep_disabled_from_live(stdout: str) -> bool | None:
+    """Read `SleepDisabled` out of `pmset -g live`. None when the key is
+    absent (macOS omits it entirely rather than printing a 0)."""
+    for raw_line in stdout.splitlines():
+        fields = raw_line.split()
+        if len(fields) >= 2 and fields[0] == "SleepDisabled":
+            return fields[1] == "1"
+    return None
+
+
+def _disablesleep_from_custom(stdout: str) -> bool | None:
+    """Read `disablesleep` out of the BATTERY block of `pmset -g custom`, on
+    hosts/OS versions that print it there. None when the key is absent.
+
+    The `AC Power` block's own `disablesleep` is deliberately ignored: it
+    does not protect a battery-powered capture run.
+    """
     in_battery_block = False
-    for raw_line in result.stdout.splitlines():
+    for raw_line in stdout.splitlines():
         stripped = raw_line.strip()
         if stripped.startswith("Battery Power"):
             in_battery_block = True
@@ -87,6 +118,38 @@ def battery_sleep_disabled(runner=subprocess.run) -> bool | None:
             continue
         if in_battery_block and stripped.startswith("disablesleep"):
             return stripped.split()[-1] == "1"
+    return None
+
+
+def battery_sleep_disabled(runner=subprocess.run) -> bool | None:
+    """Return True if `pmset -b disablesleep 1` is in effect (battery sleep
+    suppressed at OS level), False if it is not, None if undeterminable.
+
+    `pmset -g live`'s `SleepDisabled` is the source of truth -- macOS does
+    not print `disablesleep` in `pmset -g custom` at all on this host (see
+    the module docstring). `pmset -g custom`'s battery block is kept as a
+    fallback for hosts/OS versions that do.
+
+    When this is True, being on battery is no longer a capture risk, so the
+    watchdog stays quiet.
+    """
+    if platform.system() != "Darwin":
+        return None
+
+    live = _pmset(runner, "live")
+    if live is not None:
+        value = _sleep_disabled_from_live(live)
+        if value is not None:
+            return value
+
+    custom = _pmset(runner, "custom")
+    if custom is not None:
+        value = _disablesleep_from_custom(custom)
+        if value is not None:
+            return value
+
+    if live is None and custom is None:
+        return None  # nothing answered: "could not tell", never "it is off"
     return False
 
 

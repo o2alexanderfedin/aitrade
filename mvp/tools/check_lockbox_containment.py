@@ -26,23 +26,56 @@ load-bearing barriers are at RUNTIME, not here:
 This static scan is DEFENSE IN DEPTH AGAINST ACCIDENTAL ACCESS: an agent
 that enthusiastically globs "all available data", names the lockbox path,
 or pokes the audited module's private helpers in ordinary code. It does
-NOT claim to stop deliberate circumvention. Known residual class, stated
-so nobody mistakes a green run for more than it is (every item below
-passes this scan; not detected by design, per the phase's locked decision
-that agent-proofing -- a sandbox that never mounts the lockbox -- is Phase
+NOT claim to stop deliberate circumvention.
+
+CLOSED SINCE 03-FOLLOWUPS.md item 1 (these were the realistic forms an
+agent actually writes, and each used to pass):
+- `from data.lockbox import LOCKBOX_TIER` (or `lb.LOCKBOX_TIER`, or an
+  aliased import) joined onto `lake_root()`. The constant is PUBLIC -- the
+  CR-04 fix exported it -- but it is the quarantined tier's own path
+  segment, so reading it anywhere else is a finding in its own right
+  (`LOCKBOX_PATH_CONSTANTS`);
+- `sys.modules["data.lockbox"] = fake` and `del sys.modules[...]`, a
+  Subscript STORE that creates no Attribute node and replaces the module
+  for every later importer; a store through an unresolvable key fails
+  closed;
+- `sys.modules.get/pop/setdefault("data.lockbox")`, which hand out the
+  module object without an import statement;
+- the MUTATING method forms -- `sys.modules.pop/setdefault/update/
+  __setitem__` -- which are the same store spelled as a call
+  (03-REVIEW-FOLLOWUPS.md WR-05). `pop("data.lockbox", None)` followed by
+  `setdefault("data.lockbox", Fake())` replaced the audited module in two
+  lines and used to scan clean, because only the Subscript form was
+  flagged and `setdefault` was treated purely as a getter. Those two lines
+  are also what an agent writes ACCIDENTALLY when stubbing a module in a
+  helper. `.get` alone stays a read. An unresolvable key fails closed here
+  exactly as it does for the Subscript form, and both are suppressed by
+  the same narrow `DYNAMIC_SYS_MODULES_ALLOWED` entry (WR-06) -- a
+  per-RULE hatch for ordinary plugin/stub registration, which grants no
+  other lockbox access, unlike `SANCTIONED_TEST_FILES`;
+- the whole `mock.patch` family aimed at the module --
+  `patch("data.lockbox.x")`, `patch.object(lb, "x")`, `patch.dict`,
+  `patch.multiple` -- PUBLIC name or not. A patched `open_lockbox` re-arms
+  the one-look token just as surely as a patched `_mlflow_has_consumed`,
+  and `patch.object`'s call name is `object`, so neither the `setattr` rule
+  nor the private-string rule ever saw it. The four `SANCTIONED_TEST_FILES`
+  are exempt, as before.
+
+STILL NOT DETECTED, stated so nobody mistakes a green run for more than it
+is (not detected by design, per the phase's locked decision that
+agent-proofing -- a sandbox that never mounts the lockbox -- is Phase
 10's job):
-- importing the PUBLIC `data.lockbox.LOCKBOX_TIER` constant (exported by the
-  CR-04 fix itself) and joining it onto `lake_root()` to glob the tier;
-- `mock.patch.object(lb, "_mlflow_has_consumed", ...)`,
-  `mock.patch("data.lockbox.open_lockbox")`, `sys.modules["data.lockbox"] =
-  fake`, `sys.modules.get(...)`, `inspect.getmodule(...)`;
-- the module object escaping through a value (tuple unpacking, `IfExp`,
-  parameter defaults, list elements, `for`/`with` targets), `from data import
-  *`, `exec` of a literal string, `importlib.import_module(<non-constant>)`;
+- `inspect.getmodule(...)`, and the module object escaping through a value
+  (tuple unpacking, `IfExp`, parameter defaults, list elements, `for`/`with`
+  targets), `from data import *`, `exec` of a literal string,
+  `importlib.import_module(<non-constant>)`;
 - a path or module name assembled at runtime from pieces, or read from data;
 - Python run by a shell/notebook escape (`!python -c "..."`, `sh -c`),
   reflection that never names the module (`gc.get_referrers`), and a
   subprocess running code this scanner never sees.
+
+The RUNTIME controls above stay primary either way: none of these is what
+keeps the lockbox shut.
 
 FAIL-CLOSED WHERE THE SCAN ITSELF CANNOT LOOK (CR-07): a text file that is
 not valid UTF-8 and a Python file that does not parse are violations
@@ -99,7 +132,13 @@ never looked at what happened to the imported module object):
    - `setattr`/`delattr`/`vars` on them, and `getattr`/`hasattr` with an
      underscore-prefixed or non-constant attribute name;
    - a string constant naming a private `data.lockbox._x` target (the
-     `mock.patch("data.lockbox._x")` / `monkeypatch.setattr("...")` form).
+     `mock.patch("data.lockbox._x")` / `monkeypatch.setattr("...")` form);
+   - a `mock.patch`/`patch.object`/`patch.dict`/`patch.multiple` call whose
+     target is the module or any of its names, public included;
+   - a `sys.modules` subscript STORE or DELETE naming it (or with a key this
+     scan cannot resolve);
+   - importing or reading `LOCKBOX_PATH_CONSTANTS` (the tier's own path
+     segment).
    Importing and calling PUBLIC names (`open_lockbox`, `issue_token`,
    `LockboxTokenError`, `token_path`) is the sanctioned usage.
 3. Every other text file (notebook JSON as a whole, `.sh`, `.toml`, `.json`,
@@ -187,6 +226,20 @@ SANCTIONED_TEST_FILES: dict[str, str] = {
     ),
 }
 
+#: Files permitted to assign or delete an UNRESOLVABLE `sys.modules` key --
+#: exact repo-relative equality, one reason each. Ordinary plugin/stub
+#: registration (`sys.modules[name] = types.ModuleType(name)`) cannot be
+#: proven not to target `data.lockbox`, so it fails closed; before this
+#: table the only way to silence it was `SANCTIONED_TEST_FILES`, which
+#: grants the file FULL lockbox access (03-REVIEW-FOLLOWUPS.md WR-06: the
+#: cheapest fix available to whoever writes the first conftest stub was a
+#: blanket sanction that also disabled every other rule for that file).
+#:
+#: This hatch is PER RULE and nothing else: an allowlisted file that names
+#: `data.lockbox` -- as a sys.modules key, a private import, a path literal,
+#: a patch target -- is still flagged by every other rule.
+DYNAMIC_SYS_MODULES_ALLOWED: dict[str, str] = {}
+
 #: Suffixes AST-scanned as Python, besides a `#!...python` shebang.
 PYTHON_SUFFIXES = frozenset({".py", ".pyw", ".ipy"})
 
@@ -200,6 +253,31 @@ SANCTIONED_FILES = frozenset({"data/lockbox.py", "tools/check_lockbox_containmen
 SANCTIONED_DOCS = frozenset({"data/lockbox_POLICY.md", "spec.md"})
 
 LOCKBOX_MODULE = "data.lockbox"
+
+#: PUBLIC names of `data.lockbox` that are nonetheless a containment finding
+#: when imported or read elsewhere (03-FOLLOWUPS.md item 1): `LOCKBOX_TIER`
+#: is the quarantined tier's own path segment. Joining it onto `lake_root()`
+#: globs the lockbox without any literal `"lockbox"` appearing in the file,
+#: which is how the CR-04 fix accidentally reopened the path rule.
+LOCKBOX_PATH_CONSTANTS = frozenset({"LOCKBOX_TIER"})
+
+#: Attributes of `sys.modules` that hand out a module object.
+SYS_MODULES_GETTERS = frozenset({"get", "pop", "setdefault"})
+
+#: `sys.modules` methods that MUTATE the module table. `setdefault` is in
+#: both sets: it hands the module out AND stores one. 03-REVIEW-FOLLOWUPS.md
+#: WR-05 -- only the Subscript form used to be flagged, so
+#: `sys.modules.pop("data.lockbox", None)` followed by
+#: `sys.modules.setdefault("data.lockbox", Fake())` replaced the audited
+#: module in two lines and scanned clean, while `03-FOLLOWUPS.md` item 1b
+#: read as if that door were shut. Those are also the two lines an agent
+#: writes ACCIDENTALLY when stubbing a module in a helper.
+SYS_MODULES_MUTATORS = frozenset({"pop", "setdefault", "update", "__setitem__"})
+
+#: `mock.patch(...)` and friends -- `patch.object`/`patch.dict` are Calls on
+#: an attribute of `patch`, not on `setattr`, so the setattr rule never saw
+#: them.
+PATCH_ATTR_FORMS = frozenset({"object", "dict", "multiple"})
 
 #: Matches a "lockbox" path/name segment bounded by a path separator (or
 #: string start/end) on both sides, case-insensitive -- applied to a whole
@@ -373,6 +451,13 @@ class _Bindings:
                     if package is not None:
                         name = package + name
                 return name
+            if (
+                isinstance(node.func, ast.Attribute)
+                and node.func.attr in SYS_MODULES_GETTERS
+                and self.resolve(node.func.value) == "sys.modules"
+                and node.args
+            ):
+                return self.string(node.args[0])
             if func_name == "__import__" and node.args:
                 name = self.string(node.args[0])
                 if name is None:
@@ -382,6 +467,112 @@ class _Bindings:
                 )
                 return name if has_fromlist else name.split(".")[0]
         return None
+
+
+def _patch_form(node: ast.Call) -> str | None:
+    """`"patch"`, `"patch.object"`, `"patch.dict"`, `"patch.multiple"` or
+    None. `mock.patch.object(lb, "_x")` is a Call on an ATTRIBUTE of `patch`,
+    so neither the `setattr` rule nor the private-string rule saw it: the
+    call name is `object` and the attribute name is a bare `"_x"`."""
+    func = node.func
+    if isinstance(func, ast.Name) and func.id == "patch":
+        return "patch"
+    if isinstance(func, ast.Attribute):
+        if func.attr == "patch":
+            return "patch"
+        base = func.value
+        base_name = (
+            base.attr
+            if isinstance(base, ast.Attribute)
+            else base.id
+            if isinstance(base, ast.Name)
+            else None
+        )
+        if func.attr in PATCH_ATTR_FORMS and base_name == "patch":
+            return f"patch.{func.attr}"
+    return None
+
+
+def _sys_modules_mutation_keys(node: ast.Call, method: str, bindings):
+    """The module-table keys a `sys.modules.<method>(...)` call touches, as
+    `(key, is_resolvable)` pairs. `update({"a": x})` touches every key of a
+    dict literal; anything else touches its first argument's key."""
+    if method == "update":
+        argument = node.args[0] if node.args else None
+        if isinstance(argument, ast.Dict):
+            for key_node in argument.keys:
+                key = bindings.string(key_node) if key_node is not None else None
+                yield key, key is not None
+            return
+        if node.keywords and not node.args:
+            for keyword in node.keywords:
+                yield keyword.arg, keyword.arg is not None
+            return
+        yield None, False  # update(<something this scan cannot read>)
+        return
+    if not node.args:
+        yield None, False
+        return
+    key = bindings.string(node.args[0])
+    yield key, key is not None
+
+
+def _flag_sys_modules_mutation(
+    node: ast.Call, method: str, filename: str, bindings, flag
+) -> None:
+    """A `sys.modules` MUTATION written as a method call (WR-05).
+
+    The Subscript rule below covers `sys.modules[k] = v` and `del
+    sys.modules[k]`; these are the same store spelled as a call, and
+    `setdefault(key, fake)` in particular is a store that the "getters"
+    treatment read as a read. An unresolvable key fails closed the same way
+    the Subscript rule does, and is suppressed by the same narrow,
+    per-rule `DYNAMIC_SYS_MODULES_ALLOWED` entry (WR-06)."""
+    for key, resolvable in _sys_modules_mutation_keys(node, method, bindings):
+        if not resolvable:
+            if filename not in DYNAMIC_SYS_MODULES_ALLOWED:
+                flag(
+                    node,
+                    f"sys.modules.{method}() on an unresolvable key -- whether "
+                    "it replaces data.lockbox cannot be proven",
+                )
+        elif _is_lockbox(key):
+            flag(
+                node,
+                f"sys.modules.{method}({key!r}) -- mutates the module table "
+                "entry for the audited module, replacing it for every later "
+                "importer",
+            )
+
+
+def _flag_patch_target(node: ast.Call, form: str, bindings, flag) -> None:
+    """A `mock.patch` family call aimed at `data.lockbox` is a monkeypatch of
+    the audited module, PUBLIC name or not (03-FOLLOWUPS.md item 1).
+
+    Two shapes: a dotted string target (`patch("data.lockbox.x")`) and an
+    object plus attribute name (`patch.object(lb, "x")`). The four sanctioned
+    test modules are exempt wholesale, before this ever runs."""
+    if not node.args:
+        return
+    first = node.args[0]
+    target = bindings.resolve(first)
+    if _is_lockbox(target):
+        attr = bindings.string(node.args[1]) if len(node.args) > 1 else None
+        named = f"{target}.{attr}" if attr else target
+        flag(
+            node,
+            f"{form}() patches {named} -- monkeypatches the audited module "
+            "(a patched public entry point re-arms the one-look token just as "
+            "surely as a private one)",
+        )
+        return
+    text = bindings.string(first)
+    if text is not None and _is_lockbox(text):
+        flag(
+            node,
+            f"{form}() target string {text!r} names the audited module "
+            "-- monkeypatches data.lockbox",
+        )
 
 
 def scan_source(source: str, filename: str) -> list[Violation]:
@@ -418,6 +609,13 @@ def scan_source(source: str, filename: str) -> list[Violation]:
                             f"imports data.lockbox private name {alias.name!r} "
                             "-- reaches lockbox internals outside the audited module",
                         )
+                    elif alias.name in LOCKBOX_PATH_CONSTANTS:
+                        flag(
+                            node,
+                            f"imports data.lockbox.{alias.name} -- the quarantined "
+                            "tier's own path segment; joining it onto lake_root() "
+                            "reaches the lockbox with no literal path in sight",
+                        )
         elif isinstance(node, ast.Attribute):
             dotted = bindings.resolve(node)
             if not _is_lockbox(dotted) or dotted == LOCKBOX_MODULE:
@@ -429,6 +627,35 @@ def scan_source(source: str, filename: str) -> list[Violation]:
                 )
             elif _has_private_component(dotted):
                 flag(node, f"accesses private {dotted} outside the audited module")
+            elif dotted[len(LOCKBOX_MODULE) + 1 :] in LOCKBOX_PATH_CONSTANTS:
+                flag(
+                    node,
+                    f"reads {dotted} -- the quarantined tier's own path segment; "
+                    "joining it onto lake_root() reaches the lockbox with no "
+                    "literal path in sight",
+                )
+        elif isinstance(node, ast.Subscript):
+            # `sys.modules["data.lockbox"] = fake` / `del sys.modules[...]`:
+            # a Subscript STORE replaces the audited module for every later
+            # importer, and no Attribute node is ever created (item 1).
+            if not isinstance(node.ctx, (ast.Store, ast.Del)):
+                continue
+            if bindings.resolve(node.value) != "sys.modules":
+                continue
+            key = bindings.string(node.slice)
+            if key is None:
+                if filename not in DYNAMIC_SYS_MODULES_ALLOWED:
+                    flag(
+                        node,
+                        "assigns/deletes an unresolvable sys.modules key -- "
+                        "whether it replaces data.lockbox cannot be proven",
+                    )
+            elif _is_lockbox(key):
+                flag(
+                    node,
+                    f"assigns/deletes sys.modules[{key!r}] -- replaces the audited "
+                    "module for every later importer",
+                )
         elif isinstance(node, ast.Call):
             func_name = (
                 node.func.id
@@ -437,6 +664,17 @@ def scan_source(source: str, filename: str) -> list[Violation]:
                 if isinstance(node.func, ast.Attribute)
                 else None
             )
+            patch_form = _patch_form(node)
+            if patch_form is not None:
+                _flag_patch_target(node, patch_form, bindings, flag)
+                continue
+            if (
+                func_name in SYS_MODULES_MUTATORS
+                and isinstance(node.func, ast.Attribute)
+                and bindings.resolve(node.func.value) == "sys.modules"
+            ):
+                _flag_sys_modules_mutation(node, func_name, filename, bindings, flag)
+                continue
             if func_name not in {"getattr", "hasattr", "setattr", "delattr", "vars"}:
                 continue
             if not node.args:

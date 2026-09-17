@@ -140,9 +140,31 @@ replaced by an empty (or different) store, or its rows are purged with
 `mlflow gc`, AND the token JSON's `consumed_at` stamp is simultaneously
 reverted, the two signals together are indistinguishable from "never
 consumed." Either signal alone (an intact tracking store OR an unreverted
-JSON stamp) still catches it. The same holds when the caller simply passes a
-`tracking_root` holding some OTHER initialised MLflow store: the canonical
-tracking root is not pinned, so only the JSON stamp refuses that second look.
+JSON stamp) still catches it.
+
+Passing a `tracking_root` holding some OTHER initialised MLflow store is no
+longer such a case: the canonical tracking root is **pinned**, compared after
+`resolve()`, and any other root raises `LockboxTokenError` before a single
+MLflow object is built -- so the durable record can neither be consulted in,
+nor written to, a throwaway store.
+
+**Which store is canonical is configuration, not a per-call argument.**
+`data.lake_paths.mlflow_tracking_root()` answers it: the environment variable
+`AIHF_MLFLOW_TRACKING_ROOT` if set, else
+`DEFAULT_MLFLOW_TRACKING_ROOT` (`/Volumes/ProjectsSSD/aihedgefund/mlflow`).
+Set the variable on any host where the store lives elsewhere -- another
+machine, a CI runner, or the external volume remounted under a different
+name; without it, `open_lockbox` on such a host used to raise before the
+token was even read, a single-machine binding of the lockbox recorded nowhere
+but one constant.
+
+`open_lockbox` has **no** `canonical_tracking_root=` keyword. It used to, and
+the only thing standing between that keyword and the pre-fix fail-open was a
+docstring saying "tests inject this; nothing else may" (03-REVIEW-FOLLOWUPS.md
+WR-04). The remaining `allowed_root=` is a module-private parameter on a
+module-private function, unreachable from the public API; the lockbox tests
+point the pin at their own `tmp_path` store through the environment variable,
+cleared and restored per test by `tests/lockbox/conftest.py`.
 
 ## Agent containment (PITFALLS #14)
 

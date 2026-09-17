@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import socket
 from pathlib import Path
 
 import mlflow
@@ -21,7 +23,14 @@ import polars as pl
 import pytest
 from mlflow.tracking import MlflowClient
 
-from data.lockbox import LockboxTokenError, issue_token, open_lockbox, token_path
+from data.lake_paths import MLFLOW_TRACKING_ROOT_ENV
+from data.lockbox import (
+    LockboxTokenError,
+    issue_token,
+    lock_path_for,
+    open_lockbox,
+    token_path,
+)
 from data.store import issue_manifest
 from tracking.mlflow_utils import build_tracking_uri
 
@@ -69,6 +78,10 @@ def _build_segment(tmp_path: Path, *, token_id: str = "lb-001"):
     tracking_root = tmp_path / "mlflow_root"
     tracking_root.mkdir()
     _seed_tracking_db(tracking_root)
+    # The canonical store for this test IS this tmp_path store. Set through
+    # the documented env var (WR-04), cleared again by the autouse fixture in
+    # conftest.py -- never through a keyword on the public API.
+    os.environ[MLFLOW_TRACKING_ROOT_ENV] = str(tracking_root)
 
     df = pl.DataFrame(
         {
@@ -364,6 +377,10 @@ def test_tracking_root_without_an_existing_store_is_refused_not_created(tmp_path
     )
     other_root = tmp_path / "some_other_dir"
     other_root.mkdir()
+    # This test is about the STORE-SHAPE refusal, so make the odd root the
+    # canonical one: otherwise the pin refuses it first and the shape check
+    # never runs (WR-04 moved the pin's source to the env var).
+    os.environ[MLFLOW_TRACKING_ROOT_ENV] = str(other_root)
 
     with pytest.raises(LockboxTokenError, match="mlflow.db"):
         _open("lb-wr06-root", registry_root, lake_root, other_root)
@@ -379,7 +396,8 @@ def test_concurrent_open_is_refused_while_another_open_holds_the_lock(tmp_path: 
     registry_root, lake_root, tracking_root, _m, _t = _build_segment(
         tmp_path, token_id="lb-wr06-lock"
     )
-    lock = token_path("lb-wr06-lock", registry_root=registry_root).with_suffix(".lock")
+    lock = lock_path_for(token_path("lb-wr06-lock", registry_root=registry_root))
+    lock.parent.mkdir(parents=True, exist_ok=True)
     lock.write_text("held by another process\n")
 
     with pytest.raises(LockboxTokenError, match="in progress"):
@@ -421,6 +439,8 @@ def test_a_store_that_is_not_an_mlflow_store_is_refused_not_read_as_unconsumed(
     fake_root.mkdir()
     make_store(fake_root / "mlflow.db")
     before = (fake_root / "mlflow.db").read_bytes()
+    # As above: the pin would refuse this root first, hiding the shape check.
+    os.environ[MLFLOW_TRACKING_ROOT_ENV] = str(fake_root)
 
     with pytest.raises(LockboxTokenError, match="not an initialised MLflow store"):
         _open("lb-wr12-store", registry_root, lake_root, fake_root)
@@ -452,3 +472,214 @@ def test_token_json_is_reread_under_the_lock(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(lockbox_module, "_acquire_open_lock", stamp_then_acquire)
     with pytest.raises(LockboxTokenError, match="already consumed"):
         _open("lb-wr12-stale", registry_root, lake_root, tracking_root)
+
+
+# --- 03-FOLLOWUPS.md item 2 (WR-12 remainder): the tracking root is pinned ---
+
+
+def test_a_different_but_valid_mlflow_store_is_refused(tmp_path: Path):
+    """A genuinely initialised MLflow store belonging to something else
+    answers "never consumed" about a token it has never heard of -- and the
+    access run would then be logged there, so the durable record never
+    reaches the real store. The one-look check must verify it is reading the
+    store it claims to."""
+    registry_root, lake_root, tracking_root, _m, _t = _build_segment(
+        tmp_path, token_id="lb-pin-001"
+    )
+    other_root = tmp_path / "someone_elses_mlflow"
+    other_root.mkdir()
+    _seed_tracking_db(other_root)  # a real, fully initialised MLflow store
+    before = (other_root / "mlflow.db").read_bytes()
+
+    with pytest.raises(LockboxTokenError, match="canonical MLflow store"):
+        open_lockbox(
+            "lb-pin-001",
+            "purpose",
+            "alex",
+            str(other_root),
+            lake_root=lake_root,
+            registry_root=registry_root,
+            min_free_gb=0.0,
+        )
+
+    # Nothing was read from, written to, or logged into the foreign store,
+    # and the token is still unconsumed.
+    assert (other_root / "mlflow.db").read_bytes() == before
+    on_disk = json.loads(
+        token_path("lb-pin-001", registry_root=registry_root).read_text()
+    )
+    assert on_disk["consumed_at"] is None
+
+
+def test_the_pin_defaults_to_the_projects_canonical_tracking_root(tmp_path: Path):
+    """With no `AIHF_MLFLOW_TRACKING_ROOT` set, the canonical store is the
+    project's own -- a caller cannot reach a throwaway store by simply saying
+    nothing about it."""
+    from data.lake_paths import DEFAULT_MLFLOW_TRACKING_ROOT
+
+    registry_root, lake_root, tracking_root, _m, _t = _build_segment(
+        tmp_path, token_id="lb-pin-002"
+    )
+    os.environ.pop(MLFLOW_TRACKING_ROOT_ENV, None)
+    assert Path(tracking_root).resolve() != Path(DEFAULT_MLFLOW_TRACKING_ROOT)
+    with pytest.raises(LockboxTokenError, match="canonical MLflow store"):
+        open_lockbox(
+            "lb-pin-002",
+            "purpose",
+            "alex",
+            str(tracking_root),
+            lake_root=lake_root,
+            registry_root=registry_root,
+            min_free_gb=0.0,
+        )
+
+
+def test_the_pin_compares_resolved_paths(tmp_path: Path):
+    """The pin must not fail on spelling: `/tmp` vs `/private/tmp` (macOS), or
+    a symlink to the canonical root, is the same root.
+
+    A `.`/trailing-slash spelling would NOT prove this -- `pathlib` already
+    normalises those before any `resolve()` -- so the case is a real symlink,
+    which only `resolve()` collapses."""
+    registry_root, lake_root, tracking_root, _m, _t = _build_segment(
+        tmp_path, token_id="lb-pin-003"
+    )
+    link = tmp_path / "mlflow_link"
+    link.symlink_to(tracking_root, target_is_directory=True)
+    spelled = str(link)
+    df = open_lockbox(
+        "lb-pin-003",
+        "purpose",
+        "alex",
+        spelled,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        min_free_gb=0.0,
+    )
+    assert df.height == 3
+
+
+# --- 03-REVIEW-ITER2.md IN-14: the lock lives outside the git-tracked tree --
+
+
+def test_the_open_lock_is_not_written_beside_the_committed_token(tmp_path: Path):
+    """`lockbox_tokens/` is git-tracked, so a lock left by a crash used to be
+    swept up by `git add -A` and committed -- after which every clone refused
+    that token until a human deleted it. It belongs in the gitignored
+    `.locks/` subdirectory."""
+    import data.lockbox as lockbox_module
+
+    registry_root, lake_root, tracking_root, _m, _t = _build_segment(
+        tmp_path, token_id="lb-in14"
+    )
+    tp = token_path("lb-in14", registry_root=registry_root)
+    held = lockbox_module._acquire_open_lock(tp, "lb-in14")
+    try:
+        assert held.parent.name == ".locks"
+        assert held.parent == tp.parent / ".locks"
+        assert not tp.with_suffix(".lock").exists()
+        assert list(tp.parent.glob("*.lock")) == []
+        body = held.read_text()
+        assert f"pid={os.getpid()}" in body
+        assert f"host={socket.gethostname()}" in body
+    finally:
+        held.unlink()
+
+
+def test_a_held_lock_says_whether_the_holder_is_still_alive(tmp_path: Path):
+    registry_root, lake_root, tracking_root, _m, _t = _build_segment(
+        tmp_path, token_id="lb-in14-live"
+    )
+    tp = token_path("lb-in14-live", registry_root=registry_root)
+    held = lock_path_for(tp)
+    held.parent.mkdir(parents=True, exist_ok=True)
+
+    # A live holder: this very process.
+    held.write_text(f"pid={os.getpid()} host={socket.gethostname()} at=1\n")
+    with pytest.raises(LockboxTokenError, match="IS still running"):
+        _open("lb-in14-live", registry_root, lake_root, tracking_root)
+
+    # A dead holder: a pid that cannot exist.
+    held.write_text(f"pid=2147483646 host={socket.gethostname()} at=1\n")
+    with pytest.raises(LockboxTokenError, match="stale"):
+        _open("lb-in14-live", registry_root, lake_root, tracking_root)
+
+    # Another host: liveness cannot be judged from here, and is not claimed.
+    held.write_text("pid=1 host=some-other-host at=1\n")
+    with pytest.raises(LockboxTokenError, match="not this host"):
+        _open("lb-in14-live", registry_root, lake_root, tracking_root)
+
+    # A lock is never removed on the strength of a liveness guess.
+    assert held.exists()
+    assert json.loads(tp.read_text())["consumed_at"] is None, (
+        "a refused open must not have stamped the token"
+    )
+
+
+# --- 03-REVIEW-FOLLOWUPS.md WR-04: the pin is configurable, not opt-out -----
+
+
+def test_the_canonical_tracking_root_is_overridable_by_env_var(tmp_path: Path):
+    """`DEFAULT_MLFLOW_TRACKING_ROOT` was a hard-coded absolute path with no
+    override, so on any other host, any CI runner, or after the external
+    volume was remounted under a different name, EVERY `open_lockbox` raised
+    before the token was even read. Fail-closed, but a single-machine binding
+    of the lockbox recorded nowhere but that constant."""
+    import os
+
+    from data.lake_paths import mlflow_tracking_root
+
+    registry_root, lake_root, tracking_root, _m, _t = _build_segment(
+        tmp_path, token_id="lb-env-001"
+    )
+    os.environ[MLFLOW_TRACKING_ROOT_ENV] = str(tracking_root)
+    assert mlflow_tracking_root() == Path(tracking_root).resolve()
+
+    df = open_lockbox(
+        "lb-env-001",
+        "purpose",
+        "alex",
+        str(tracking_root),
+        lake_root=lake_root,
+        registry_root=registry_root,
+        min_free_gb=0.0,
+    )
+    assert df.height == 3
+
+
+def test_open_lockbox_has_no_public_canonical_tracking_root_keyword():
+    """The override was a PUBLIC parameter threaded straight to the pin, with
+    nothing but a docstring saying "tests inject this; nothing else may". One
+    keyword restored exactly the pre-fix behaviour the pin was written to
+    remove: query some other store, get "never consumed", log the access run
+    there."""
+    import inspect
+
+    parameters = inspect.signature(open_lockbox).parameters
+    assert "canonical_tracking_root" not in parameters
+    assert not [p for p in parameters if p.startswith("canonical")]
+
+
+def test_an_env_var_pointing_somewhere_else_still_refuses_a_foreign_store(
+    tmp_path: Path,
+):
+    """Making the pin configurable must not make it optional: a tracking root
+    that is not the configured canonical one is still refused."""
+    import os
+
+    registry_root, lake_root, tracking_root, _m, _t = _build_segment(
+        tmp_path, token_id="lb-env-002"
+    )
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    os.environ[MLFLOW_TRACKING_ROOT_ENV] = str(elsewhere)
+    with pytest.raises(LockboxTokenError, match="canonical MLflow store"):
+        open_lockbox(
+            "lb-env-002",
+            "purpose",
+            "alex",
+            str(tracking_root),
+            lake_root=lake_root,
+            registry_root=registry_root,
+            min_free_gb=0.0,
+        )

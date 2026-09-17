@@ -39,8 +39,10 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import io
 import json
 import posixpath
+import re
 import subprocess
 import time
 import unicodedata
@@ -58,6 +60,7 @@ __all__ = [
     "canonicalize_manifest",
     "compute_manifest_id",
     "dq_acknowledgement_ids",
+    "read_verified_partitions",
     "dq_acknowledgement_path",
     "dq_report_path",
     "issue_manifest",
@@ -196,6 +199,76 @@ def partition_path_problem(path: object) -> str | None:
     return None
 
 
+#: The manifest sources this codebase knows how to judge. A source outside
+#: this set has no `rtime` bounds, so it cannot be scored (WR-03).
+KNOWN_MANIFEST_SOURCES: frozenset[str] = frozenset({"archive", "capture"})
+
+#: What `manifest_source` returns when it cannot name ONE known source.
+UNKNOWN_MANIFEST_SOURCE = "unknown"
+
+#: A raw-archive input names its source in a hive component, because the
+#: backfill staging tree is partitioned by it.
+_SOURCE_COMPONENT_RE = re.compile(r"/source=([^/]+)/")
+
+#: A capture input carries no `source=` component at all -- it is an
+#: absolute path into the capture daemon's OWN tree
+#: (`data.capture.rotation`: `<capture_root>/symbol=.../stream=.../date=...`)
+#: and `curated_build` records `str(path.resolve())` verbatim. Capture is
+#: therefore recognised POSITIVELY, by requiring all three hive components;
+#: it is NOT the fall-through, which is what made every unknown source
+#: silently a capture one (WR-03).
+#:
+#: RESIDUAL: a future source staged under the same three components and no
+#: `source=` marker would read as capture. Any new source must be staged
+#: with its own `/source=<name>/` component -- the backfill staging tree
+#: already is -- and that is the contract `check_rtime_plausibility`'s
+#: unknown-source message spells out.
+_CAPTURE_PATH_RE = re.compile(r"/symbol=[^/]+/stream=[^/]+/date=[^/]+/")
+
+
+def _input_source(path: object) -> str | None:
+    """The source one input path names, or `None` if it names none."""
+    if not isinstance(path, str):
+        return None
+    found = _SOURCE_COMPONENT_RE.search(path)
+    if found is not None:
+        return found.group(1)
+    return "capture" if _CAPTURE_PATH_RE.search(path) else None
+
+
+def manifest_source(manifest: dict) -> str:
+    """The ONE source every one of this manifest's inputs came from --
+    `"archive"`, `"capture"`, or `UNKNOWN_MANIFEST_SOURCE` -- read from the
+    manifest itself (committed and bound to its id), never from the mutable
+    `build_stats.json`.
+
+    Lives here, not in `data.ingest.curated_build`, because two readers need
+    it: the builder's supersede logic and the DQ report's source-dependent
+    `rtime` gate (`data.dq.checks.check_rtime_plausibility`).
+
+    A THREE-WAY ANSWER, NOT A DEFAULT (03-REVIEW-FOLLOWUPS.md WR-03). This
+    used to return `"archive"` only when every input path contained
+    `/source=archive/` and `"capture"` for everything else -- so a manifest
+    with no `inputs` key, an empty list, a mixed list, or a future
+    `/source=tardis/` was judged by the capture branch's
+    `[-60 s, +3600 s]` `rtime - etime` skew window. A vendor download's
+    `rtime` is a DOWNLOAD time, days from `etime`; Tardis.dev is this
+    project's documented plan for historical L1, so the first vendor-sourced
+    dataset would have been paused on every single day, blamed on a window
+    that was never meant for it. Saying `"unknown"` out loud costs the same
+    pause and buys an actionable message.
+    """
+    sources: set[str | None] = {
+        _input_source(item.get("path") if isinstance(item, dict) else None)
+        for item in manifest.get("inputs") or []
+    }
+    if len(sources) == 1:
+        only = next(iter(sources))
+        if only in KNOWN_MANIFEST_SOURCES:
+            return only
+    return UNKNOWN_MANIFEST_SOURCE
+
+
 def _atomic_write_json(path: Path, body: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(path.suffix + ".tmp")
@@ -322,15 +395,34 @@ def _enforce_tier_containment(
     manifest: dict, manifest_file: Path, *, lake_root: Path, expected_tier: str
 ) -> None:
     """Refuse (`ManifestTierError`) a manifest of the wrong tier, or any
-    partition whose path resolves outside `lake_root/<expected_tier>/`.
-    Pure path arithmetic -- never opens a partition file."""
+    partition that is not genuinely contained in `lake_root/<expected_tier>/`.
+
+    Path arithmetic plus `lstat` -- never opens a partition file. Containment
+    by resolved path alone is not enough (03-REVIEW-ITER2.md IN-10), because
+    two same-uid actions defeat it without touching any manifest:
+
+    - **the tier directory itself being a symlink.** If `lake/curated` is a
+      link to `lake/lockbox`, `tier_root` and every partition resolve inside
+      the lockbox, so both sides of the containment test agree and the read
+      is allowed. The tier directory must be a real directory.
+    - **a hard link.** `resolve()` cannot see one: a hard link in `curated/`
+      to a lockbox partition IS a path under `curated/`, with the quarantined
+      bytes behind it. A partition file must have exactly one name
+      (`st_nlink == 1`).
+    """
     tier = manifest.get("tier")
     if tier != expected_tier:
         raise ManifestTierError(
             f"{manifest_file}: manifest tier {tier!r} is not {expected_tier!r} "
             "-- refusing to resolve it through this loader"
         )
-    tier_root = (Path(lake_root) / expected_tier).resolve()
+    tier_dir = Path(lake_root) / expected_tier
+    if tier_dir.is_symlink():
+        raise ManifestTierError(
+            f"{manifest_file}: {tier_dir} is a symlink, not a real directory -- "
+            "containment cannot be decided by resolving paths through it"
+        )
+    tier_root = tier_dir.resolve()
     for part in manifest["partitions"]:
         rel = Path(part["path"])
         on_disk = (Path(lake_root) / rel).resolve()
@@ -338,6 +430,14 @@ def _enforce_tier_containment(
             raise ManifestTierError(
                 f"{manifest_file}: partition path {part['path']!r} resolves to "
                 f"{on_disk}, outside {tier_root} -- refusing to read it"
+            )
+        lstat_path = Path(lake_root) / rel
+        if lstat_path.is_file() and lstat_path.lstat().st_nlink != 1:
+            raise ManifestTierError(
+                f"{manifest_file}: partition {part['path']!r} has "
+                f"{lstat_path.lstat().st_nlink} hard links -- the same bytes are "
+                "reachable under another name, so a path under "
+                f"{tier_root} does not prove containment"
             )
 
 
@@ -741,15 +841,20 @@ def _committed_ack_problem(
     stream: str,
     date: str,
     findings: frozenset[Finding],
-) -> str | None:
-    """Read the acknowledgement ONCE, then validate and prove committed those
-    same bytes (WR-19: no second read between the two checks)."""
+) -> tuple[str | None, bytes | None]:
+    """`(problem, content)`: read the acknowledgement ONCE, then validate and
+    prove committed those same bytes (WR-19: no second read between the two
+    checks). The bytes come back so the caller can hash exactly what it
+    honoured, rather than re-reading a file that may have changed since."""
     if ack_path.is_symlink():
-        return "acknowledgement is not committed: it is a symlink, not a regular file"
+        return (
+            "acknowledgement is not committed: it is a symlink, not a regular file",
+            None,
+        )
     if not ack_path.is_file():
-        return "no acknowledgement file"
+        return "no acknowledgement file", None
     content = ack_path.read_bytes()
-    return validate_dq_acknowledgement(
+    problem = validate_dq_acknowledgement(
         ack_path,
         symbol=symbol,
         stream=stream,
@@ -757,22 +862,27 @@ def _committed_ack_problem(
         findings=findings,
         content=content,
     ) or _dq_ack_git_problem(ack_path, content)
+    return problem, content
 
 
 def _dq_pause_findings(
     manifest: dict, *, registry_root: Path, lake_root: Path
-) -> tuple[list[tuple[str, str, str | None]], list[str]]:
-    """For every date the manifest covers: `(unacknowledged, ack_ids)` where
+) -> tuple[list[tuple[str, str, str | None]], list[tuple[str, str]]]:
+    """For every date the manifest covers: `(unacknowledged, acks)` where
     `unacknowledged` lists `(date, status, detail)` for non-ok days without a
-    VALID, COMMITTED acknowledgement covering every finding, and `ack_ids`
-    lists the acknowledgement ids (file stems) actually relied on to unpause
-    a non-ok day."""
+    VALID, COMMITTED acknowledgement covering every finding, and `acks` lists
+    `(acknowledgement id, sha256 of the exact bytes honoured)` for every
+    acknowledgement actually relied on to unpause a non-ok day.
+
+    The hash is taken from the bytes the validation read, not from a second
+    read of the file: what a run's provenance records must be what the gate
+    actually honoured."""
     symbol = manifest["symbol"]
     stream = manifest["stream"]
     dates = sorted({part["date"] for part in manifest["partitions"]})
 
     unacknowledged: list[tuple[str, str, str | None]] = []
-    ack_ids: list[str] = []
+    acks: list[tuple[str, str]] = []
     for date in dates:
         status, detail, findings = _dq_verdict_for_date(
             Path(lake_root),
@@ -785,16 +895,16 @@ def _dq_pause_findings(
         if status == "ok":
             continue
         ack_path = dq_acknowledgement_path(Path(registry_root), symbol, stream, date)
-        problem = _committed_ack_problem(
+        problem, content = _committed_ack_problem(
             ack_path, symbol=symbol, stream=stream, date=date, findings=findings
         )
         if problem is None:
-            ack_ids.append(ack_path.stem)
+            acks.append((ack_path.stem, hashlib.sha256(content or b"").hexdigest()))
         else:
             problem = f"findings {_format_findings(findings)}; {problem}"
             detail = f"{detail}; {problem}" if detail else problem
             unacknowledged.append((date, status, detail))
-    return unacknowledged, ack_ids
+    return unacknowledged, acks
 
 
 def dq_acknowledgement_ids(
@@ -804,21 +914,26 @@ def dq_acknowledgement_ids(
     logging as the `dq_ack_ids` MLflow tag via
     `tracking.mlflow_utils.start_tracked_run(..., dq_ack_ids=...)` (03-CONTEXT:
     "Acknowledgement ids are logged as an MLflow run tag")."""
-    _unacked, ack_ids = _dq_pause_findings(
+    _unacked, acks = _dq_pause_findings(
         manifest, registry_root=registry_root, lake_root=lake_root
     )
-    return ack_ids
+    return [ack_id for ack_id, _sha in acks]
 
 
-def _enforce_dq_pause(manifest: dict, *, registry_root: Path, lake_root: Path) -> None:
+def _enforce_dq_pause(
+    manifest: dict, *, registry_root: Path, lake_root: Path
+) -> list[tuple[str, str]]:
     """DATA-07's mechanical training pause: for every date this manifest
     covers, require an `"ok"` status OR a matching, VALID committed
     acknowledgement (`validate_dq_acknowledgement`). Raises `DQPauseError`
     naming every unacknowledged day, and why, if any remain.
+
+    Returns the `(ack id, sha256)` pairs it honoured, so the caller can
+    record them without asking the gate the same question twice.
     """
     symbol = manifest["symbol"]
     stream = manifest["stream"]
-    unacknowledged, _ack_ids = _dq_pause_findings(
+    unacknowledged, acks = _dq_pause_findings(
         manifest, registry_root=registry_root, lake_root=lake_root
     )
 
@@ -836,6 +951,72 @@ def _enforce_dq_pause(manifest: dict, *, registry_root: Path, lake_root: Path) -
             f"({', '.join(DQ_ACK_REQUIRED_FIELDS)}, {DQ_ACK_FINDINGS_FIELD}; "
             f"e.g. {example_path}) to proceed."
         )
+    return acks
+
+
+def _log_provenance(manifest: dict, acks: list[tuple[str, str]]) -> None:
+    """Record on the active MLflow run (if any) which manifest was read and
+    which acknowledgements were honoured to allow it.
+
+    03-CONTEXT.md DATA-07 requires the acknowledgement ids to be logged as a
+    run tag, and until now nothing outside tests ever did it: `load_curated`
+    computed them and discarded them, so a training run's provenance never
+    showed what had been waived. `tracking.mlflow_utils` is imported lazily,
+    inside the function: `data.store` must stay importable without pulling
+    `mlflow` in (see `tests/tracking/test_no_pandas_via_mlflow.py`).
+
+    RECORD-OR-FAIL, and where the line sits (03-REVIEW-FOLLOWUPS.md WR-08).
+    An environment with no `mlflow` installed has no run to record onto, so
+    there is nothing to fail about: the import is guarded and the loader
+    reads data exactly as it did before provenance logging existed. The guard
+    is narrow on purpose -- `exc.name != "mlflow"` re-raises everything that
+    is not mlflow's own absence, so a typo'd import inside
+    `tracking.mlflow_utils`, or that module going missing outright, stays a
+    loud bug rather than becoming a silent skip.
+
+    Everything past the import is NOT swallowed. With no active run nothing
+    is logged and nothing raises, but if a run IS active and MLflow refuses
+    the tags, that exception propagates out of `load_curated`: provenance
+    that cannot be recorded is the same fail-closed direction as every other
+    gate here.
+    """
+    try:
+        from tracking.mlflow_utils import log_data_provenance
+    except ImportError as exc:
+        if exc.name != "mlflow":
+            raise
+        return  # no tracking installed: no run to record onto, nothing to fail
+
+    log_data_provenance(
+        manifest_ids=[manifest["manifest_id"]],
+        dq_ack_ids=[ack_id for ack_id, _sha in acks],
+        dq_ack_sha256=[sha for _id, sha in acks],
+    )
+
+
+def read_verified_partitions(manifest: dict, *, lake_root: Path) -> list[pl.DataFrame]:
+    """Read each of `manifest`'s partitions ONCE, verify the sha256 of THOSE
+    bytes, and parse the DataFrame out of the same buffer.
+
+    03-REVIEW-ITER2.md IN-10: `resolve_manifest` hashed the file with
+    `read_bytes()` and then `pl.read_parquet` reopened it, so the verified
+    bytes and the returned bytes came from two different opens -- anything
+    that changed the file in between was returned unverified. Hashing the
+    buffer that is then parsed removes the window entirely.
+
+    The cost is one extra read of each partition relative to
+    `resolve_manifest`'s own verification pass (largest real partition: 516
+    MiB), which is the price of the two hashes being over the same bytes.
+    """
+    frames: list[pl.DataFrame] = []
+    for part in manifest["partitions"]:
+        path = Path(lake_root) / part["path"]
+        buffer = path.read_bytes()
+        digest = hashlib.sha256(buffer).hexdigest()
+        if digest != part["sha256"]:
+            raise ManifestHashMismatch(str(path), part["sha256"], digest)
+        frames.append(pl.read_parquet(io.BytesIO(buffer)))
+    return frames
 
 
 def load_curated(
@@ -854,6 +1035,15 @@ def load_curated(
     before a single partition byte is read (03-REVIEW.md CR-04). Hash
     verification runs BEFORE the DQ pause check: a manifest that fails
     integrity must never even reach a DQ conversation.
+
+    When an MLflow run is active, the manifest id, the acknowledgement ids
+    honoured and their sha256s are recorded on it as the `data_manifest_ids`,
+    `dq_ack_ids` and `dq_ack_sha256` tags (03-CONTEXT.md DATA-07). With no
+    active run nothing is logged and nothing raises -- the loader is usable
+    outside a tracked run, and equally usable in an environment where
+    `mlflow` is not installed at all (03-REVIEW-FOLLOWUPS.md WR-08). What
+    does NOT pass silently is an active run whose tags MLflow refuses; see
+    `_log_provenance` for exactly where that line sits.
     """
     manifest = resolve_manifest(
         manifest_id,
@@ -862,9 +1052,7 @@ def load_curated(
         lake_root=lake_root,
         expected_tier=CURATED_TIER,
     )
-    _enforce_dq_pause(manifest, registry_root=registry_root, lake_root=lake_root)
-    frames = [
-        pl.read_parquet(Path(lake_root) / part["path"])
-        for part in manifest["partitions"]
-    ]
+    acks = _enforce_dq_pause(manifest, registry_root=registry_root, lake_root=lake_root)
+    _log_provenance(manifest, acks)
+    frames = read_verified_partitions(manifest, lake_root=Path(lake_root))
     return pl.concat(frames, how="vertical")
