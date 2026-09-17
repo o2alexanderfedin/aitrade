@@ -22,6 +22,7 @@ import polars as pl
 import pytest
 from mlflow.tracking import MlflowClient
 
+from data.lake_paths import MLFLOW_TRACKING_ROOT_ENV
 from data.lockbox import LockboxTokenError, issue_token, open_lockbox
 from data.store import ManifestTierError, issue_manifest, load_curated
 from tracking.mlflow_utils import build_tracking_uri
@@ -167,6 +168,9 @@ def test_token_one_look_red_proof(tmp_path: Path):
     tracking_root.mkdir()
     # open_lockbox refuses a tracking root with no existing store (WR-06).
     MlflowClient(build_tracking_uri(str(tracking_root))).search_experiments()
+    # ...and refuses any root that is not the canonical one, which on this
+    # host is named by the env var (WR-04) rather than by a keyword.
+    os.environ[MLFLOW_TRACKING_ROOT_ENV] = str(tracking_root)
 
     df = pl.DataFrame(
         {"trade_id": [1, 2], "etime": [1_000, 2_000], "price": [1.0, 2.0]}
@@ -202,7 +206,6 @@ def test_token_one_look_red_proof(tmp_path: Path):
         "RP-3 red-proof",
         "alex",
         str(tracking_root),
-        canonical_tracking_root=str(tracking_root),
         lake_root=lake_root,
         registry_root=registry_root,
         min_free_gb=0.0,
@@ -215,7 +218,6 @@ def test_token_one_look_red_proof(tmp_path: Path):
             "RP-3 red-proof",
             "alex",
             str(tracking_root),
-            canonical_tracking_root=str(tracking_root),
             lake_root=lake_root,
             registry_root=registry_root,
             min_free_gb=0.0,

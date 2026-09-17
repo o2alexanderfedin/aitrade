@@ -23,6 +23,7 @@ import polars as pl
 import pytest
 from mlflow.tracking import MlflowClient
 
+from data.lake_paths import MLFLOW_TRACKING_ROOT_ENV
 from data.lockbox import (
     LockboxTokenError,
     issue_token,
@@ -77,6 +78,10 @@ def _build_segment(tmp_path: Path, *, token_id: str = "lb-001"):
     tracking_root = tmp_path / "mlflow_root"
     tracking_root.mkdir()
     _seed_tracking_db(tracking_root)
+    # The canonical store for this test IS this tmp_path store. Set through
+    # the documented env var (WR-04), cleared again by the autouse fixture in
+    # conftest.py -- never through a keyword on the public API.
+    os.environ[MLFLOW_TRACKING_ROOT_ENV] = str(tracking_root)
 
     df = pl.DataFrame(
         {
@@ -150,7 +155,6 @@ def test_open_lockbox_raises_if_token_missing(tmp_path: Path):
             "purpose",
             "alex",
             str(tracking_root),
-            canonical_tracking_root=str(tracking_root),
             lake_root=tmp_path / "lake",
             registry_root=tmp_path / "registry",
             min_free_gb=0.0,
@@ -167,7 +171,6 @@ def test_open_lockbox_raises_on_requested_by_mismatch(tmp_path: Path):
             "purpose",
             "someone-else",
             str(tracking_root),
-            canonical_tracking_root=str(tracking_root),
             lake_root=lake_root,
             registry_root=registry_root,
             min_free_gb=0.0,
@@ -186,7 +189,6 @@ def test_open_lockbox_succeeds_once_and_returns_data(tmp_path: Path):
         "purpose",
         "alex",
         str(tracking_root),
-        canonical_tracking_root=str(tracking_root),
         lake_root=lake_root,
         registry_root=registry_root,
         min_free_gb=0.0,
@@ -218,7 +220,6 @@ def test_second_open_lockbox_raises_json_already_shows_consumed(tmp_path: Path):
         "purpose",
         "alex",
         str(tracking_root),
-        canonical_tracking_root=str(tracking_root),
         lake_root=lake_root,
         registry_root=registry_root,
         min_free_gb=0.0,
@@ -229,7 +230,6 @@ def test_second_open_lockbox_raises_json_already_shows_consumed(tmp_path: Path):
             "purpose",
             "alex",
             str(tracking_root),
-            canonical_tracking_root=str(tracking_root),
             lake_root=lake_root,
             registry_root=registry_root,
             min_free_gb=0.0,
@@ -251,7 +251,6 @@ def test_second_open_lockbox_raises_after_json_revert_because_mlflow_still_has_r
         "purpose",
         "alex",
         str(tracking_root),
-        canonical_tracking_root=str(tracking_root),
         lake_root=lake_root,
         registry_root=registry_root,
         min_free_gb=0.0,
@@ -270,7 +269,6 @@ def test_second_open_lockbox_raises_after_json_revert_because_mlflow_still_has_r
             "purpose",
             "alex",
             str(tracking_root),
-            canonical_tracking_root=str(tracking_root),
             lake_root=lake_root,
             registry_root=registry_root,
             min_free_gb=0.0,
@@ -308,7 +306,6 @@ def test_open_lockbox_propagates_mlflow_query_error_never_treats_as_not_consumed
             "purpose",
             "alex",
             str(tracking_root),
-            canonical_tracking_root=str(tracking_root),
             lake_root=lake_root,
             registry_root=registry_root,
             min_free_gb=0.0,
@@ -329,7 +326,6 @@ def _open(token_id, registry_root, lake_root, tracking_root):
         "purpose",
         "alex",
         str(tracking_root),
-        canonical_tracking_root=str(tracking_root),
         lake_root=lake_root,
         registry_root=registry_root,
         min_free_gb=0.0,
@@ -381,6 +377,10 @@ def test_tracking_root_without_an_existing_store_is_refused_not_created(tmp_path
     )
     other_root = tmp_path / "some_other_dir"
     other_root.mkdir()
+    # This test is about the STORE-SHAPE refusal, so make the odd root the
+    # canonical one: otherwise the pin refuses it first and the shape check
+    # never runs (WR-04 moved the pin's source to the env var).
+    os.environ[MLFLOW_TRACKING_ROOT_ENV] = str(other_root)
 
     with pytest.raises(LockboxTokenError, match="mlflow.db"):
         _open("lb-wr06-root", registry_root, lake_root, other_root)
@@ -439,6 +439,8 @@ def test_a_store_that_is_not_an_mlflow_store_is_refused_not_read_as_unconsumed(
     fake_root.mkdir()
     make_store(fake_root / "mlflow.db")
     before = (fake_root / "mlflow.db").read_bytes()
+    # As above: the pin would refuse this root first, hiding the shape check.
+    os.environ[MLFLOW_TRACKING_ROOT_ENV] = str(fake_root)
 
     with pytest.raises(LockboxTokenError, match="not an initialised MLflow store"):
         _open("lb-wr12-store", registry_root, lake_root, fake_root)
@@ -495,7 +497,6 @@ def test_a_different_but_valid_mlflow_store_is_refused(tmp_path: Path):
             "purpose",
             "alex",
             str(other_root),
-            canonical_tracking_root=str(tracking_root),
             lake_root=lake_root,
             registry_root=registry_root,
             min_free_gb=0.0,
@@ -511,13 +512,15 @@ def test_a_different_but_valid_mlflow_store_is_refused(tmp_path: Path):
 
 
 def test_the_pin_defaults_to_the_projects_canonical_tracking_root(tmp_path: Path):
-    """No `canonical_tracking_root=` means the real one -- a caller cannot
-    reach a throwaway store by simply not mentioning it."""
+    """With no `AIHF_MLFLOW_TRACKING_ROOT` set, the canonical store is the
+    project's own -- a caller cannot reach a throwaway store by simply saying
+    nothing about it."""
     from data.lake_paths import DEFAULT_MLFLOW_TRACKING_ROOT
 
     registry_root, lake_root, tracking_root, _m, _t = _build_segment(
         tmp_path, token_id="lb-pin-002"
     )
+    os.environ.pop(MLFLOW_TRACKING_ROOT_ENV, None)
     assert Path(tracking_root).resolve() != Path(DEFAULT_MLFLOW_TRACKING_ROOT)
     with pytest.raises(LockboxTokenError, match="canonical MLflow store"):
         open_lockbox(
@@ -549,7 +552,6 @@ def test_the_pin_compares_resolved_paths(tmp_path: Path):
         "purpose",
         "alex",
         spelled,
-        canonical_tracking_root=str(tracking_root),
         lake_root=lake_root,
         registry_root=registry_root,
         min_free_gb=0.0,
@@ -612,3 +614,72 @@ def test_a_held_lock_says_whether_the_holder_is_still_alive(tmp_path: Path):
     assert json.loads(tp.read_text())["consumed_at"] is None, (
         "a refused open must not have stamped the token"
     )
+
+
+# --- 03-REVIEW-FOLLOWUPS.md WR-04: the pin is configurable, not opt-out -----
+
+
+def test_the_canonical_tracking_root_is_overridable_by_env_var(tmp_path: Path):
+    """`DEFAULT_MLFLOW_TRACKING_ROOT` was a hard-coded absolute path with no
+    override, so on any other host, any CI runner, or after the external
+    volume was remounted under a different name, EVERY `open_lockbox` raised
+    before the token was even read. Fail-closed, but a single-machine binding
+    of the lockbox recorded nowhere but that constant."""
+    import os
+
+    from data.lake_paths import mlflow_tracking_root
+
+    registry_root, lake_root, tracking_root, _m, _t = _build_segment(
+        tmp_path, token_id="lb-env-001"
+    )
+    os.environ[MLFLOW_TRACKING_ROOT_ENV] = str(tracking_root)
+    assert mlflow_tracking_root() == Path(tracking_root).resolve()
+
+    df = open_lockbox(
+        "lb-env-001",
+        "purpose",
+        "alex",
+        str(tracking_root),
+        lake_root=lake_root,
+        registry_root=registry_root,
+        min_free_gb=0.0,
+    )
+    assert df.height == 3
+
+
+def test_open_lockbox_has_no_public_canonical_tracking_root_keyword():
+    """The override was a PUBLIC parameter threaded straight to the pin, with
+    nothing but a docstring saying "tests inject this; nothing else may". One
+    keyword restored exactly the pre-fix behaviour the pin was written to
+    remove: query some other store, get "never consumed", log the access run
+    there."""
+    import inspect
+
+    parameters = inspect.signature(open_lockbox).parameters
+    assert "canonical_tracking_root" not in parameters
+    assert not [p for p in parameters if p.startswith("canonical")]
+
+
+def test_an_env_var_pointing_somewhere_else_still_refuses_a_foreign_store(
+    tmp_path: Path,
+):
+    """Making the pin configurable must not make it optional: a tracking root
+    that is not the configured canonical one is still refused."""
+    import os
+
+    registry_root, lake_root, tracking_root, _m, _t = _build_segment(
+        tmp_path, token_id="lb-env-002"
+    )
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    os.environ[MLFLOW_TRACKING_ROOT_ENV] = str(elsewhere)
+    with pytest.raises(LockboxTokenError, match="canonical MLflow store"):
+        open_lockbox(
+            "lb-env-002",
+            "purpose",
+            "alex",
+            str(tracking_root),
+            lake_root=lake_root,
+            registry_root=registry_root,
+            min_free_gb=0.0,
+        )

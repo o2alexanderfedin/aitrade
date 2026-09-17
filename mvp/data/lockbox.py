@@ -214,7 +214,7 @@ def _require_initialised_mlflow_store(store_file: Path) -> None:
         )
 
 
-def _require_canonical_tracking_root(tracking_root: str, allowed_root: str) -> None:
+def _require_canonical_tracking_root(tracking_root: str, allowed_root: Path) -> None:
     """Refuse a `tracking_root` that is not the project's canonical MLflow
     store (03-REVIEW-ITER2.md WR-12 remainder).
 
@@ -226,8 +226,9 @@ def _require_canonical_tracking_root(tracking_root: str, allowed_root: str) -> N
     one-look barrier now verifies it is reading the store it claims to.
 
     Compared after `Path.resolve()` on both sides, so `/tmp` vs
-    `/private/tmp` and a trailing slash are the same root. Tests inject
-    `allowed_root=tmp_path`; nothing else may.
+    `/private/tmp`, a trailing slash, and a symlink to the real store are
+    the same root. `allowed_root` is resolved by
+    `lake_paths.mlflow_tracking_root()` before it gets here.
     """
     resolved = Path(tracking_root).resolve()
     allowed = Path(allowed_root).resolve()
@@ -260,13 +261,22 @@ def _mlflow_has_consumed(
     fail-open. The check runs before any MLflow object is constructed.
 
     Also refuses a `tracking_root` that is not the project's CANONICAL
-    MLflow store (`allowed_root`, default
-    `lake_paths.DEFAULT_MLFLOW_TRACKING_ROOT`; 03-REVIEW-ITER2.md WR-12
-    remainder). "Initialised MLflow store" is not enough: any other
-    project's perfectly valid store answers "never consumed" about a token
-    it has never heard of, and the access run is then logged there, so the
-    durable record never reaches the real one. Tests inject
-    `allowed_root=tmp_path`; nothing else may.
+    MLflow store (03-REVIEW-ITER2.md WR-12 remainder). "Initialised MLflow
+    store" is not enough: any other project's perfectly valid store answers
+    "never consumed" about a token it has never heard of, and the access run
+    is then logged there, so the durable record never reaches the real one.
+
+    The canonical root comes from `lake_paths.mlflow_tracking_root()`:
+    `$AIHF_MLFLOW_TRACKING_ROOT` if set, else
+    `DEFAULT_MLFLOW_TRACKING_ROOT`. `allowed_root` is a MODULE-PRIVATE
+    parameter on a module-private function and is not reachable from the
+    public API -- `open_lockbox` no longer has a
+    `canonical_tracking_root=` keyword at all (03-REVIEW-FOLLOWUPS.md
+    WR-04: one keyword on the public signature restored exactly the pre-fix
+    behaviour the pin was written to remove, and nothing but a docstring
+    said not to use it). A host whose store lives elsewhere sets the
+    documented environment variable, which is a configuration decision
+    rather than a per-call escape hatch.
 
     Any exception raised by `MlflowClient(...)`, `.search_experiments()`, or
     `.search_runs()` PROPAGATES UNMODIFIED -- `False` here means "the query
@@ -279,10 +289,7 @@ def _mlflow_has_consumed(
     still catches it. Documented in `data/lockbox_POLICY.md`.
     """
     _require_canonical_tracking_root(
-        tracking_root,
-        allowed_root
-        if allowed_root is not None
-        else lake_paths.DEFAULT_MLFLOW_TRACKING_ROOT,
+        tracking_root, lake_paths.mlflow_tracking_root(allowed_root)
     )
     store_file = Path(tracking_root).resolve() / "mlflow.db"
     if not store_file.exists():
@@ -381,7 +388,6 @@ def open_lockbox(
     lake_root: Path | None = None,
     registry_root: Path | None = None,
     min_free_gb: float = DEFAULT_MIN_FREE_GB,
-    canonical_tracking_root: str | None = None,
 ) -> pl.DataFrame:
     """One-look unlock: resolve the token's segment manifest and return its
     rows exactly once.
@@ -444,7 +450,6 @@ def open_lockbox(
             lake_root=lake_root,
             registry_root=registry_root,
             min_free_gb=min_free_gb,
-            canonical_tracking_root=canonical_tracking_root,
         )
     finally:
         lock_path.unlink(missing_ok=True)
@@ -460,14 +465,11 @@ def _open_locked(
     lake_root: Path | None,
     registry_root: Path | None,
     min_free_gb: float,
-    canonical_tracking_root: str | None = None,
 ) -> pl.DataFrame:
     """Steps 3-8 of `open_lockbox`, run while holding the token's open lock."""
 
     # (3) DURABLE check first -- query error propagates uncaught.
-    if _mlflow_has_consumed(
-        token_id, tracking_root, allowed_root=canonical_tracking_root
-    ):
+    if _mlflow_has_consumed(token_id, tracking_root):
         raise LockboxTokenError(
             f"token {token_id} already consumed (MLflow record found for "
             "tags.lockbox_token_id) -- refusing second look"
