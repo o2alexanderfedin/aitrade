@@ -220,8 +220,10 @@ def test_sanctioned_docs_and_allowlisted_test_files_are_exempt(
 
 def test_scanning_zero_files_is_a_failure(tmp_path: Path, monkeypatch, capsys):
     root = tmp_path / "mvp"
-    (root / "__pycache__").mkdir(parents=True)
-    (root / "__pycache__" / "only.py").write_text("X = 1\n")
+    # Only the root `.venv` is pruned wholesale; a `__pycache__/only.py` is
+    # code-shaped and scanned since 03-REVIEW-ITER3.md IN-17.
+    (root / ".venv").mkdir(parents=True)
+    (root / ".venv" / "only.py").write_text("X = 1\n")
     monkeypatch.setattr(tool, "PKG_ROOT", root)
     assert tool.main() == 1
     assert "0 files" in capsys.readouterr().out
@@ -302,3 +304,102 @@ def test_real_tree_passes(capsys):
     assert tool.main() == 0
     out = capsys.readouterr().out
     assert "scanned" in out
+
+
+# --- 03-REVIEW-ITER3.md IN-17: the remaining classification corners --------
+
+LOCKBOX_LS = b"ls /Volumes/ProjectsSSD/aihedgefund/lake/lockbox/\n"
+
+
+@pytest.mark.parametrize(
+    ("label", "rel", "payload"),
+    [
+        (
+            "PEP 723 uv script shebang",
+            "scripts/agent/reopen",
+            b"#!/usr/bin/env -S uv run --script\n# /// script\n# ///\n"
+            + MONKEYPATCH_BODY.encode(),
+        ),
+        (
+            "uv run shebang without a metadata block",
+            "scripts/agent/reopen2",
+            b"#!/usr/bin/env -S uv run --script\n" + MONKEYPATCH_BODY.encode(),
+        ),
+        (
+            "PEP 723 inline metadata without a shebang (`uv run --script file`)",
+            "scripts/agent/reopen.txt",
+            b"# /// script\n# dependencies = []\n# ///\n" + MONKEYPATCH_BODY.encode(),
+        ),
+        (
+            "UTF-8 BOM before a python shebang",
+            "scripts/agent/reopen",
+            b"\xef\xbb\xbf#!/usr/bin/env python3\n" + MONKEYPATCH_BODY.encode(),
+        ),
+        (
+            "python under a nested .hypothesis directory",
+            "scripts/.hypothesis/x.py",
+            MONKEYPATCH_BODY.encode(),
+        ),
+        (
+            "python under a nested __pycache__ directory",
+            "scripts/__pycache__/x.py",
+            MONKEYPATCH_BODY.encode(),
+        ),
+        (
+            "shell script with a NUL byte (sh, zsh and bash 3.2 still run it)",
+            "scripts/agent/peek.sh",
+            b"#!/bin/bash\n\x00\n" + LOCKBOX_LS,
+        ),
+        (
+            "extensionless shell script with a NUL byte",
+            "scripts/agent/peek",
+            b"#!/bin/sh\n# \x00\n" + LOCKBOX_LS,
+        ),
+    ],
+)
+def test_in17_classification_corners_fail_closed(
+    tmp_path: Path, monkeypatch, capsys, label: str, rel: str, payload: bytes
+):
+    root = _tree(tmp_path / "mvp", CLEAN)
+    target = root / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(payload)
+    monkeypatch.setattr(tool, "PKG_ROOT", root)
+    assert tool.main() == 1, f"{label}: not flagged"
+    assert rel in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("label", "rel", "payload"),
+    [
+        (
+            "UTF-8 BOM python source (CPython runs it)",
+            "data/bom.py",
+            b"\xef\xbb\xbfX = 1\n",
+        ),
+        (
+            "hypothesis example database entry (opaque bytes)",
+            ".hypothesis/examples/0a1b/2c3d",
+            b"\x00\xe9\x81 not code lockbox/ \xff",
+        ),
+        (
+            "compiled bytecode naming the path (only its source is code)",
+            "tests/lockbox/__pycache__/test_containment.cpython-313.pyc",
+            b"\xf3\r\r\n\x00\x00" + LOCKBOX_LS,
+        ),
+        (
+            "pytest cache listing a sanctioned test id",
+            ".pytest_cache/v/cache/nodeids",
+            b'["tests/lockbox/test_containment.py::test_x"]\n',
+        ),
+    ],
+)
+def test_in17_no_false_positive_on_bom_and_opaque_caches(
+    tmp_path: Path, monkeypatch, capsys, label: str, rel: str, payload: bytes
+):
+    root = _tree(tmp_path / "mvp", CLEAN)
+    target = root / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(payload)
+    monkeypatch.setattr(tool, "PKG_ROOT", root)
+    assert tool.main() == 0, f"{label}: {capsys.readouterr().out}"

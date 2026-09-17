@@ -46,16 +46,30 @@ that agent-proofing -- a sandbox that never mounts the lockbox -- is Phase
 
 FAIL-CLOSED WHERE THE SCAN ITSELF CANNOT LOOK (CR-07): a text file that is
 not valid UTF-8 and a Python file that does not parse are violations
-("containment unprovable"), never silently skipped. Only a file with a NUL
-byte in its first 8 KiB is treated as binary and skipped (the parquet
-fixtures; Python refuses source containing NUL bytes, and so does a shell).
-Python is AST-scanned in `*.py`, `*.pyw`, `*.ipy` and any file whose first
-line is a `#!...python` shebang.
+("containment unprovable"), never silently skipped. A file with a NUL byte
+in its first 8 KiB is binary, and binary is NOT a pass (03-REVIEW-ITER3.md
+IN-17): it is decoded as Latin-1 (every byte maps to one character, nothing
+can fail) and text-scanned for the lockbox path. Python refuses source
+containing a NUL byte, and so does bash 5, but `sh`, `zsh` and macOS's
+system bash 3.2 run such a script, so the NUL sniff cannot mean "not code".
+Python is AST-scanned in `*.py`, `*.pyw`, `*.ipy`, any file whose first line
+(after an optional UTF-8 BOM, which CPython also accepts) is a shebang naming
+`python`, `uv run`, `uvx` or `pipx run`, and any file carrying a PEP 723
+`# /// script` block (`uv run --script <file>` runs it whatever its name).
+
+CACHE DIRECTORIES (IN-17): `.venv` and `.git` directly under the package
+root are pruned (third-party code and git objects). Every other tool-cache
+directory (`__pycache__`, `.pytest_cache`, `.ruff_cache`, `.mypy_cache`,
+`.hypothesis`, and a nested `.venv`/`.git`), AT ANY DEPTH, is descended, and
+every file in it that is CODE-SHAPED (Python as above, a shell suffix, or
+any shebang) is scanned like any other file. Only its opaque content
+(bytecode, example databases, cache listings that name sanctioned test ids)
+is skipped: saving a script under `scripts/.hypothesis/` no longer hides it.
 
 PATH RESOLUTION RULE: `PKG_ROOT = Path(__file__).resolve().parents[1]`
 anchors every on-disk path scanned by `main()`. Exclusion is decided on the
 path RELATIVE to `PKG_ROOT` (03-REVIEW.md WR-08): only cache/venv
-directories (`PRUNE_DIRNAMES`) are skipped -- never a `/tests/` substring of
+directories are skipped (see CACHE DIRECTORIES above) -- never a `/tests/` substring of
 the absolute path, which silently exempted an entire checkout living under
 any `.../tests/...` directory. Since CR-07 the top-level `tests/` directory
 is scanned too, except the exact files in `SANCTIONED_TEST_FILES`. A scan that finds zero files
@@ -89,7 +103,7 @@ never looked at what happened to the imported module object):
    Importing and calling PUBLIC names (`open_lockbox`, `issue_token`,
    `LockboxTokenError`, `token_path`) is the sanctioned usage.
 3. Every other text file (notebook JSON as a whole, `.sh`, `.toml`, `.json`,
-   `.yaml`, `.md`, `Dockerfile`, ...; binary files are skipped) is scanned
+   `.yaml`, `.md`, `Dockerfile`, ...; binary files as Latin-1) is scanned
    line by line with `TEXT_LOCKBOX_PATH_RE`, which requires a path
    separator adjacent to the segment -- so prose saying "the lockbox" is
    not a finding, `lake/lockbox/...` is. Notebook `%magic`/`!shell` lines
@@ -121,7 +135,13 @@ from pathlib import Path
 
 PKG_ROOT = Path(__file__).resolve().parents[1]
 
-PRUNE_DIRNAMES = frozenset(
+#: Pruned ONLY as direct children of PKG_ROOT (IN-17): the project env and
+#: git's object store.
+ROOT_PRUNE_DIRNAMES = frozenset({".venv", ".git"})
+
+#: Tool-cache directories: at any depth only their CODE-SHAPED files are
+#: scanned; their opaque, machine-written content is skipped (IN-17).
+CACHE_DIRNAMES = frozenset(
     {
         ".venv",
         "__pycache__",
@@ -132,6 +152,17 @@ PRUNE_DIRNAMES = frozenset(
         ".hypothesis",  # gitignored example database (binary, machine-written)
     }
 )
+
+#: Suffixes of shell scripts (code-shaped inside a cache directory).
+SHELL_SUFFIXES = frozenset({".sh", ".bash", ".zsh", ".ksh", ".fish"})
+
+#: Shebang interpreters that run the file as Python.
+PYTHON_SHEBANG_RE = re.compile(r"python|\buvx?\b.*\brun\b|\buvx\b|\bpipx\s+run\b")
+
+#: PEP 723 inline script metadata opener.
+PEP723_BLOCK_RE = re.compile(r"^# /// script\s*$", re.MULTILINE)
+
+_BOM = "\ufeff"
 
 #: Top-level directories (relative to PKG_ROOT) excluded from the scan. Empty
 #: since 03-REVIEW-ITER2.md CR-07: `tests/` is scanned like everything else,
@@ -357,7 +388,7 @@ def scan_source(source: str, filename: str) -> list[Violation]:
     """Scan one Python source for lockbox path literals and for any resolved
     access to `data.lockbox`'s internals (module docstring, rules 1-2).
     `filename` is the repo-relative path; it anchors relative imports."""
-    tree = ast.parse(source, filename=filename)
+    tree = ast.parse(source.removeprefix(_BOM), filename=filename)
     docstring_ids = _docstring_nodes(tree)
     bindings = _Bindings(tree, filename)
     found: dict[tuple[int, str], Violation] = {}
@@ -480,13 +511,20 @@ def _excluded(rel: Path) -> bool:
     parts = rel.parts
     if parts and parts[0] in EXCLUDED_TOP_LEVEL_DIRS:
         return True
-    return any(part in PRUNE_DIRNAMES for part in parts)
+    return bool(parts) and parts[0] in ROOT_PRUNE_DIRNAMES
+
+
+def _in_cache_dir(rel: Path) -> bool:
+    return any(part in CACHE_DIRNAMES for part in rel.parts[:-1])
 
 
 def _iter_files(root: Path) -> list[Path]:
     files: list[Path] = []
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(d for d in dirnames if d not in PRUNE_DIRNAMES)
+        at_root = Path(dirpath) == root
+        dirnames[:] = sorted(
+            d for d in dirnames if not (at_root and d in ROOT_PRUNE_DIRNAMES)
+        )
         for fname in sorted(filenames):
             path = Path(dirpath) / fname
             if not _excluded(path.relative_to(root)):
@@ -494,21 +532,36 @@ def _iter_files(root: Path) -> list[Path]:
     return files
 
 
-def _read_bytes_as_text(path: Path) -> tuple[str | None, bool]:
-    """`(text, is_binary)`. A NUL byte in the first 8 KiB means binary
-    (`(None, True)`); otherwise the file must decode as UTF-8, else
+def _read_bytes_as_text(path: Path) -> tuple[str, bool]:
+    """`(text, is_binary)`. A NUL byte in the first 8 KiB means binary: the
+    bytes are decoded as Latin-1, which cannot fail, and still scanned
+    (IN-17). Otherwise the file must decode as UTF-8, else
     `UnicodeDecodeError` propagates to the caller, which fails the scan."""
     data = path.read_bytes()
     if b"\x00" in data[:_SNIFF_BYTES]:
-        return None, True
+        return data.decode("latin-1"), True
     return data.decode("utf-8"), False
 
 
-def _is_python(path: Path, text: str) -> bool:
+def _is_python(path: Path, text: str, *, is_binary: bool = False) -> bool:
+    """A Python suffix, a Python shebang, or (text files only: a PEP 723
+    block is plain text, and bytecode quoting one is not a script) a PEP 723
+    `# /// script` block."""
     if path.suffix in PYTHON_SUFFIXES:
         return True
-    first_line = text.split("\n", 1)[0]
-    return first_line.startswith("#!") and "python" in first_line
+    first_line = text.removeprefix(_BOM).split("\n", 1)[0]
+    if first_line.startswith("#!") and PYTHON_SHEBANG_RE.search(first_line):
+        return True
+    return not is_binary and PEP723_BLOCK_RE.search(text) is not None
+
+
+def _is_code_shaped(path: Path, text: str, *, is_binary: bool = False) -> bool:
+    """Python (above), a shell suffix, or any shebang."""
+    return (
+        _is_python(path, text, is_binary=is_binary)
+        or path.suffix in SHELL_SUFFIXES
+        or text.removeprefix(_BOM).startswith("#!")
+    )
 
 
 def main() -> int:
@@ -521,9 +574,14 @@ def main() -> int:
         rel = path.relative_to(root).as_posix()
         if rel in SANCTIONED_FILES or rel in SANCTIONED_TEST_FILES:
             continue
+        in_cache = _in_cache_dir(path.relative_to(root))
         try:
             text, is_binary = _read_bytes_as_text(path)
         except UnicodeDecodeError as exc:
+            if in_cache and not _is_code_shaped(
+                path, path.read_bytes().decode("latin-1"), is_binary=True
+            ):
+                continue
             text_count += 1
             all_violations.append(
                 Violation(
@@ -534,9 +592,9 @@ def main() -> int:
                 )
             )
             continue
-        if is_binary or text is None:
+        if in_cache and not _is_code_shaped(path, text, is_binary=is_binary):
             continue
-        if _is_python(path, text):
+        if _is_python(path, text, is_binary=is_binary):
             python_count += 1
             try:
                 all_violations.extend(scan_source(text, rel))
@@ -552,7 +610,7 @@ def main() -> int:
         text_count += 1
         if rel in SANCTIONED_DOCS:
             continue
-        if path.suffix == ".ipynb":
+        if path.suffix == ".ipynb" and not is_binary:
             all_violations.extend(scan_notebook(text, rel))
         else:
             all_violations.extend(scan_text(text, rel))
