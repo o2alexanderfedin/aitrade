@@ -86,6 +86,73 @@ BYPASSES = [
         "from data import lockbox\nvars(lockbox)['_mlflow_has_consumed'] = None\n",
     ),
     ("from-import of a private name", "from data.lockbox import _atomic_write_json\n"),
+    # --- 03-FOLLOWUPS.md item 1: the classes ITER2 CR-07 left open ---------
+    (
+        "LOCKBOX_TIER join (the CR-04 fix exported this constant)",
+        "from data.lockbox import LOCKBOX_TIER\n"
+        "from data.lake_paths import lake_root\n"
+        "import polars as pl\n"
+        "pl.scan_parquet(lake_root() / LOCKBOX_TIER / '**' / '*.parquet')\n",
+    ),
+    (
+        "LOCKBOX_TIER read through the module object",
+        "import data.lockbox as lb\nfrom data.lake_paths import lake_root\n"
+        "tier = lake_root() / lb.LOCKBOX_TIER\n",
+    ),
+    (
+        "LOCKBOX_TIER aliased on import",
+        "from data.lockbox import LOCKBOX_TIER as T\n"
+        "from data.lake_paths import lake_root\n"
+        "p = lake_root() / T\n",
+    ),
+    (
+        "sys.modules store replaces the module",
+        "import sys\nclass Fake: pass\nsys.modules['data.lockbox'] = Fake()\n",
+    ),
+    (
+        "sys.modules del",
+        "import sys\ndel sys.modules['data.lockbox']\n",
+    ),
+    (
+        "sys.modules store with an unresolvable key",
+        "import sys\nimport os\nsys.modules[os.environ['M']] = None\n",
+    ),
+    (
+        "sys.modules.get then private attr",
+        "import sys\n"
+        "lb = sys.modules.get('data.lockbox')\n"
+        "lb._mlflow_has_consumed = lambda *a: False\n",
+    ),
+    (
+        "sys.modules.pop then private attr",
+        "import sys\nlb = sys.modules.pop('data.lockbox')\nlb._atomic_write_json(p, {})\n",
+    ),
+    (
+        "mock.patch.object on a private helper",
+        "from unittest import mock\nimport data.lockbox as lb\n"
+        "with mock.patch.object(lb, '_mlflow_has_consumed', return_value=False):\n"
+        "    pass\n",
+    ),
+    (
+        "patch.object imported bare",
+        "from unittest.mock import patch\nimport data.lockbox as lb\n"
+        "with patch.object(lb, '_mlflow_has_consumed'):\n    pass\n",
+    ),
+    (
+        "mock.patch.object on a PUBLIC entry point",
+        "from unittest import mock\nfrom data import lockbox\n"
+        "with mock.patch.object(lockbox, 'open_lockbox'):\n    pass\n",
+    ),
+    (
+        "mock.patch of a public target string",
+        "from unittest import mock\n"
+        "with mock.patch('data.lockbox.open_lockbox'):\n    pass\n",
+    ),
+    (
+        "patch.dict on the module",
+        "from unittest import mock\nimport data.lockbox as lb\n"
+        "mock.patch.dict(lb.__dict__, {'open_lockbox': None})\n",
+    ),
 ]
 
 
