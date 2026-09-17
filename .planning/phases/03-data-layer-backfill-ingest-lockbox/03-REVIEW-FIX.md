@@ -18,7 +18,9 @@ status: all_fixed
 
 > **Daemon restart required for CR-01 — not performed.** The capture daemon (Run I, PID 75796) is still running the old `RawArchiveWriter`, so the crash→same-day-restart corruption path is still open in production until a human-approved restart. WR-11 (`power.py`, `watchdog.py`) also only takes effect at that restart. The daemon was not stopped, signalled or relaunched. `/Volumes/ProjectsSSD/aihedgefund/capture/` was only read.
 
-> **Six trade days are now paused, so Phase 4 cannot load them without a human decision.** The new probable_loss check (WR-04) pauses the pre-capture trade days 2026-06-07, 07-06, 07-10, 08-19, 08-22 and 08-25. Each one needs either an acknowledgement or a re-measured `max_na_run_ids`. They were deliberately left unacknowledged. **Interpretation:** CONTEXT's "never hard-fail" was read as "never `failed`". probable_loss reports `degraded`, and under the existing pause rule a `degraded` day still pauses. Override if "never hard-fail" was meant to mean "never pause".
+> **[SUPERSEDED 2026-09-17 by commit `66acc2e` — see the follow-up section at the end of this report.]** The paragraph below describes the first version of probable_loss. After re-measuring over all 107 archive days (0 of 857,144 skip runs are both >100 ids and >1 s), the check is now informational and never pauses; all six days load without acknowledgement. Kept for the audit trail.
+>
+> ~~**Six trade days are now paused, so Phase 4 cannot load them without a human decision.** The new probable_loss check (WR-04) pauses the pre-capture trade days 2026-06-07, 07-06, 07-10, 08-19, 08-22 and 08-25. Each one needs either an acknowledgement or a re-measured `max_na_run_ids`. They were deliberately left unacknowledged. **Interpretation:** CONTEXT's "never hard-fail" was read as "never `failed`". probable_loss reports `degraded`, and under the existing pause rule a `degraded` day still pauses. Override if "never hard-fail" was meant to mean "never pause".~~
 
 **Summary:**
 - Findings in scope: 16 (5 Critical, 11 Warning; Info out of scope)
