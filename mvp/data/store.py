@@ -216,6 +216,11 @@ def issue_manifest(
 
     Returns the full manifest dict (including the computed `manifest_id`).
     """
+    if not partitions:
+        raise ValueError(
+            "issue_manifest: no partitions -- a manifest that names nothing "
+            "verifies nothing (03-REVIEW-ITER2.md IN-15)"
+        )
     new_paths = {partition_path_key(p["path"]): p["path"] for p in partitions}
     dataset_dir = Path(registry_root) / "manifests" / dataset
     if new_paths and dataset_dir.exists():

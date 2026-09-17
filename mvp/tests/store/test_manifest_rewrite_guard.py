@@ -429,3 +429,43 @@ def test_issue_manifest_refuses_reuse_of_a_partition_path_under_another_spelling
     rewritten = _write_partition(lake_root, "curated/part-1.parquet", _sample_df(7))
     with pytest.raises(ValueError, match="already"):
         issue_manifest(partitions=[{**rewritten, "path": spelling}], **kwargs)
+
+
+def test_issue_manifest_refuses_an_empty_partition_list(tmp_path: Path):
+    """03-REVIEW-ITER2.md IN-15: a manifest that names nothing verifies nothing."""
+    with pytest.raises(ValueError, match="no partitions"):
+        issue_manifest(
+            dataset="BTCUSDT.trade",
+            symbol="BTCUSDT",
+            stream="trade",
+            tier="curated",
+            schema_version=1,
+            inputs=[],
+            partitions=[],
+            code_hash="deadbeef",
+            registry_root=tmp_path / "registry",
+        )
+
+
+def test_rewrite_check_fails_a_manifest_with_no_partitions(tmp_path: Path, capsys):
+    import json
+
+    lake_root = tmp_path / "lake"
+    lake_root.mkdir()
+    registry_root = tmp_path / "registry"
+    manifest_file = registry_root / "manifests" / "BTCUSDT.trade" / ("e" * 64 + ".json")
+    manifest_file.parent.mkdir(parents=True)
+    manifest_file.write_text(json.dumps({"manifest_id": "e" * 64, "partitions": []}))
+    assert (
+        main(
+            [
+                "--full",
+                "--lake-root",
+                str(lake_root),
+                "--registry-root",
+                str(registry_root),
+            ]
+        )
+        == 1
+    )
+    assert "no partitions" in capsys.readouterr().out

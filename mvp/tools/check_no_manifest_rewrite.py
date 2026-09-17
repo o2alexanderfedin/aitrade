@@ -197,6 +197,9 @@ def main(argv: list[str] | None = None) -> int:
             # Not under PKG_ROOT -- e.g. a test-injected registry_root
             # outside the repo. Print the absolute path rather than raising.
             manifest_label = str(manifest_file)
+        if not manifest.get("partitions"):
+            # 03-REVIEW-ITER2.md IN-15: counted as "checked" while checking nothing.
+            all_bad.append((manifest_label, "<no partitions: verifies nothing>"))
         for bad_path in bad_paths:
             all_bad.append((manifest_label, bad_path))
 
