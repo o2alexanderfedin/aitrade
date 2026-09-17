@@ -55,6 +55,22 @@ DEFAULT_FLUSH_FRAME_EVERY_MESSAGES = 500
 DEFAULT_FLUSH_FRAME_EVERY_SECONDS = 5.0
 
 
+def archive_segment_paths(day_dir: Path, conn_id: str) -> list[Path]:
+    """Every raw-archive file for `conn_id` in one `date=...` directory, in
+    write order: the legacy single-file name `conn_<id>.ndjson.zst` first
+    (written by pre-CR-01 runs, which appended across restarts), then the
+    per-open segments `conn_<id>.<open_ns>.ndjson.zst` in `open_ns` order.
+
+    Each file is an independent zstd stream: decode them one after another,
+    never by concatenating bytes (a crashed segment may end mid-frame)."""
+    day_dir = Path(day_dir)
+    legacy = day_dir / f"conn_{conn_id}.ndjson.zst"
+    segments = sorted(
+        p for p in day_dir.glob(f"conn_{conn_id}.*.ndjson.zst") if p != legacy
+    )
+    return ([legacy] if legacy.exists() else []) + segments
+
+
 class RawArchiveWriter:
     """Appends verbatim wire messages to a zstd-compressed NDJSON archive.
 
@@ -76,6 +92,21 @@ class RawArchiveWriter:
     undecoded by *some* readers to at most one partial frame. Rotation
     (date change) and `close()` both force a final `FLUSH_FRAME` before the
     underlying file handle closes.
+
+    ONE FILE PER PROCESS RUN, NEVER APPEND (03-REVIEW.md CR-01): between two
+    `FLUSH_FRAME`s the file ends in an UNTERMINATED frame. If the process
+    dies without `close()` (SIGKILL, OOM, battery at 0 %) and a restart on
+    the same UTC day reopened that file in append mode, the new frame's
+    magic number would land where the decoder expects the next block header
+    of the unfinished frame, and every standard reader (python-zstandard,
+    `zstd -d`, `tools/reframe_raw_archive.py`) raises `Data corruption
+    detected` from that byte on -- the rest of the day becomes unreadable.
+    So every open creates a NEW segment, `conn_<id>.<open_ns>.ndjson.zst`,
+    with exclusive create (`"xb"`): a crashed run's truncated tail stays
+    exactly as recoverable as a truncated file on its own, and a later run
+    can never be glued onto it. The legacy pre-fix name
+    `conn_<id>.ndjson.zst` is never opened for writing again. Readers
+    enumerate a day's files with `archive_segment_paths`.
     """
 
     def __init__(
@@ -92,6 +123,7 @@ class RawArchiveWriter:
         self._current_date: str | None = None
         self._fh = None
         self._writer = None
+        self.current_path: Path | None = None
         self._messages_since_frame_flush = 0
         self._last_frame_flush_monotonic = 0.0
         self._open_for_today()
@@ -106,8 +138,12 @@ class RawArchiveWriter:
         self._close_writer()
         day_dir = self._archive_dir / f"date={date_str}"
         day_dir.mkdir(parents=True, exist_ok=True)
-        path = day_dir / f"conn_{self._conn_id}.ndjson.zst"
-        self._fh = open(path, "ab")
+        # Exclusive create of a fresh per-open segment -- never "ab" (CR-01,
+        # see class docstring). `time.time_ns()` is 19 digits until 2286, so
+        # lexicographic order of the names is write order.
+        path = day_dir / f"conn_{self._conn_id}.{time.time_ns()}.ndjson.zst"
+        self._fh = open(path, "xb")
+        self.current_path = path
         cctx = zstandard.ZstdCompressor()
         self._writer = cctx.stream_writer(self._fh, closefd=False)
         self._current_date = date_str

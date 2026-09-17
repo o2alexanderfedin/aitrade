@@ -16,7 +16,11 @@ import orjson
 import pytest
 import zstandard
 
-from data.capture.ws_client import StartupLivenessError, run_connection
+from data.capture.ws_client import (
+    StartupLivenessError,
+    archive_segment_paths,
+    run_connection,
+)
 from tests.fixtures.fake_ws_server import DEFAULT_SCRIPT, ScriptedFrame
 from tests.fixtures.payloads import SAMPLE_BOOKTICKER_FRAME, SAMPLE_TRADE_FRAME
 
@@ -35,10 +39,11 @@ def _trade(t: int) -> dict:
 
 def _read_archive_lines(archive_dir: Path, conn_id: str) -> list[dict]:
     today = time.strftime("%Y-%m-%d", time.gmtime())
-    path = archive_dir / f"date={today}" / f"conn_{conn_id}.ndjson.zst"
-    dctx = zstandard.ZstdDecompressor()
-    with open(path, "rb") as fh:
-        raw = dctx.stream_reader(fh, read_across_frames=True).read()
+    raw = b""
+    for path in archive_segment_paths(archive_dir / f"date={today}", conn_id):
+        dctx = zstandard.ZstdDecompressor()
+        with open(path, "rb") as fh:
+            raw += dctx.stream_reader(fh, read_across_frames=True).read()
     lines = [line for line in raw.split(b"\n") if line]
     return [orjson.loads(line) for line in lines]
 
