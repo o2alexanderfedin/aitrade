@@ -165,6 +165,8 @@ def test_token_one_look_red_proof(tmp_path: Path):
     registry_root = tmp_path / "registry"
     tracking_root = tmp_path / "mlflow_root"
     tracking_root.mkdir()
+    # open_lockbox refuses a tracking root with no existing store (WR-06).
+    MlflowClient(build_tracking_uri(str(tracking_root))).search_experiments()
 
     df = pl.DataFrame(
         {"trade_id": [1, 2], "etime": [1_000, 2_000], "price": [1.0, 2.0]}

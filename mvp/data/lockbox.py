@@ -53,10 +53,12 @@ the deliberately safer failure direction.
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 
 import polars as pl
+from mlflow.entities import ViewType
 from mlflow.tracking import MlflowClient
 
 from data import lake_paths
@@ -162,40 +164,69 @@ def issue_token(
 
 def _mlflow_has_consumed(token_id: str, tracking_root: str) -> bool:
     """Return whether any MLflow run, in any experiment at `tracking_root`,
-    carries `tags.lockbox_token_id == token_id`.
+    carries `tags.lockbox_token_id == token_id` -- INCLUDING soft-deleted
+    runs and runs in soft-deleted experiments (`ViewType.ALL`, 03-REVIEW.md
+    WR-06: the MLflow default is `ACTIVE_ONLY`, so deleting the access run
+    from the UI, a routine cleanup, used to re-arm the token).
 
-    Searches ACROSS ALL experiments (not just `lockbox_access`) -- strictly
-    more conservative than scoping to one experiment name, and free at this
-    project's MLflow scale. `MlflowClient().search_runs(...)` is used, never
-    the pandas-returning `mlflow.search_runs()` convenience API (spec.md
-    DONT).
+    Searches ACROSS ALL experiments (not just `lockbox_access`).
+    `MlflowClient().search_runs(...)` is used, never the pandas-returning
+    `mlflow.search_runs()` convenience API (spec.md DONT).
+
+    Refuses (`LockboxTokenError`) a `tracking_root` that does not ALREADY
+    contain `mlflow.db` (WR-06): constructing a client there would silently
+    create a fresh, empty store and answer "never consumed" -- a fail-open.
+    The check runs before any MLflow object is constructed.
 
     Any exception raised by `MlflowClient(...)`, `.search_experiments()`, or
-    `.search_runs()` PROPAGATES UNMODIFIED -- this function never catches a
-    query failure and returns `False`. `False` here means "the query
-    succeeded and found nothing", not "the query could not be run"; an
-    unreachable or reset tracking root must refuse the open, not silently
-    treat it as never-consumed.
+    `.search_runs()` PROPAGATES UNMODIFIED -- `False` here means "the query
+    succeeded and found nothing", never "the query could not be run".
 
-    Residual, honestly-stated gap (not engineered around here): if the
-    tracking root is a FRESH, empty, but otherwise reachable sqlite path
-    (e.g. the mlflow.db file was deleted and MLflow silently recreates an
-    empty store), `search_experiments()` succeeds and returns `[]` -- this
-    is indistinguishable from "genuinely never consumed" by this function.
-    That failure mode requires the JSON stamp to ALSO have been reverted at
-    the same time to actually re-arm a token; either signal alone (a
-    reachable, non-empty tracking root OR an unreverted JSON stamp) still
-    catches it. Documented in `data/lockbox_POLICY.md`.
+    Residual, honestly-stated gap: if the real `mlflow.db` is deleted AND
+    recreated empty (or replaced by another store) AND the token JSON's
+    `consumed_at` stamp is reverted at the same time, this function cannot
+    tell "never consumed" from "history destroyed". Either signal alone
+    still catches it. Documented in `data/lockbox_POLICY.md`.
     """
+    store_file = Path(tracking_root).resolve() / "mlflow.db"
+    if not store_file.exists():
+        raise LockboxTokenError(
+            f"tracking root {tracking_root} has no existing mlflow.db -- refusing "
+            "to create a fresh store and treat the token as never consumed"
+        )
     client = MlflowClient(build_tracking_uri(str(tracking_root)))
-    experiment_ids = [exp.experiment_id for exp in client.search_experiments()]
+    experiment_ids = [
+        exp.experiment_id for exp in client.search_experiments(view_type=ViewType.ALL)
+    ]
     if not experiment_ids:
         return False
     runs = client.search_runs(
         experiment_ids,
         filter_string=f"tags.lockbox_token_id = '{token_id}'",
+        run_view_type=ViewType.ALL,
     )
     return len(runs) > 0
+
+
+def _acquire_open_lock(path: Path, token_id: str) -> Path:
+    """Exclusive-create `<token>.lock` beside the token JSON for the whole
+    check-then-stamp-then-read sequence (03-REVIEW.md WR-06: two concurrent
+    callers could both pass the consumed checks). A leftover lock after a
+    crash fails CLOSED: the human confirms the token's MLflow record and
+    removes it."""
+    lock_path = path.with_suffix(".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    except FileExistsError:
+        raise LockboxTokenError(
+            f"an open of token {token_id} is already in progress (lock file "
+            f"{lock_path} exists); if no other process holds it, confirm the "
+            "token's MLflow record before removing the stale lock"
+        ) from None
+    with os.fdopen(fd, "w") as fh:
+        fh.write(f"pid={os.getpid()} at={time.time_ns()}\n")
+    return lock_path
 
 
 def open_lockbox(
@@ -214,7 +245,9 @@ def open_lockbox(
     Order of operations (exact, per 03-RESEARCH.md Pitfall 4 -- do not
     reorder):
 
-    1. Read the token file; raise `LockboxTokenError` if absent.
+    1. Read the token file; raise `LockboxTokenError` if absent. Then take
+       an exclusive `<token>.lock` for everything below (WR-06), released on
+       exit.
     2. Verify `requested_by` matches the token's own stored `requested_by`
        -- an identity check beyond CONTEXT.md's literal spec (Rule 2:
        missing critical -- the token names who it was issued to; silently
@@ -253,6 +286,35 @@ def open_lockbox(
             f"{token['requested_by']!r}, not {requested_by!r} -- refusing "
             "to open"
         )
+
+    lock_path = _acquire_open_lock(path, token_id)
+    try:
+        return _open_locked(
+            token_id,
+            token,
+            path,
+            purpose,
+            tracking_root,
+            lake_root=lake_root,
+            registry_root=registry_root,
+            min_free_gb=min_free_gb,
+        )
+    finally:
+        lock_path.unlink(missing_ok=True)
+
+
+def _open_locked(
+    token_id: str,
+    token: dict,
+    path: Path,
+    purpose: str,
+    tracking_root: str,
+    *,
+    lake_root: Path | None,
+    registry_root: Path | None,
+    min_free_gb: float,
+) -> pl.DataFrame:
+    """Steps 3-8 of `open_lockbox`, run while holding the token's open lock."""
 
     # (3) DURABLE check first -- query error propagates uncaught.
     if _mlflow_has_consumed(token_id, tracking_root):

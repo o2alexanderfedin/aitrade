@@ -102,8 +102,17 @@ would make "every look appears in a diff" false):
 ...)`:
 
 - Verifies `requested_by` against the token's own stored value.
+- Holds an exclusive `<token_id>.lock` (created with `O_EXCL` beside the
+  token JSON) for the whole check-stamp-read sequence, so two concurrent
+  opens cannot both pass the checks. A stale lock after a crash fails
+  closed: confirm the token's MLflow record, then remove it by hand.
+- Refuses a `tracking_root` that does not already contain `mlflow.db`
+  (pointing the call at any other directory used to create a fresh, empty
+  store there and answer "never consumed").
 - Checks consumption **MLflow-first**: `MlflowClient().search_runs(...)`
-  across every experiment at `tracking_root`, filtered to
+  across every experiment at `tracking_root`, **including soft-deleted runs
+  and experiments** (`ViewType.ALL` -- MLflow's default is active-only, so
+  deleting the access run in the UI used to re-arm the token), filtered to
   `tags.lockbox_token_id == token_id`. This is the DURABLE check, queried
   BEFORE the JSON's own `consumed_at` field, because a same-uid
   `git checkout -- <token>.json` can silently revert the JSON stamp but
@@ -123,12 +132,12 @@ would make "every look appears in a diff" false):
   call -- tagged with all 8 mandatory keys plus `lockbox_access="true"`,
   `lockbox_token_id`, `lockbox_purpose`.
 
-**Residual, honestly-stated gap:** if the MLflow tracking root is a FRESH,
-empty-but-reachable sqlite store (e.g. `mlflow.db` was deleted and MLflow
-silently recreates an empty one) AND the token JSON's `consumed_at` stamp
-was simultaneously reverted, the two signals together would be
-indistinguishable from "never consumed." Either signal alone (a reachable,
-non-empty tracking root OR an unreverted JSON stamp) still catches it.
+**Residual, honestly-stated gap:** if the real `mlflow.db` is deleted and
+replaced by an empty (or different) store, or its rows are purged with
+`mlflow gc`, AND the token JSON's `consumed_at` stamp is simultaneously
+reverted, the two signals together are indistinguishable from "never
+consumed." Either signal alone (an intact tracking store OR an unreverted
+JSON stamp) still catches it.
 
 ## Agent containment (PITFALLS #14)
 

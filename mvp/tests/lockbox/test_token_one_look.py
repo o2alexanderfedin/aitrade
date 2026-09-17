@@ -51,6 +51,15 @@ def _write_lockbox_partition(lake_root: Path, rel_path: str, df: pl.DataFrame) -
     }
 
 
+def _seed_tracking_db(tracking_root: Path) -> None:
+    """Create the MLflow sqlite store at `tracking_root`, as the real
+    `/Volumes/ProjectsSSD/aihedgefund/mlflow/mlflow.db` already exists.
+    `open_lockbox` refuses a tracking root WITHOUT an existing store
+    (03-REVIEW.md WR-06) -- silently creating one there is a fail-open."""
+    MlflowClient(build_tracking_uri(str(tracking_root))).search_experiments()
+    assert (tracking_root / "mlflow.db").exists()
+
+
 def _build_segment(tmp_path: Path, *, token_id: str = "lb-001"):
     """Build a synthetic (readable) lockbox segment: a manifest + partition,
     and a matching, unconsumed token. Returns
@@ -59,6 +68,7 @@ def _build_segment(tmp_path: Path, *, token_id: str = "lb-001"):
     registry_root = tmp_path / "registry"
     tracking_root = tmp_path / "mlflow_root"
     tracking_root.mkdir()
+    _seed_tracking_db(tracking_root)
 
     df = pl.DataFrame(
         {
@@ -291,4 +301,91 @@ def test_open_lockbox_propagates_mlflow_query_error_never_treats_as_not_consumed
     # Refused, not silently proceeded: the token must still show unconsumed
     # (open_lockbox never reached the stamping step).
     on_disk = json.loads(token_path("lb-006", registry_root=registry_root).read_text())
+    assert on_disk["consumed_at"] is None
+
+
+# --- WR-06 (03-REVIEW.md): the durable one-look record cannot be dodged -----
+
+
+def _open(token_id, registry_root, lake_root, tracking_root):
+    return open_lockbox(
+        token_id,
+        "purpose",
+        "alex",
+        str(tracking_root),
+        lake_root=lake_root,
+        registry_root=registry_root,
+        min_free_gb=0.0,
+    )
+
+
+def _revert_json_stamp(token_id: str, registry_root: Path) -> None:
+    tp = token_path(token_id, registry_root=registry_root)
+    body = json.loads(tp.read_text())
+    body["consumed_at"] = None
+    body["mlflow_run_id"] = None
+    tp.write_text(json.dumps(body, sort_keys=True, indent=2))
+
+
+def test_soft_deleted_lockbox_run_still_counts_as_consumed(tmp_path: Path):
+    registry_root, lake_root, tracking_root, _m, _t = _build_segment(
+        tmp_path, token_id="lb-wr06-run"
+    )
+    _open("lb-wr06-run", registry_root, lake_root, tracking_root)
+    client = MlflowClient(build_tracking_uri(str(tracking_root)))
+    run_id = json.loads(
+        token_path("lb-wr06-run", registry_root=registry_root).read_text()
+    )["mlflow_run_id"]
+    client.delete_run(run_id)  # routine cleanup from the MLflow UI
+    _revert_json_stamp("lb-wr06-run", registry_root)
+
+    with pytest.raises(LockboxTokenError, match="MLflow record"):
+        _open("lb-wr06-run", registry_root, lake_root, tracking_root)
+
+
+def test_soft_deleted_lockbox_experiment_still_counts_as_consumed(tmp_path: Path):
+    registry_root, lake_root, tracking_root, _m, _t = _build_segment(
+        tmp_path, token_id="lb-wr06-exp"
+    )
+    _open("lb-wr06-exp", registry_root, lake_root, tracking_root)
+    client = MlflowClient(build_tracking_uri(str(tracking_root)))
+    client.delete_experiment(
+        client.get_experiment_by_name("lockbox_access").experiment_id
+    )
+    _revert_json_stamp("lb-wr06-exp", registry_root)
+
+    with pytest.raises(LockboxTokenError, match="MLflow record"):
+        _open("lb-wr06-exp", registry_root, lake_root, tracking_root)
+
+
+def test_tracking_root_without_an_existing_store_is_refused_not_created(tmp_path: Path):
+    registry_root, lake_root, _tracking_root, _m, _t = _build_segment(
+        tmp_path, token_id="lb-wr06-root"
+    )
+    other_root = tmp_path / "some_other_dir"
+    other_root.mkdir()
+
+    with pytest.raises(LockboxTokenError, match="mlflow.db"):
+        _open("lb-wr06-root", registry_root, lake_root, other_root)
+
+    assert not (other_root / "mlflow.db").exists()
+    on_disk = json.loads(
+        token_path("lb-wr06-root", registry_root=registry_root).read_text()
+    )
+    assert on_disk["consumed_at"] is None
+
+
+def test_concurrent_open_is_refused_while_another_open_holds_the_lock(tmp_path: Path):
+    registry_root, lake_root, tracking_root, _m, _t = _build_segment(
+        tmp_path, token_id="lb-wr06-lock"
+    )
+    lock = token_path("lb-wr06-lock", registry_root=registry_root).with_suffix(".lock")
+    lock.write_text("held by another process\n")
+
+    with pytest.raises(LockboxTokenError, match="in progress"):
+        _open("lb-wr06-lock", registry_root, lake_root, tracking_root)
+
+    on_disk = json.loads(
+        token_path("lb-wr06-lock", registry_root=registry_root).read_text()
+    )
     assert on_disk["consumed_at"] is None
