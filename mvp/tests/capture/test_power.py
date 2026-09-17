@@ -205,3 +205,62 @@ def test_watchdog_survives_a_raising_sleep_risk_check(
     wd._tick()  # must not raise
 
     assert ledger.read_all().height == 0
+
+
+# --- WR-11 (03-REVIEW.md): undeterminable power source is never silent ------
+
+_BATT_LAPTOP = (
+    " -InternalBattery-0 (id=1)\t80%; AC attached; not charging present: true\n"
+)
+_BATT_DESKTOP = "Now drawing from 'AC Power'\n"
+
+
+def _runner_codes(outputs: dict[str, tuple[int, str]]):
+    def _run(argv, **_kwargs):
+        code, out = outputs.get(argv[-1], (1, ""))
+        return SimpleNamespace(returncode=code, stdout=out)
+
+    return _run
+
+
+def test_sleep_risk_reports_when_pmset_ps_fails_on_a_battery_host() -> None:
+    risk = power.sleep_risk(
+        _runner_codes({"ps": (1, ""), "batt": (0, _BATT_LAPTOP), "custom": (0, "")})
+    )
+    assert risk is not None and "UNDETERMINABLE" in risk
+
+
+def test_sleep_risk_reports_when_every_pmset_call_fails() -> None:
+    """Cannot even tell whether a battery exists: that is not "checked and
+    safe" either."""
+    assert power.sleep_risk(_runner_codes({})) is not None
+
+
+def test_sleep_risk_reports_an_unrecognised_power_source_string() -> None:
+    risk = power.sleep_risk(
+        _runner_codes(
+            {"ps": (0, "Now drawing from 'UPS Power'\n"), "batt": (0, _BATT_LAPTOP)}
+        )
+    )
+    assert risk is not None and "UNDETERMINABLE" in risk
+
+
+def test_sleep_risk_silent_when_checked_and_there_is_no_battery() -> None:
+    assert (
+        power.sleep_risk(
+            _runner_codes(
+                {
+                    "ps": (0, "Now drawing from 'UPS Power'\n"),
+                    "batt": (0, _BATT_DESKTOP),
+                }
+            )
+        )
+        is None
+    )
+
+
+def test_sleep_risk_silent_on_non_darwin(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Not applicable off macOS (pmset does not exist; the capture host is a
+    Mac) -- documented in the docstring, not a silent 'did not ask'."""
+    monkeypatch.setattr(power.platform, "system", lambda: "Linux")
+    assert power.sleep_risk(_runner_codes({})) is None

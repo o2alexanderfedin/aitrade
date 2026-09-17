@@ -184,8 +184,10 @@ class Watchdog:
         data/capture/power.py for why caffeinate does not cover this.
 
         One row per ongoing risk period, not one per tick, matching every other
-        alarm in this class. Never fatal: a failed `pmset` returns None from
-        `sleep_risk()` and is treated as "nothing to report".
+        alarm in this class. An undeterminable power source is itself a risk
+        (`sleep_risk()` returns a description for it, 03-REVIEW.md WR-11), so
+        a failing `pmset` is ledgered, not silent. Never fatal: an exception
+        from the check is printed and the watchdog keeps ticking.
         """
         try:
             risk = sleep_risk()

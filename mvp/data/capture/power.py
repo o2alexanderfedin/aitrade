@@ -90,19 +90,58 @@ def battery_sleep_disabled(runner=subprocess.run) -> bool | None:
     return False
 
 
+def has_internal_battery(runner=subprocess.run) -> bool | None:
+    """Return True if `pmset -g batt` lists an internal battery, False if it
+    answered and lists none (a desktop Mac), None if it could not be asked
+    or answered nothing usable."""
+    if platform.system() != "Darwin":
+        return None
+    try:
+        result = runner(
+            ["pmset", "-g", "batt"], capture_output=True, text=True, timeout=5
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0 or not result.stdout:
+        return None
+    return "InternalBattery" in result.stdout
+
+
 def sleep_risk(runner=subprocess.run) -> str | None:
     """Return a human-readable description of the host's sleep risk, or None
     when there is none to report.
 
-    Risk exists only when the host is genuinely on battery AND battery sleep
-    has not been disabled at OS level. An undeterminable power source is
-    reported too — silence must mean "checked and safe", never "did not ask".
+    Silence must mean "checked and safe", never "did not ask" (03-REVIEW.md
+    WR-11: the power-source-undeterminable branch used to return None, which
+    recreated the silently-inert failure this module exists to close). On
+    macOS, None is returned only when:
+    - the host is on AC power; or
+    - it is on battery AND `pmset -b disablesleep 1` is in effect; or
+    - the power source could not be read BUT `pmset -g batt` answered and
+      lists no internal battery (a desktop, e.g. on a UPS).
+    Every other case -- on battery with sleep enabled, or a power source that
+    cannot be determined on a host that has (or may have) a battery -- returns
+    a description.
+
+    Off macOS this returns None: `pmset` does not exist there and the
+    battery-sleep failure mode is macOS-specific (the capture host is a Mac;
+    the Linux container deploy has no such risk to report).
     """
+    if platform.system() != "Darwin":
+        return None
+
     on_battery = is_on_battery(runner)
     if on_battery is False:
         return None
     if on_battery is None:
-        return None  # no battery, or not macOS — nothing meaningful to warn about
+        if has_internal_battery(runner) is False:
+            return None  # checked: no internal battery on this host
+        return (
+            "power source UNDETERMINABLE (`pmset -g ps` failed or printed an "
+            "unrecognised source) on a host that has or may have a battery -- "
+            "cannot rule out battery sleep stopping capture. Check "
+            "`pmset -g ps`; fix: plug in, or `sudo pmset -b disablesleep 1`."
+        )
 
     if battery_sleep_disabled(runner) is True:
         return None
