@@ -146,10 +146,12 @@ def test_build_report_rows_for_date_covers_all_six_checks(tmp_path: Path):
     assert checks_seen == {
         ("trade", "gap_coverage"),
         ("trade", "etime_plausibility"),
+        ("trade", "event_time_plausibility"),  # IN-20 (n/a: no column here)
         ("trade", "reconciliation"),
         ("trade", "na_placeholder"),
         ("bookTicker", "gap_coverage"),
         ("bookTicker", "etime_plausibility"),
+        ("bookTicker", "event_time_plausibility"),
         ("bookTicker", "crossed_locked_book"),
         ("bookTicker", "l1_sparsity"),
     }
@@ -158,6 +160,7 @@ def test_build_report_rows_for_date_covers_all_six_checks(tmp_path: Path):
     assert six == {
         "gap_coverage",
         "etime_plausibility",
+        "event_time_plausibility",
         "reconciliation",
         "na_placeholder",
         "crossed_locked_book",
@@ -618,3 +621,85 @@ def test_every_report_row_names_the_manifest_it_scored(tmp_path: Path):
     report = pl.read_parquet(dq_report_path(lake_root, DATE))
     assert report.height > 0
     assert set(report["manifest_id"].to_list()) == {manifest["manifest_id"]}
+
+
+# --- 03-REVIEW-ITER3.md IN-20: event_time gets the etime backstop ------------
+
+
+def _trade_day_with_event_time(lake_root, registry_root, event_times):
+    t0 = 1_789_171_200_000_000_000  # 2026-09-12T00:00:00Z in ns
+    trade_df = pl.DataFrame(
+        {
+            "trade_id": [1, 2],
+            "etime": [t0 + 1_000_000, t0 + 2_000_000],  # correctly scaled
+            "event_time": event_times,
+            "price": [1.0, 1.0],
+        },
+        schema_overrides={"event_time": pl.Int64},
+    )
+    return _issue_and_write_build_stats(
+        lake_root,
+        registry_root,
+        SYMBOL,
+        "trade",
+        DATE,
+        trade_df,
+        build_stats={
+            "chosen_source": "capture",
+            "reconciliation_missing_from_capture": 0,
+            "reconciliation_missing_from_archive": 0,
+            "reconciliation_overlap_rows": 2,
+            "na_placeholder_dropped": 0,
+            "na_placeholder_rate": 0.0,
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    ("event_times", "expected"),
+    [
+        ([1_789_171_200_001_000_000, 1_789_171_200_002_000_000], "ok"),
+        ([1_789_171_200_001, 1_789_171_200_002], "failed"),  # raw ms stored as ns
+        ([None, None], "n/a"),
+    ],
+)
+def test_report_scores_event_time_plausibility(
+    tmp_path: Path, event_times, expected: str
+):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    _trade_day_with_event_time(lake_root, registry_root, event_times)
+    rows = build_report_rows_for_date(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_empty_ledger(),
+    )
+    statuses = _statuses(rows, "trade")
+    assert statuses["etime_plausibility"] == "ok"
+    assert statuses["event_time_plausibility"] == expected
+
+
+def test_wrongly_scaled_event_time_pauses_the_loader(tmp_path: Path):
+    from data.store import DQPauseError, load_curated
+
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    manifest = _trade_day_with_event_time(
+        lake_root, registry_root, [1_789_171_200_001, 1_789_171_200_002]
+    )
+    write_report(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_empty_ledger(),
+    )
+    with pytest.raises(DQPauseError, match="event_time_plausibility=failed"):
+        load_curated(
+            manifest["manifest_id"],
+            f"{SYMBOL}.trade",
+            registry_root=registry_root,
+            lake_root=lake_root,
+        )

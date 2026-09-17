@@ -35,6 +35,7 @@ from data.dq.checks import (
     DQThresholds,
     check_crossed_locked_book,
     check_etime_plausibility,
+    check_event_time_plausibility,
     check_gap_coverage,
     check_l1_sparsity,
     check_na_placeholder,
@@ -161,6 +162,30 @@ def _read_curated(
     return pl.concat(frames, how="vertical")
 
 
+def _event_time_range(manifest: dict, lake_root: Path) -> tuple[int | None, int | None]:
+    """`(min, max)` of the manifest's non-null `event_time` values, or
+    `(None, None)` when its partitions have no such column or no value."""
+    frames = [
+        pl.scan_parquet(Path(lake_root) / part["path"])
+        for part in manifest["partitions"]
+    ]
+    if any("event_time" not in f.collect_schema().names() for f in frames):
+        return None, None
+    bounds = (
+        pl.concat([f.select("event_time") for f in frames], how="vertical")
+        .select(
+            pl.col("event_time").min().alias("lo"),
+            pl.col("event_time").max().alias("hi"),
+        )
+        .collect()
+        .row(0)
+    )
+    return (
+        int(bounds[0]) if bounds[0] is not None else None,
+        int(bounds[1]) if bounds[1] is not None else None,
+    )
+
+
 def build_report_rows_for_date(
     symbol: str,
     date: str,
@@ -217,6 +242,12 @@ def build_report_rows_for_date(
 
         etime_check = check_etime_plausibility(manifest, date, thresholds)
         rows.append({"date": date, "symbol": symbol, "stream": stream, **etime_check})
+        event_time_check = check_event_time_plausibility(
+            _event_time_range(manifest, lake_root), date, thresholds
+        )
+        rows.append(
+            {"date": date, "symbol": symbol, "stream": stream, **event_time_check}
+        )
 
         if archive_sourced_trades:
             if build_stats.get("capture_available"):
@@ -294,6 +325,11 @@ def normalize_row(row: dict) -> dict:
     if "etime_min" in row:
         detail_parts.append(
             f"etime_min={row['etime_min']} etime_max={row['etime_max']}"
+        )
+    if "event_time_min" in row:
+        detail_parts.append(
+            f"event_time_min={row['event_time_min']} "
+            f"event_time_max={row['event_time_max']}"
         )
 
     return {

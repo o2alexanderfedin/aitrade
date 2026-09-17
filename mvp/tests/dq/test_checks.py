@@ -551,3 +551,23 @@ def test_etime_plausibility_pins_the_four_ms_to_ns_scaling_outcomes():
     wrapped = frame.select(pl.col("time") * 1_000_000_000)["time"].to_list()
     assert wrapped != exact
     assert _plausibility_of(wrapped, date) == "failed"
+
+
+# --- 03-REVIEW-ITER3.md IN-20: the same backstop for event_time -------------
+
+
+def test_event_time_plausibility_uses_the_etime_window_and_scales():
+    from data.dq.checks import check_event_time_plausibility
+
+    date = "2026-09-12"
+    ms = _day_of_binance_ms(date).to_list()
+    ns = [t * 1_000_000 for t in ms]
+
+    def status(bounds):
+        return check_event_time_plausibility(bounds, date, THRESHOLDS)["dq_status"]
+
+    assert status((min(ns), max(ns))) == "ok"
+    assert status((min(ms), max(ms))) == "failed"  # conversion forgotten
+    assert status((min(ns) // 1_000, max(ns) // 1_000)) == "failed"  # under
+    assert status((min(ns), max(ns) + 3 * 86_400 * 1_000_000_000)) == "failed"
+    assert status((None, None)) == "n/a"  # no event_time values to judge

@@ -63,10 +63,13 @@ scan):
   (`t_ms * NS_PER_SECOND // 1000`) inside an allowlisted seconds-to-ns file;
 - `getattr`/`eval`/`exec`, notebooks, and anything under `tests/`.
 
-CORRECTNESS IS CARRIED AT RUNTIME by the data gate
-`data.dq.checks.check_etime_plausibility`: every curated manifest's
-`etime_range` must fall inside `[date - 1 day, date + 2 days)` of the day it
-claims, and its `failed` verdict pauses `data.store.load_curated`
+CORRECTNESS IS CARRIED AT RUNTIME by two data gates, for the two ns
+timestamp columns converted from Binance ms: `etime`
+(`data.dq.checks.check_etime_plausibility`: every curated manifest's
+`etime_range`) and `event_time` (`check_event_time_plausibility`, computed
+from the partition; 03-REVIEW-ITER3.md IN-20). Each must fall inside
+`[date - 1 day, date + 2 days)` of the day it claims, and a `failed` verdict
+pauses `data.store.load_curated`
 (`_dq_verdict_for_date` -> `_enforce_dq_pause` -> `DQPauseError`) unless a
 committed acknowledgement names that finding. Measured outcomes for a full
 UTC day of Binance ms timestamps (pinned by
@@ -80,9 +83,12 @@ UTC day of Binance ms timestamps (pinned by
   EXPRESSION -- the ingest path, `ms_to_ns(pl.col("time"))` -- wraps
   silently. The gate still fails it: a day spans 86.4e6 ms, i.e. 8.64e16 ns
   after the wrap, far wider than the 3-day window.
-A wrong scale therefore cannot reach a training run without a human
-acknowledging a `failed` etime_plausibility; what this static check adds is
-early, readable feedback in the common accidental case.
+A wrong scale on `etime` or `event_time` therefore cannot reach a training
+run without a human acknowledging that `failed` finding -- EXCEPT on a day
+still scored by a legacy report without a `manifest_id` column, which
+`data.store` accepts on file mtime (03-REVIEW-ITER3.md WR-18). Any OTHER ms
+field, or a future one, has no data gate until one is added. What this
+static check adds is early, readable feedback in the common accidental case.
 
 SECONDARY CHECK -- seconds-to-ns: legitimate sites convert *seconds* to
 nanoseconds (ttl/threshold/duration config and display, not Binance ms

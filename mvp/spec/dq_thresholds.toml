@@ -16,6 +16,7 @@
 #   (4) crossed_locked_book -- bid_price >= ask_price count (informational)
 #   (5) l1_sparsity         -- max inter-arrival gap in bookTicker etime
 #   (6) etime_plausibility  -- manifest etime_range within [date-1d, date+1d]
+#   (6b) event_time_plausibility -- partition event_time range, same window
 # plus resync_warmup, the post-gap warm-up window duration feeding the
 # resync_windows sidecar (not itself one of the six numbered checks).
 
@@ -131,6 +132,20 @@ fall within [date - 1 day, date + 2 days) -- i.e. the whole of date-1,
 date, and date+1 (a closed three-calendar-day window around `date`,
 generous enough to absorb ordinary rtime/etime skew around midnight
 without ever accepting a manifest that is off by a whole extra day).
+"""
+
+[event_time_plausibility]
+notes = """
+The etime_plausibility window applied to the partition's event_time column
+(03-REVIEW-ITER3.md IN-20): the exchange's event time `E` is converted by
+its own ms_to_ns call at parse time, so a wrong scale there was invisible
+to the etime gate. Manifests do not record an event_time range, so the DQ
+report builder computes [min, max] of the non-null values from the
+partition. Outside [date - 1 day, date + 2 days) is unconditionally
+dq_status="failed" (pauses the loader); n/a when the partition has no
+non-null event_time. rtime is NOT gated: archive-sourced rows carry the
+staged archive file's local mtime (data/ingest/normalize.py), measured
+outside the window on 106 of 111 real days.
 """
 
 [resync_warmup]

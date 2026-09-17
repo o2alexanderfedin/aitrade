@@ -135,6 +135,7 @@ __all__ = [
     "check_crossed_locked_book",
     "check_l1_sparsity",
     "check_etime_plausibility",
+    "check_event_time_plausibility",
 ]
 
 
@@ -200,6 +201,7 @@ class DQThresholds:
     crossed_locked_book: CrossedLockedBookThresholds
     l1_sparsity: L1SparsityThresholds
     etime_plausibility: EtimePlausibilityThresholds
+    event_time_plausibility: EtimePlausibilityThresholds
     resync_warmup: ResyncWarmupConfig
 
 
@@ -223,6 +225,9 @@ def load_dq_thresholds(path: Path = DQ_THRESHOLDS_TOML) -> DQThresholds:
             ),
             l1_sparsity=L1SparsityThresholds(**raw["l1_sparsity"]),
             etime_plausibility=EtimePlausibilityThresholds(**raw["etime_plausibility"]),
+            event_time_plausibility=EtimePlausibilityThresholds(
+                **raw["event_time_plausibility"]
+            ),
             resync_warmup=ResyncWarmupConfig(**raw["resync_warmup"]),
         )
     except (KeyError, TypeError) as exc:
@@ -640,6 +645,15 @@ def check_l1_sparsity(
 # --------------------------------------------------------------------------
 
 
+def _within_plausibility_window(lo: int, hi: int, date: str) -> bool:
+    """`[lo, hi]` lies entirely within `[date - 1 day, date + 2 days)` -- the
+    whole of date-1, date and date+1 (shared by every ns time column's
+    plausibility check)."""
+    window_lo = _ns_midnight_utc(date) - NS_PER_DAY
+    window_hi = _ns_midnight_utc(date) + 2 * NS_PER_DAY
+    return window_lo <= lo <= window_hi and window_lo <= hi <= window_hi
+
+
 def check_etime_plausibility(
     manifest: dict, date: str, thresholds: DQThresholds
 ) -> dict:
@@ -648,15 +662,39 @@ def check_etime_plausibility(
     days)` -- the whole of date-1, date, and date+1. Any violation is
     unconditionally `"failed"` (no degraded tier)."""
     etime_min, etime_max = manifest["etime_range"]
-    window_lo = _ns_midnight_utc(date) - NS_PER_DAY
-    window_hi = _ns_midnight_utc(date) + 2 * NS_PER_DAY
-    plausible = (
-        window_lo <= etime_min <= window_hi and window_lo <= etime_max <= window_hi
-    )
+    plausible = _within_plausibility_window(etime_min, etime_max, date)
     status = "ok" if plausible else "failed"
     return {
         "check": "etime_plausibility",
         "dq_status": status,
         "etime_min": etime_min,
         "etime_max": etime_max,
+    }
+
+
+def check_event_time_plausibility(
+    event_time_range: tuple[int | None, int | None],
+    date: str,
+    thresholds: DQThresholds,
+) -> dict:
+    """The `check_etime_plausibility` window applied to the partition's
+    `event_time` column (03-REVIEW-ITER3.md IN-20): bookTicker `E` / trade
+    `E` get their own `ms_to_ns` call at parse time, so a wrong scale there
+    was invisible to the etime gate. Manifests do not record an event_time
+    range, so the report builder computes `(min, max)` from the partition.
+    `"failed"` (pauses the loader) outside the window; `"n/a"` when the
+    partition has no non-null event_time (no column, or all null)."""
+    event_time_min, event_time_max = event_time_range
+    if event_time_min is None or event_time_max is None:
+        return {
+            "check": "event_time_plausibility",
+            "dq_status": "n/a",
+            "reason": "no non-null event_time values in the partition",
+        }
+    plausible = _within_plausibility_window(event_time_min, event_time_max, date)
+    return {
+        "check": "event_time_plausibility",
+        "dq_status": "ok" if plausible else "failed",
+        "event_time_min": event_time_min,
+        "event_time_max": event_time_max,
     }
