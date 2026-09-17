@@ -75,25 +75,55 @@ FAILS CLOSED ON WHAT IT CANNOT READ (`find_unresolvable_conversion_shapes`).
 A conversion-shaped expression whose scale this scan cannot determine FAILS
 the check instead of passing silently:
 - `.mul()`/`multiply()`/the division family called with an argument that
-  does not resolve;
+  does not resolve, IN A TIME CONTEXT;
 - `math.prod`/`reduce(operator.mul, ...)` over a sequence that is not a
-  literal;
+  literal, IN A TIME CONTEXT;
+- a factor whose bindings overflowed `_MAX_VALUES`, IN A TIME CONTEXT;
 - a time-unit call (`Datetime`, `Duration`, `from_epoch`, `datetime64`,
   `timedelta64`) whose unit is built at runtime -- an f-string, a
-  concatenation, a `%`, a `.format()`/`.join()`;
+  concatenation, a `%`, a `.format()`/`.join()` (inherently a time context,
+  so ungated);
 - a factor whose NAME claims to be an ms<->ns scale (`MS_TO_NS`,
   `NS_PER_MS`, `millis_to_nanos`, ...) but which does not resolve to a
-  value.
-These rules are deliberately narrow: the real tree reports none of them
-(pinned by
-`tests/tools/test_check_ms_to_ns_site.py::test_the_real_tree_has_no_unresolvable_conversion_shapes`),
-so they cannot become the reason someone turns the check off.
+  value (likewise ungated).
+
+TIME CONTEXT, AND WHY THESE RULES ARE GATED ON IT (03-REVIEW-FOLLOWUPS.md
+CR-01). The first version of the fail-closed set asked only "is this a
+`mul`/`div` call with an argument I cannot fold?". That is not a conversion
+shape -- it is the entire vocabulary of column and array arithmetic, and it
+took a 13-line Phase 4 feature module whose only sin was
+`pl.col("size").mul(pl.col("price"))` from exit 0 to exit 1, with no
+allowlist and therefore no way out but editing this file. An UNPROVABLE
+factor is now reported only when the surrounding vocabulary is about time:
+the other operand, the wrapper chain immediately above (`.alias("dt_ns")`),
+the assignment target, or the innermost enclosing function's own name
+(`_context_tokens`, matched against `TIME_TOKENS`/`TIME_STEM_RE`). Short
+unit words match whole identifier TOKENS only -- `ns` as a substring hits
+`returns`, `sec` hits `section`.
+
+A PROVABLE factor in the scale family ({1e3, 1e6, 1e9}, however spelled --
+`pl.lit`, `np.int64`, a chained product, a constant resolved through another
+module) is NOT gated on context: it is reported by `_sites_in_module`,
+whatever names surround it. Narrowing the fail-closed set narrowed nothing
+about what this check can prove.
 
 STILL NOT DETECTED, and deliberately so: `getattr`/`eval`/`exec` and other
 runtime reflection, a scale read from data or config, notebooks, anything
 under `tests/`, and ms->ns written as seconds arithmetic
 (`t_ms * NS_PER_SECOND // 1000`) inside a file already allowlisted for
 seconds->ns. Deliberate circumvention is Phase 10's concern.
+
+RESIDUAL FROM THE TIME-CONTEXT GATE, stated rather than hidden: a conversion
+by an UNPROVABLE factor, written entirely under non-time names
+(`out = df.select(pl.col("a").mul(k))` where `a` is really a timestamp and
+`k` is really 1e6), is no longer reported. Obfuscating a conversion that far
+is the deliberate-circumvention case this check has never claimed to catch,
+and the price of the gate is that an accidental one under a misleading name
+also slips through. That is why the LOAD-BEARING control is the runtime data
+gate, not this scan: `data.dq.checks.check_etime_plausibility`,
+`check_event_time_plausibility` and `check_rtime_plausibility` score every
+curated manifest, a `failed` verdict pauses `data.store.load_curated`, and
+no acknowledgement short of a committed, reviewed JSON lets the data past.
 
 CORRECTNESS IS CARRIED AT RUNTIME by two data gates, for the two ns
 timestamp columns converted from Binance ms: `etime`
@@ -238,6 +268,69 @@ CONVERSION_NAME_RE = re.compile(
 #: Cap on the number of candidate values tracked per expression, so a
 #: pathological cartesian product cannot blow up the scan.
 _MAX_VALUES = 32
+
+#: Values that ARE a ms/sec <-> ns scale. The `_MAX_VALUES` cap exists to
+#: bound a cartesian product, NOT to hide the one family of values this scan
+#: exists to find, so a binding resolving to one of these is recorded however
+#: many bindings precede it (03-REVIEW-ITER2.md CR-06's "32 distinct bindings
+#: then `X = 1_000_000`" row, reopened as 03-REVIEW-FOLLOWUPS.md WR-07 when
+#: the first fix failed the build on any over-cap factor instead).
+SCALE_SENTINEL_VALUES = frozenset({1_000, 1_000_000, 1_000_000_000, 1e-3, 1e-6, 1e-9})
+
+#: Identifier tokens that are a time/unit word in their OWN right. Matched
+#: whole-token only, after splitting on `_`, digits and camel-case
+#: boundaries: `ns` as a substring hits `returns`, `sec` hits `section`,
+#: `ms` hits `items`.
+TIME_TOKENS = frozenset(
+    {
+        "ms",
+        "us",
+        "ns",
+        "sec",
+        "secs",
+        "msec",
+        "msecs",
+        "usec",
+        "usecs",
+        "nsec",
+        "nsecs",
+        "t",
+        "ts",
+        "dt",
+        "tz",
+        "utc",
+        "ttl",
+        "day",
+        "days",
+        "date",
+    }
+)
+
+#: Longer time stems, matched as a SUBSTRING of a token (so `etime`,
+#: `rtime`, `runtime` and `timestamp` all count). Deliberately excludes bare
+#: `micro` (`microprice` and `microstructure` are Phase 4 vocabulary, not
+#: time) and bare `date` as a substring (`validate` contains it).
+TIME_STEM_RE = re.compile(
+    r"(?i)time|epoch|duration|horizon|window|milli|nano|micros"
+    r"|second|minute|hour|clock|latency|elapsed|interval|period"
+    r"|deadline|timeout|monotonic|stamp|skew|expiry|delay|sleep"
+)
+
+#: Splits an identifier or string literal into lower-cased word tokens:
+#: separators, digits and camel-case boundaries.
+_TOKEN_SPLIT_RE = re.compile(r"[^A-Za-z]+|(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+
+
+def _identifier_tokens(text: str) -> set[str]:
+    return {token.lower() for token in _TOKEN_SPLIT_RE.split(text) if token}
+
+
+def _is_time_vocabulary(tokens: set[str]) -> bool:
+    """Does any token name a time quantity or a time unit?"""
+    if tokens & TIME_TOKENS:
+        return True
+    return any(TIME_STEM_RE.search(token) for token in tokens)
+
 
 Value = int | float | str
 
@@ -706,6 +799,16 @@ def _load_modules(root: Path) -> dict[str, _Module]:
                 if len(current) >= _MAX_VALUES:
                     mod.opaque.add(key)  # overflowed: no longer trustworthy
                     mod.overflowed.add(key)
+                    # ...but a value that IS a scale is still recorded. The
+                    # cap bounds a cartesian product; it must never be the
+                    # reason a 33rd binding of `X = 1_000_000` goes unseen
+                    # (03-REVIEW-ITER2.md CR-06's value-cap row).
+                    sentinels = {
+                        v for v in values if _numeric(v) and v in SCALE_SENTINEL_VALUES
+                    }
+                    if sentinels and not sentinels <= current:
+                        current |= sentinels
+                        changed = True
                     continue
                 if not values <= current:
                     current |= values
@@ -840,40 +943,156 @@ def _is_dynamic_string(node: ast.expr) -> bool:
     return False
 
 
+def _parent_map(tree: ast.Module) -> dict[int, ast.AST]:
+    parents: dict[int, ast.AST] = {}
+    for parent in ast.walk(tree):
+        for child in ast.iter_child_nodes(parent):
+            parents[id(child)] = parent
+    return parents
+
+
+def _enclosing_function_names(tree: ast.Module) -> dict[int, str]:
+    """`id(node) -> name of the innermost enclosing function`. `ast.walk` is
+    breadth-first, so an inner `def` overwrites the outer one's claim."""
+    names: dict[int, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for descendant in ast.walk(node):
+                names[id(descendant)] = node.name
+    return names
+
+
+def _context_tokens(
+    node: ast.expr,
+    parents: dict[int, ast.AST],
+    func_names: dict[int, str],
+) -> set[str]:
+    """The vocabulary surrounding an arithmetic expression, used to decide
+    whether it sits in a TIME context (03-REVIEW-FOLLOWUPS.md CR-01).
+
+    Deliberately NOT the whole enclosing statement and NOT every parameter of
+    the enclosing function: `def features(df, horizon_ns): ... pl.col("size")
+    .mul(pl.col("price")) ...` is an ordinary Phase 4 shape and both broader
+    rules would flag it. What counts is:
+
+    1. every name, attribute, keyword and string literal INSIDE the
+       expression -- the other operand (`pl.col("etime")`, `horizon`);
+    2. the wrapper chain immediately above it, so `.alias("event_time")` and
+       `.cast(...)` are seen but a sibling expression is not;
+    3. the assignment target the expression flows into (`etime_ns = ...`);
+    4. the innermost enclosing function's own name (`def to_ns(...)`).
+    """
+    tokens: set[str] = set()
+
+    def absorb(text: str | None) -> None:
+        if text:
+            tokens.update(_identifier_tokens(text))
+
+    for child in ast.walk(node):
+        if isinstance(child, ast.Name):
+            absorb(child.id)
+        elif isinstance(child, ast.Attribute):
+            absorb(child.attr)
+        elif isinstance(child, ast.keyword):
+            absorb(child.arg)
+        elif isinstance(child, ast.Constant) and isinstance(child.value, str):
+            absorb(child.value)
+
+    absorb(func_names.get(id(node)))
+
+    current: ast.AST = node
+    while True:
+        parent = parents.get(id(current))
+        if isinstance(parent, (ast.Attribute, ast.Call)):
+            if isinstance(parent, ast.Attribute):
+                absorb(parent.attr)
+            else:
+                for keyword in parent.keywords:
+                    absorb(keyword.arg)
+                    if isinstance(keyword.value, ast.Constant) and isinstance(
+                        keyword.value.value, str
+                    ):
+                        absorb(keyword.value.value)
+                for arg in parent.args:
+                    if arg is current:
+                        continue
+                    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                        absorb(arg.value)
+            current = parent
+            continue
+        if isinstance(parent, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            targets = (
+                parent.targets if isinstance(parent, ast.Assign) else [parent.target]
+            )
+            for target in targets:
+                for sub in ast.walk(target):
+                    if isinstance(sub, ast.Name):
+                        absorb(sub.id)
+                    elif isinstance(sub, ast.Attribute):
+                        absorb(sub.attr)
+        break
+    return tokens
+
+
 def _unresolvable_in_module(resolver: _Resolver, mod: _Module) -> list[tuple[int, str]]:
     """Conversion-SHAPED expressions whose scale cannot be determined
     statically. These FAIL the check rather than passing silently: an
     unreadable conversion is exactly what this guardrail exists to notice.
 
     Deliberately narrow, so that ordinary code is never caught -- verified
-    against the real tree, which reports none of these."""
+    against the real tree, which reports none of these. The narrowing that
+    matters (03-REVIEW-FOLLOWUPS.md CR-01): an UNPROVABLE factor is reported
+    only when the expression sits in a TIME context (`_context_tokens` +
+    `_is_time_vocabulary`). `pl.col("size").mul(pl.col("price"))` and
+    `np.multiply(a, b)` are the entire vocabulary of column and array
+    arithmetic, not a conversion shape.
+
+    A PROVABLE factor in the scale family is unaffected: it is reported by
+    `_sites_in_module`, whatever names surround it."""
     findings: list[tuple[int, str]] = []
+    parents = _parent_map(mod.tree)
+    func_names = _enclosing_function_names(mod.tree)
+
+    def in_time_context(node: ast.expr) -> bool:
+        return _is_time_vocabulary(_context_tokens(node, parents, func_names))
+
     for node in ast.walk(mod.tree):
         if not isinstance(node, ast.Call):
             continue
         name = _call_name(node)
         if name in MUL_CALL_NAMES | DIV_CALL_NAMES and node.args:
             for arg in node.args:
-                if not resolver.fold(mod, arg):
+                if not resolver.fold(mod, arg) and in_time_context(node):
                     findings.append(
                         (
                             node.lineno,
                             f"{name}() scales by a value this scan cannot "
-                            "resolve -- the unit cannot be proven",
+                            "resolve, in a time context -- the unit cannot "
+                            "be proven",
                         )
                     )
                     break
         elif name in PRODUCT_CALL_NAMES and node.args:
-            if not resolver._fold_product(mod, node.args[0]):
+            if not resolver._fold_product(mod, node.args[0]) and in_time_context(node):
                 findings.append(
-                    (node.lineno, f"{name}() over a sequence that does not fold")
+                    (
+                        node.lineno,
+                        f"{name}() over a sequence that does not fold, in a "
+                        "time context",
+                    )
                 )
         elif name == "reduce" and len(node.args) >= 2:
-            if _call_name_of_expr(node.args[0]) == "mul" and not resolver._fold_product(
-                mod, node.args[1]
+            if (
+                _call_name_of_expr(node.args[0]) == "mul"
+                and not resolver._fold_product(mod, node.args[1])
+                and in_time_context(node)
             ):
                 findings.append(
-                    (node.lineno, "reduce(mul, ...) over a sequence that does not fold")
+                    (
+                        node.lineno,
+                        "reduce(mul, ...) over a sequence that does not fold, "
+                        "in a time context",
+                    )
                 )
         elif name in UNIT_CALL_NAMES:
             candidates = [*node.args] + [
@@ -893,8 +1112,14 @@ def _unresolvable_in_module(resolver: _Resolver, mod: _Module) -> list[tuple[int
 
     # Factors this scan is blind to: a name that CLAIMS to be an ms<->ns
     # scale and does not resolve, and a name whose bindings overflowed the
-    # value cap (so a later `X = 1_000_000` was never recorded and the chain
-    # would pass with the cap's stale values).
+    # value cap while sitting in a time context.
+    #
+    # The overflow rule no longer carries the ITER2 value-cap bypass on its
+    # own -- `SCALE_SENTINEL_VALUES` does, by recording a scale value past
+    # the cap -- so it can be narrowed to the case where the name might
+    # plausibly be a scale (03-REVIEW-FOLLOWUPS.md WR-07: a class assigning
+    # `self.size` in 39 methods, plus one `rows * buf.size`, contains no
+    # conversion and must not fail the build).
     for node in ast.walk(mod.tree):
         if not (isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult)):
             continue
@@ -917,13 +1142,15 @@ def _unresolvable_in_module(resolver: _Resolver, mod: _Module) -> list[tuple[int
                         "conversion",
                     )
                 )
-            if label in mod.overflowed or f"*.{label}" in mod.overflowed:
+            if (
+                label in mod.overflowed or f"*.{label}" in mod.overflowed
+            ) and in_time_context(node):
                 findings.append(
                     (
                         node.lineno,
                         f"{label!r} has more than {_MAX_VALUES} candidate "
-                        "bindings, so later ones were never recorded -- its "
-                        "scale cannot be proven",
+                        "bindings in a time context, so later ones were never "
+                        "recorded -- its scale cannot be proven",
                     )
                 )
     return sorted(set(findings))

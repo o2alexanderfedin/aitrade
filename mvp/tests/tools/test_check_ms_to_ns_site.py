@@ -290,34 +290,42 @@ def test_the_value_cap_no_longer_hides_a_later_binding(tmp_path: Path):
     """The ITER2 bypass row: 32 distinct bindings, then `X = 1_000_000`.
 
     The 33rd value was dropped, so `X` never resolved to 1e6 and `t * X`
-    registered nothing. Marking the binding opaque alone would only make the
-    chain skip it -- still a silent pass. An OVERFLOWED binding used as a
-    factor therefore fails the check outright.
+    registered nothing.
+
+    The first fix failed the check outright on any over-cap factor, which
+    03-REVIEW-FOLLOWUPS.md WR-07 showed fails an ordinary constant used 33
+    times. The cap exists to bound a cartesian product, not to hide the one
+    family of values this scan exists to find, so a binding whose value IS a
+    scale (`SCALE_SENTINEL_VALUES`) is recorded however many bindings precede
+    it. The bypass is now closed by the SITE, not by failing closed.
     """
     fill = "".join(f"X = {i}\n" for i in range(40))
     root = _pkg(
         tmp_path,
         {"data/x.py": fill + "X = 1_000_000\ndef f(t):\n    return t * X\n"},
     )
-    assert _ms_sites(root) == [], "the cap really does hide the 1e6 binding"
-    assert tool.find_unresolvable_conversion_shapes(root), (
-        "an overflowed binding used as a factor must fail the check, not be "
-        "quietly skipped"
+    assert _ms_sites(root) == [("data/x.py", 43)], (
+        "the 33rd binding of X is 1e6: the cap must not hide it"
     )
 
 
+#: Each of the first three carries a TIME signal (the enclosing function's own
+#: name), because 03-REVIEW-FOLLOWUPS.md CR-01 narrowed these three rules to
+#: time contexts -- `c.mul(k)` in a function called `f` is ordinary column
+#: arithmetic and must NOT fail. The signal is the only edit: the shape being
+#: red-proved is unchanged.
 UNRESOLVABLE = [
     (
         "mul() by an unresolvable factor",
-        "def f(c, k):\n    return c.mul(k)\n",
+        "def to_ns(c, k):\n    return c.mul(k)\n",
     ),
     (
         "math.prod over a non-literal sequence",
-        "import math\ndef f(factors, t):\n    return math.prod(factors)\n",
+        "import math\ndef to_ns(factors, t):\n    return math.prod(factors)\n",
     ),
     (
         "reduce(operator.mul) over a non-literal sequence",
-        "import functools, operator\ndef f(factors):\n"
+        "import functools, operator\ndef to_ns(factors):\n"
         "    return functools.reduce(operator.mul, factors)\n",
     ),
     (
@@ -350,3 +358,179 @@ def test_the_real_tree_has_no_unresolvable_conversion_shapes():
     """The fail-closed rules must be narrow enough that ordinary code never
     trips them -- otherwise they would just be turned off."""
     assert tool.find_unresolvable_conversion_shapes(tool.PKG_ROOT) == []
+
+
+# --- 03-REVIEW-FOLLOWUPS.md CR-01: ordinary arithmetic is not a conversion --
+
+#: Phase-4-shaped expressions: column and array arithmetic with no time
+#: vocabulary anywhere. None of them is a conversion, so none may be reported
+#: -- the whole point of CR-01 is that the first Stage-1 feature module must
+#: not have to edit the guardrail to commit.
+PHASE4_ORDINARY_ARITHMETIC = [
+    (
+        "polars mul of two columns",
+        "import polars as pl\n"
+        "def notional(df):\n"
+        "    return df.with_columns(pl.col('size').mul(pl.col('price')).alias('notional'))\n",
+    ),
+    (
+        "np.multiply of two arrays",
+        "import numpy as np\ndef weighted(a, b):\n    return np.multiply(a, b)\n",
+    ),
+    (
+        "truediv of two columns",
+        "import polars as pl\n"
+        "def imbalance(df):\n"
+        "    return df.select(pl.col('bid_qty').truediv(pl.col('ask_qty')))\n",
+    ),
+    (
+        "np.divide of two arrays",
+        "import numpy as np\ndef normalise(a, b):\n    return np.divide(a, b)\n",
+    ),
+    (
+        "np.prod over a shape",
+        "import numpy as np\ndef cells(arr):\n    return np.prod(arr.shape)\n",
+    ),
+    (
+        "mul by a parameter",
+        "import polars as pl\n"
+        "def rescale(df, factor):\n"
+        "    return df.select(pl.col('price').mul(pl.lit(factor)))\n",
+    ),
+    (
+        "reduce(mul) over a runtime sequence",
+        "import functools, operator\n"
+        "def combine(weights):\n"
+        "    return functools.reduce(operator.mul, weights)\n",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("label", "source"),
+    PHASE4_ORDINARY_ARITHMETIC,
+    ids=[label for label, _ in PHASE4_ORDINARY_ARITHMETIC],
+)
+def test_ordinary_column_arithmetic_is_not_a_conversion_shape(
+    tmp_path: Path, label: str, source: str
+):
+    root = _pkg(tmp_path, {"features/microprice.py": source})
+    assert tool.find_unresolvable_conversion_shapes(root) == [], (
+        f"{label}: ordinary arithmetic reported as an unreadable conversion -- "
+        "Phase 4 cannot commit without editing the guardrail"
+    )
+    assert _ms_sites(root) == [], f"{label}: reported as an ms->ns site"
+
+
+#: The same shapes, each with ONE time signal added -- the other operand, the
+#: assignment target, the alias, or the enclosing function's name. Each must
+#: still fail closed: an unprovable factor in a time context is exactly what
+#: this rule exists to refuse.
+TIME_CONTEXT_UNRESOLVABLE = [
+    (
+        "the other operand is a time column",
+        "import polars as pl\ndef f(df, k):\n    return df.select(pl.col('etime').mul(k))\n",
+    ),
+    (
+        "the assignment target is a ns quantity",
+        "def f(c, k):\n    etime_ns = c.mul(k)\n    return etime_ns\n",
+    ),
+    (
+        "the enclosing function name claims a ns conversion",
+        "def to_ns(c, k):\n    return c.mul(k)\n",
+    ),
+    (
+        "the result is aliased to a time column",
+        "import polars as pl\n"
+        "def f(df, k):\n"
+        "    return df.with_columns(pl.col('x').mul(k).alias('event_time'))\n",
+    ),
+    (
+        "a parameter names a duration",
+        "def f(c, horizon):\n    return c.mul(horizon)\n",
+    ),
+    (
+        "prod over a runtime sequence in a ns function",
+        "import math\ndef horizon_ns(factors):\n    return math.prod(factors)\n",
+    ),
+    (
+        "reduce(mul) over a runtime sequence in a ns function",
+        "import functools, operator\n"
+        "def timestamp_scale(factors):\n"
+        "    return functools.reduce(operator.mul, factors)\n",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("label", "source"),
+    TIME_CONTEXT_UNRESOLVABLE,
+    ids=[label for label, _ in TIME_CONTEXT_UNRESOLVABLE],
+)
+def test_an_unprovable_factor_in_a_time_context_still_fails_closed(
+    tmp_path: Path, label: str, source: str
+):
+    root = _pkg(tmp_path, {"data/normaliser.py": source})
+    assert tool.find_unresolvable_conversion_shapes(root), (
+        f"{label}: an unreadable scale in a TIME context passed silently"
+    )
+
+
+PROVABLE_IN_NEUTRAL_CONTEXT = [
+    (
+        "literal factor",
+        "def notional(size, price):\n    return size * 1_000_000 * price\n",
+    ),
+    (
+        "pl.lit wrapper",
+        "import polars as pl\ndef weighted(c):\n    return c.mul(pl.lit(1_000_000))\n",
+    ),
+    (
+        "np.int64 wrapper",
+        "import numpy as np\ndef weighted(a):\n    return a * np.int64(10**6)\n",
+    ),
+    (
+        "chained product",
+        "def weighted(a):\n    return a * 1000 * 1000\n",
+    ),
+    (
+        "scope-resolved constant",
+        "K = 1_000_000\ndef weighted(a):\n    return a * K\n",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("label", "source"),
+    PROVABLE_IN_NEUTRAL_CONTEXT,
+    ids=[label for label, _ in PROVABLE_IN_NEUTRAL_CONTEXT],
+)
+def test_a_provable_scale_is_a_site_whatever_the_surrounding_vocabulary(
+    tmp_path: Path, label: str, source: str
+):
+    """Narrowing the FAIL-CLOSED rule to time contexts must not narrow the
+    site detector: a factor that provably IS 1e6 is a conversion wherever it
+    appears, under whatever names."""
+    root = _pkg(tmp_path, {"features/microprice.py": source})
+    assert len(_ms_sites(root)) >= 1, f"{label}: provable 1e6 scale no longer a site"
+
+
+def test_an_ordinary_constant_with_many_bindings_does_not_fail_the_check(
+    tmp_path: Path,
+):
+    """03-REVIEW-FOLLOWUPS.md WR-07: a class assigning `self.size` a different
+    constant in 39 methods, plus one `rows * buf.size`, contains no conversion
+    at all -- the value cap must not turn it into a failed build."""
+    methods = "".join(
+        f"    def m{i}(self):\n        self.size = {i}\n" for i in range(39)
+    )
+    source = (
+        "class Buffers:\n"
+        + methods
+        + "\n\ndef occupancy(rows, buf):\n    return rows * buf.size\n"
+    )
+    root = _pkg(tmp_path, {"features/buffers.py": source})
+    assert tool.find_unresolvable_conversion_shapes(root) == [], (
+        "an over-cap binding under a non-time name must be a skipped factor, "
+        "not a failed build"
+    )
