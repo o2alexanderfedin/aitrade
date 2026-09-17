@@ -169,8 +169,26 @@ def issue_manifest(
     `check_no_manifest_rewrite`'s cheap per-commit `verify_manifest_fast`
     path, which never needs to reopen file contents.
 
+    Refuses (`ValueError`) a `partitions[].path` that any manifest already
+    issued for `dataset` names (03-REVIEW.md CR-02): a partition path is
+    write-once, so a second manifest naming it can only mean the file was
+    rewritten in place. A rebuild writes a NEW `part-<ns>` file.
+
     Returns the full manifest dict (including the computed `manifest_id`).
     """
+    new_paths = {p["path"] for p in partitions}
+    dataset_dir = Path(registry_root) / "manifests" / dataset
+    if new_paths and dataset_dir.exists():
+        for existing_file in dataset_dir.glob("*.json"):
+            existing = json.loads(existing_file.read_text())
+            reused = new_paths & {p["path"] for p in existing.get("partitions", [])}
+            if reused:
+                raise ValueError(
+                    f"issue_manifest: partition path(s) {sorted(reused)} already "
+                    f"named by manifest {existing_file.stem} -- partitions are "
+                    "write-once; write a new part file instead of reusing a path"
+                )
+
     body = {
         "dataset": dataset,
         "symbol": symbol,

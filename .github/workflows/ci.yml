@@ -69,5 +69,9 @@ jobs:
       - name: check_manifest_id_integrity
         run: uv run --locked --directory mvp python -m tools.check_manifest_id_integrity
 
+      # Needs full history (fetch-depth: 0 above); a shallow clone FAILS.
+      - name: check_manifest_append_only
+        run: uv run --locked --directory mvp python -m tools.check_manifest_append_only
+
       - name: pytest (tests, via testpaths)
         run: uv run --locked --directory mvp pytest tests -x -q

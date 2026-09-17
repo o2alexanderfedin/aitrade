@@ -126,6 +126,18 @@ repos:
         language: system
         pass_filenames: false
 
+      # 03-REVIEW.md CR-02: the two manifest checks above only compare the
+      # working tree with itself, so an in-place partition rewrite plus a
+      # reissued manifest (old one deleted) passed both. This one anchors
+      # immutability to git history: no committed manifest may ever be
+      # deleted/modified, and no two manifests may name one partition path
+      # with different sha256. A shallow clone FAILS (never SKIPs).
+      - id: check-manifest-append-only
+        name: check_manifest_append_only
+        entry: uv run --locked --directory mvp python -m tools.check_manifest_append_only
+        language: system
+        pass_filenames: false
+
       - id: pytest
         name: pytest (tests, via testpaths)
         entry: uv run --locked --directory mvp pytest tests -x -q
