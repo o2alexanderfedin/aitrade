@@ -149,6 +149,15 @@ tier and re-arm a consumed token. Three doors:
   later importer -- was invisible. Stores and deletes are flagged, an
   unresolvable key fails closed, and `sys.modules.get/pop/setdefault` now
   RESOLVE to the module so whatever happens to it afterwards is tracked.
+
+  > **Correction (03-REVIEW-FOLLOWUPS.md WR-05).** That last clause read as
+  > if the METHOD forms were covered, and they were not: only the Subscript
+  > form was flagged, so `sys.modules.pop("data.lockbox", None)` followed by
+  > `sys.modules.setdefault("data.lockbox", Fake())` replaced the audited
+  > module in two lines and scanned clean. `setdefault(key, fake)` is a
+  > store, not a read. Closed for real in the WR-05 commit:
+  > `pop`/`setdefault`/`update`/`__setitem__` on `sys.modules` are now
+  > flagged when the key is the lockbox or cannot be resolved.
 - **The whole `mock.patch` family, public name or not.**
   `patch.object(lb, "_x")` is a Call named `object` carrying a bare `"_x"`
   string; neither the `setattr` rule nor the private-string rule could see

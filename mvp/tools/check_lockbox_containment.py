@@ -41,6 +41,18 @@ agent actually writes, and each used to pass):
   closed;
 - `sys.modules.get/pop/setdefault("data.lockbox")`, which hand out the
   module object without an import statement;
+- the MUTATING method forms -- `sys.modules.pop/setdefault/update/
+  __setitem__` -- which are the same store spelled as a call
+  (03-REVIEW-FOLLOWUPS.md WR-05). `pop("data.lockbox", None)` followed by
+  `setdefault("data.lockbox", Fake())` replaced the audited module in two
+  lines and used to scan clean, because only the Subscript form was
+  flagged and `setdefault` was treated purely as a getter. Those two lines
+  are also what an agent writes ACCIDENTALLY when stubbing a module in a
+  helper. `.get` alone stays a read. An unresolvable key fails closed here
+  exactly as it does for the Subscript form, and both are suppressed by
+  the same narrow `DYNAMIC_SYS_MODULES_ALLOWED` entry (WR-06) -- a
+  per-RULE hatch for ordinary plugin/stub registration, which grants no
+  other lockbox access, unlike `SANCTIONED_TEST_FILES`;
 - the whole `mock.patch` family aimed at the module --
   `patch("data.lockbox.x")`, `patch.object(lb, "x")`, `patch.dict`,
   `patch.multiple` -- PUBLIC name or not. A patched `open_lockbox` re-arms
@@ -214,6 +226,20 @@ SANCTIONED_TEST_FILES: dict[str, str] = {
     ),
 }
 
+#: Files permitted to assign or delete an UNRESOLVABLE `sys.modules` key --
+#: exact repo-relative equality, one reason each. Ordinary plugin/stub
+#: registration (`sys.modules[name] = types.ModuleType(name)`) cannot be
+#: proven not to target `data.lockbox`, so it fails closed; before this
+#: table the only way to silence it was `SANCTIONED_TEST_FILES`, which
+#: grants the file FULL lockbox access (03-REVIEW-FOLLOWUPS.md WR-06: the
+#: cheapest fix available to whoever writes the first conftest stub was a
+#: blanket sanction that also disabled every other rule for that file).
+#:
+#: This hatch is PER RULE and nothing else: an allowlisted file that names
+#: `data.lockbox` -- as a sys.modules key, a private import, a path literal,
+#: a patch target -- is still flagged by every other rule.
+DYNAMIC_SYS_MODULES_ALLOWED: dict[str, str] = {}
+
 #: Suffixes AST-scanned as Python, besides a `#!...python` shebang.
 PYTHON_SUFFIXES = frozenset({".py", ".pyw", ".ipy"})
 
@@ -237,6 +263,16 @@ LOCKBOX_PATH_CONSTANTS = frozenset({"LOCKBOX_TIER"})
 
 #: Attributes of `sys.modules` that hand out a module object.
 SYS_MODULES_GETTERS = frozenset({"get", "pop", "setdefault"})
+
+#: `sys.modules` methods that MUTATE the module table. `setdefault` is in
+#: both sets: it hands the module out AND stores one. 03-REVIEW-FOLLOWUPS.md
+#: WR-05 -- only the Subscript form used to be flagged, so
+#: `sys.modules.pop("data.lockbox", None)` followed by
+#: `sys.modules.setdefault("data.lockbox", Fake())` replaced the audited
+#: module in two lines and scanned clean, while `03-FOLLOWUPS.md` item 1b
+#: read as if that door were shut. Those are also the two lines an agent
+#: writes ACCIDENTALLY when stubbing a module in a helper.
+SYS_MODULES_MUTATORS = frozenset({"pop", "setdefault", "update", "__setitem__"})
 
 #: `mock.patch(...)` and friends -- `patch.object`/`patch.dict` are Calls on
 #: an attribute of `patch`, not on `setattr`, so the setattr rule never saw
@@ -457,6 +493,58 @@ def _patch_form(node: ast.Call) -> str | None:
     return None
 
 
+def _sys_modules_mutation_keys(node: ast.Call, method: str, bindings):
+    """The module-table keys a `sys.modules.<method>(...)` call touches, as
+    `(key, is_resolvable)` pairs. `update({"a": x})` touches every key of a
+    dict literal; anything else touches its first argument's key."""
+    if method == "update":
+        argument = node.args[0] if node.args else None
+        if isinstance(argument, ast.Dict):
+            for key_node in argument.keys:
+                key = bindings.string(key_node) if key_node is not None else None
+                yield key, key is not None
+            return
+        if node.keywords and not node.args:
+            for keyword in node.keywords:
+                yield keyword.arg, keyword.arg is not None
+            return
+        yield None, False  # update(<something this scan cannot read>)
+        return
+    if not node.args:
+        yield None, False
+        return
+    key = bindings.string(node.args[0])
+    yield key, key is not None
+
+
+def _flag_sys_modules_mutation(
+    node: ast.Call, method: str, filename: str, bindings, flag
+) -> None:
+    """A `sys.modules` MUTATION written as a method call (WR-05).
+
+    The Subscript rule below covers `sys.modules[k] = v` and `del
+    sys.modules[k]`; these are the same store spelled as a call, and
+    `setdefault(key, fake)` in particular is a store that the "getters"
+    treatment read as a read. An unresolvable key fails closed the same way
+    the Subscript rule does, and is suppressed by the same narrow,
+    per-rule `DYNAMIC_SYS_MODULES_ALLOWED` entry (WR-06)."""
+    for key, resolvable in _sys_modules_mutation_keys(node, method, bindings):
+        if not resolvable:
+            if filename not in DYNAMIC_SYS_MODULES_ALLOWED:
+                flag(
+                    node,
+                    f"sys.modules.{method}() on an unresolvable key -- whether "
+                    "it replaces data.lockbox cannot be proven",
+                )
+        elif _is_lockbox(key):
+            flag(
+                node,
+                f"sys.modules.{method}({key!r}) -- mutates the module table "
+                "entry for the audited module, replacing it for every later "
+                "importer",
+            )
+
+
 def _flag_patch_target(node: ast.Call, form: str, bindings, flag) -> None:
     """A `mock.patch` family call aimed at `data.lockbox` is a monkeypatch of
     the audited module, PUBLIC name or not (03-FOLLOWUPS.md item 1).
@@ -556,11 +644,12 @@ def scan_source(source: str, filename: str) -> list[Violation]:
                 continue
             key = bindings.string(node.slice)
             if key is None:
-                flag(
-                    node,
-                    "assigns/deletes an unresolvable sys.modules key -- whether "
-                    "it replaces data.lockbox cannot be proven",
-                )
+                if filename not in DYNAMIC_SYS_MODULES_ALLOWED:
+                    flag(
+                        node,
+                        "assigns/deletes an unresolvable sys.modules key -- "
+                        "whether it replaces data.lockbox cannot be proven",
+                    )
             elif _is_lockbox(key):
                 flag(
                     node,
@@ -578,6 +667,13 @@ def scan_source(source: str, filename: str) -> list[Violation]:
             patch_form = _patch_form(node)
             if patch_form is not None:
                 _flag_patch_target(node, patch_form, bindings, flag)
+                continue
+            if (
+                func_name in SYS_MODULES_MUTATORS
+                and isinstance(node.func, ast.Attribute)
+                and bindings.resolve(node.func.value) == "sys.modules"
+            ):
+                _flag_sys_modules_mutation(node, func_name, filename, bindings, flag)
                 continue
             if func_name not in {"getattr", "hasattr", "setattr", "delattr", "vars"}:
                 continue
