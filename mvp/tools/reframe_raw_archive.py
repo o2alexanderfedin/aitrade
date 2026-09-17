@@ -21,9 +21,11 @@ in lockstep, so memory use stays bounded regardless of file size (see
 `_first_line_mismatch`).
 
 SAFETY: this module's `reframe_file()` does an in-place atomic
-`.tmp`-suffixed-sibling-write + `Path.replace()`, the same idiom used
+`.tmp`-suffixed-sibling-write + `os.replace()`, the same idiom used
 everywhere else in this codebase (`data/capture/rotation.py`'s
-`write_parquet_atomic`). Per 03-06-PLAN.md's own safety instructions, this
+`write_parquet_atomic`), made DURABLE (03-REVIEW.md WR-09): the tmp file is
+fsynced (`F_FULLFSYNC` on macOS) before the identity check and the swap,
+the directory is fsynced after it, and any failure removes the tmp file. Per 03-06-PLAN.md's own safety instructions, this
 tool must NEVER be pointed at the live capture daemon's `raw/` tree while
 the daemon is running -- the executor that ran this offline run pointed it
 at a COPY under a scratch root, never at `/Volumes/ProjectsSSD/aihedgefund/
@@ -43,6 +45,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import os
 import time
 from pathlib import Path
 
@@ -113,6 +116,34 @@ def iter_lines(path: Path, *, chunk_size: int = READ_CHUNK_BYTES):
             yield buf
 
 
+def _fsync_fd(fd: int) -> None:
+    """Force `fd`'s data to stable storage. On macOS `os.fsync` only reaches
+    the drive's cache; `F_FULLFSYNC` asks the drive to flush it (APFS on this
+    battery-powered host), falling back to `fsync` where unsupported."""
+    try:
+        import fcntl
+
+        full_fsync = getattr(fcntl, "F_FULLFSYNC", None)
+    except ImportError:  # non-POSIX
+        full_fsync = None
+    if full_fsync is not None:
+        try:
+            fcntl.fcntl(fd, full_fsync)
+            return
+        except OSError:
+            pass
+    os.fsync(fd)
+
+
+def _fsync_dir(directory: Path) -> None:
+    """Make a rename in `directory` durable (fsync the directory entry)."""
+    dir_fd = os.open(directory, os.O_RDONLY)
+    try:
+        _fsync_fd(dir_fd)
+    finally:
+        os.close(dir_fd)
+
+
 def write_reframed(
     lines,
     dest: Path,
@@ -145,6 +176,11 @@ def write_reframed(
                 last_frame_flush = now
         writer.flush(zstandard.FLUSH_FRAME)
         writer.close()
+        # Durable BEFORE the caller's identity check and swap (03-REVIEW.md
+        # WR-09): otherwise the check reads the page cache and proves nothing
+        # about what reached the disk.
+        fh.flush()
+        _fsync_fd(fh.fileno())
     return line_count
 
 
@@ -190,25 +226,35 @@ def reframe_file(
     original_size = path.stat().st_size
     tmp_path = path.with_name(path.name + ".reframe.tmp")
 
-    line_count = write_reframed(
-        iter_lines(path),
-        tmp_path,
-        flush_frame_every_messages=flush_frame_every_messages,
-        flush_frame_every_seconds=flush_frame_every_seconds,
-    )
-
-    mismatch = _first_line_mismatch(path, tmp_path)
-    if mismatch is not None:
-        idx, line_a, line_b = mismatch
-        tmp_path.unlink(missing_ok=True)
-        raise ValueError(
-            f"{path}: line-sequence-identical assertion FAILED at line "
-            f"{idx}: original={line_a!r} reframed={line_b!r}. Original "
-            "file left completely untouched."
+    # Any failure before the swap (a corrupt source raising mid-decode, the
+    # identity assertion, a full disk, Ctrl-C) removes the possibly multi-GB
+    # tmp file and leaves the original untouched (03-REVIEW.md WR-09).
+    try:
+        line_count = write_reframed(
+            iter_lines(path),
+            tmp_path,
+            flush_frame_every_messages=flush_frame_every_messages,
+            flush_frame_every_seconds=flush_frame_every_seconds,
         )
 
-    new_size = tmp_path.stat().st_size
-    tmp_path.replace(path)
+        mismatch = _first_line_mismatch(path, tmp_path)
+        if mismatch is not None:
+            idx, line_a, line_b = mismatch
+            raise ValueError(
+                f"{path}: line-sequence-identical assertion FAILED at line "
+                f"{idx}: original={line_a!r} reframed={line_b!r}. Original "
+                "file left completely untouched."
+            )
+
+        new_size = tmp_path.stat().st_size
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+    # tmp data is already fsynced (write_reframed); rename, then fsync the
+    # directory so the rename itself survives a power loss.
+    os.replace(tmp_path, path)
+    _fsync_dir(path.parent)
 
     return {
         "path": str(path),

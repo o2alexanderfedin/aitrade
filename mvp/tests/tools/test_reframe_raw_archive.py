@@ -175,3 +175,50 @@ def test_main_skips_active_and_reframes_the_rest(
     assert active.read_bytes() == active_bytes_before
     # Stale file re-framed but line-sequence-identical.
     assert list(iter_lines(stale)) == lines
+
+
+# --- WR-09 (03-REVIEW.md): durable swap, no orphaned multi-GB tmp files ----
+
+
+def test_failed_reframe_leaves_no_tmp_file_and_original_untouched(tmp_path: Path):
+    """A source that fails to decode mid-stream (e.g. a CR-01-corrupted file)
+    must not leave `<name>.reframe.tmp` behind -- on a real 7 GB day that is
+    several GB of orphaned disk."""
+    path = tmp_path / "date=2020-01-01" / "conn_A.ndjson.zst"
+    _write_old_format_fixture(path, [_archive_line(i) for i in range(50)])
+    with open(path, "ab") as fh:
+        fh.write(b"\x28\xb5\x2f\xfd" + b"\xff" * 64)  # a corrupt trailing frame
+    original = path.read_bytes()
+
+    with pytest.raises(zstandard.ZstdError):
+        reframe_file(path)
+
+    assert not path.with_name(path.name + ".reframe.tmp").exists()
+    assert path.read_bytes() == original
+
+
+def test_reframed_file_is_fsynced_before_replace_and_directory_after(
+    tmp_path: Path, monkeypatch
+):
+    import os
+
+    import tools.reframe_raw_archive as tool
+
+    events: list[str] = []
+    real_replace = os.replace
+    monkeypatch.setattr(tool, "_fsync_fd", lambda fd: events.append("fsync_file"))
+    monkeypatch.setattr(tool, "_fsync_dir", lambda d: events.append("fsync_dir"))
+
+    def spy_replace(src, dst):
+        events.append("replace")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", spy_replace)
+
+    path = tmp_path / "date=2020-01-01" / "conn_A.ndjson.zst"
+    lines = [_archive_line(i) for i in range(30)]
+    _write_old_format_fixture(path, lines)
+    reframe_file(path)
+
+    assert events == ["fsync_file", "replace", "fsync_dir"]
+    assert list(iter_lines(path)) == lines
