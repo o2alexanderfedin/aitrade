@@ -22,19 +22,32 @@ RULES (all resolved against real git objects, every subprocess through
    (`actions/checkout` `fetch-depth: 0`, which `ci.yml` already sets) --
    never a SKIP, which would be exactly the always-green path 03-VERIFICATION
    flagged and 03-07 closed.
-2. No manifest may ever have been DELETED, MODIFIED or TYPE-CHANGED
-   (e.g. replaced by a symlink) in the history of `HEAD`. "Manifest" is a
-   path SHAPE, not a location (03-REVIEW-ITER3.md WR-17): any `*.json` with
-   a `manifests` directory among its ancestors, outside `by-date/` pointer
-   directories, ANYWHERE in the repository. The registry's current path is
-   not trusted: moving the registry (`git mv` plus a new
-   `LAKE_REGISTRY_ROOT`, or a symlink to a copy) leaves every old manifest
-   path recorded as a delete, and a check filtered to today's location never
-   looked there. Consequences: relocating the registry is itself a
-   violation (manifests are write-once at their path), and the test
-   fixture registry under `tests/fixtures/lake_registry/manifests/` is
-   append-only too (regenerating a fixture issues a new manifest). Two
-   independent views, because a merge commit hides changes from a plain
+2. No manifest's CONTENT may ever have been DESTROYED. A manifest path
+   that was DELETED, MODIFIED or TYPE-CHANGED (e.g. replaced by a symlink)
+   in the history of `HEAD` is a violation UNLESS that manifest's blob is
+   still present at some manifest path in `HEAD`.
+
+   "Manifest" is a path SHAPE, not a location (03-REVIEW-ITER3.md WR-17):
+   any `*.json` with a `manifests` directory among its ancestors, outside
+   `by-date/` pointer directories, ANYWHERE in the repository. The
+   registry's current path is not trusted: moving the registry (`git mv`
+   plus a new `LAKE_REGISTRY_ROOT`, or a symlink to a copy) leaves every
+   old manifest path recorded as a delete, and a check filtered to today's
+   location never looked there.
+
+   Anchoring on CONTENT rather than on paths (03-FOLLOWUPS.md item 5) is
+   what tells a legitimate relocation from an attack wearing one. WR-17's
+   first fix made ANY move a violation, which is over-strict: a `git mv`
+   that carries every manifest body across loses nothing. So the rules read
+   the PRE-IMAGE BLOB (`--raw`, never `--name-status`) and ask whether those
+   exact bytes still sit at a manifest path. Dropping a manifest in the
+   move, editing one on the way, type-changing one, or moving them
+   somewhere with no `manifests` component -- all still fail, because in
+   each case some body no longer exists as a manifest. The test fixture
+   registry under `tests/fixtures/lake_registry/manifests/` is protected by
+   the same rule.
+
+   Two independent views, because a merge commit hides changes from a plain
    `git log` (03-REVIEW-ITER2.md CR-08):
    a. every commit reachable from `HEAD`, each diffed against EVERY parent
       (`--diff-merges=separate`), with NO pathspec on the walk: a pathspec
@@ -52,18 +65,24 @@ RULES (all resolved against real git objects, every subprocess through
    A rename counts as a delete (`--no-renames`). Manifests are write-once:
    a rebuild issues a NEW manifest and new partition files, and the old
    manifest keeps resolving.
-3. Every manifest tracked in `HEAD` must exist in the working tree with
-   bytes identical to the committed blob and the same file type (catches
-   the uncommitted delete / edit / typechange before it is ever committed;
-   in a pre-commit run the working tree is the content being committed).
+3. Every manifest tracked in `HEAD` must still have its bytes somewhere in
+   the working tree, at a manifest path, as a regular file (catches the
+   uncommitted delete / edit / typechange before it is ever committed; in a
+   pre-commit run the working tree is the content being committed). Same
+   content anchoring as rule 2, against the index-plus-working-tree state:
+   a STAGED relocation passes, a staged relocation that drops or edits a
+   manifest does not. An untracked copy does not count -- a move made with
+   `cp` and never `git add`ed leaves nothing git can vouch for.
 4. No two manifests in the working tree may name the same
    `partitions[].path` with different `sha256` -- the in-place rewrite plus
    a reissued manifest, even when the old manifest is kept. Paths are
    compared by `data.store.partition_path_key` (normpath, NFC, casefold --
    03-REVIEW-ITER2.md WR-13: `curated/./x` is the same file as `curated/x`),
    and a non-canonical or absolute spelling is itself a violation.
-5. `HEAD` must track at least one manifest: a path bug that matched nothing
-   must not read as "nothing was rewritten".
+5. `HEAD` or the index must hold at least one manifest under the registry:
+   a path bug that matched nothing must not read as "nothing was
+   rewritten". The index counts too, so a staged relocation is not mistaken
+   for an empty registry; both being empty is still a failure.
 6. Nothing under `manifests/` may be a symlink or any other non-regular
    file, neither in `HEAD`'s tree (mode 120000 / gitlink) nor in the
    working tree: a symlink makes rule 4 read some other manifest's bytes.
@@ -141,31 +160,6 @@ def _git_try(args: list[str], cwd: Path) -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
-def _name_status_z(output: str) -> list[tuple[str, str, str]]:
-    """Parse `-z --name-status` output (optionally with `--format=commit %H`
-    headers, as `git log` prints them) into `(commit, status, path)`.
-
-    Always `-z` (03-REVIEW-ITER3.md IN-16): without it git prints a
-    non-ASCII, tab, quote or newline path C-quoted (`"...trad\\303\\251/..."`),
-    and no path comparison matches it. With it, a path is verbatim. Every
-    field is NUL-terminated; git puts a newline before the first status
-    after a commit header. With `--no-renames` a status is a single letter,
-    followed by exactly one path."""
-    records: list[tuple[str, str, str]] = []
-    commit = "?"
-    tokens = output.split("\0")
-    index = 0
-    while index < len(tokens):
-        token = tokens[index].lstrip("\n")
-        index += 1
-        if token.startswith("commit "):
-            commit = token.split()[1][:12]
-        elif len(token) == 1 and token.isalpha() and index < len(tokens):
-            records.append((commit, token, tokens[index]))
-            index += 1
-    return records
-
-
 def _is_pointer(rel_to_manifests: str) -> bool:
     return POINTER_DIR_NAME in rel_to_manifests.split("/")[:-1]
 
@@ -175,6 +169,66 @@ def _is_manifest_path(repo_rel: str, manifests_rel: str) -> bool:
     if not repo_rel.startswith(manifests_rel + "/") or not repo_rel.endswith(".json"):
         return False
     return not _is_pointer(repo_rel[len(manifests_rel) + 1 :])
+
+
+def _raw_z(output: str) -> list[tuple[str, str, str, str]]:
+    """Parse `--raw -z --no-abbrev` output (optionally with `--format=commit
+    %H` headers) into `(commit, status, src_blob, path)`.
+
+    `--raw` rather than `--name-status` (03-FOLLOWUPS.md item 5) because the
+    PRE-IMAGE BLOB ID is what decides whether a delete destroyed a manifest
+    or merely moved it. Each record is
+    `:<srcmode> <dstmode> <srcsha> <dstsha> <status>\0<path>\0`.
+    """
+    records: list[tuple[str, str, str, str]] = []
+    commit = "?"
+    tokens = output.split("\0")
+    index = 0
+    while index < len(tokens):
+        token = tokens[index].lstrip("\n")
+        index += 1
+        if token.startswith("commit "):
+            commit = token.split()[1][:12]
+        elif token.startswith(":") and index < len(tokens):
+            fields = token[1:].split()
+            if len(fields) >= 5:
+                records.append((commit, fields[4][:1], fields[2], tokens[index]))
+            index += 1
+    return records
+
+
+def _head_manifest_blobs(toplevel: Path) -> set[str]:
+    """Every blob id sitting at a manifest-shaped path in `HEAD`'s tree,
+    anywhere in the repository -- rule 2's "did this content survive?" set."""
+    blobs: set[str] = set()
+    for record in _git(["ls-tree", "-r", "-z", "HEAD"], toplevel).split("\0"):
+        if not record:
+            continue
+        meta, _, path = record.partition("\t")
+        fields = meta.split()
+        if len(fields) >= 3 and _is_manifest_shaped(path):
+            blobs.add(fields[2])
+    return blobs
+
+
+def _worktree_manifest_blobs(toplevel: Path) -> set[str]:
+    """The same set for the WORKING TREE: hash the on-disk bytes of every
+    tracked-or-staged manifest-shaped path, through `git hash-object` so the
+    repository's own object format is used.
+
+    Untracked copies do not count: a move made by `cp` without `git add`
+    leaves nothing git can vouch for, and the delete it pairs with is
+    reported. That is the fail-closed direction."""
+    listed = [
+        path
+        for path in _git(["ls-files", "-z"], toplevel).split("\0")
+        if path and _is_manifest_shaped(path)
+    ]
+    present = [path for path in listed if (toplevel / path).is_file()]
+    if not present:
+        return set()
+    hashed = _git(["hash-object", "--no-filters", "--", *present], toplevel)
+    return {line.strip() for line in hashed.splitlines() if line.strip()}
 
 
 def _is_manifest_shaped(repo_rel: str) -> bool:
@@ -318,10 +372,27 @@ def check_append_only(registry_root: Path) -> tuple[list[str], int]:
             )
         if _is_manifest_path(path, manifests_rel):
             tracked.append(path)
-    if not tracked:
+    # Rule 5's counterpart in the index, so a staged-but-uncommitted
+    # relocation (the pre-commit view) is not read as "the path matched
+    # nothing". The rule still fails when BOTH views are empty.
+    staged = [
+        path
+        for path in _git(["ls-files", "-z", "--", manifests_rel], toplevel).split("\0")
+        if path and _is_manifest_path(path, manifests_rel)
+    ]
+    if not tracked and not staged:
         errors.append(
-            f"HEAD tracks 0 manifests under {manifests_rel}/ -- refusing a vacuous pass"
+            f"HEAD and the index both track 0 manifests under {manifests_rel}/ "
+            "-- refusing a vacuous pass"
         )
+
+    # Rules 2 and 3 are CONTENT-anchored (03-FOLLOWUPS.md item 5): a D/M/T on
+    # a manifest path is a violation only if that manifest's BLOB does not
+    # survive at some manifest-shaped path in the destination state. A
+    # content-preserving relocation is therefore legal; dropping, editing or
+    # type-changing a manifest -- including inside a move -- is not.
+    head_blobs = _head_manifest_blobs(toplevel)
+    worktree_blobs = _worktree_manifest_blobs(toplevel)
 
     # Rule 2a: every commit, every parent, whole-tree walk (no pathspec).
     history = _git(
@@ -331,18 +402,22 @@ def check_append_only(registry_root: Path) -> tuple[list[str], int]:
             "--diff-merges=separate",
             "--diff-filter=DMT",
             "--format=commit %H",
-            "--name-status",
+            "--raw",
+            "--no-abbrev",
             "-z",
             "HEAD",
         ],
         toplevel,
     )
-    for commit, status, path in _name_status_z(history):
+    for commit, status, blob, path in _raw_z(history):
         if status in _CHANGE_WORDS and _is_manifest_shaped(path):
+            if blob in head_blobs:
+                continue  # content still present under some manifest path
             errors.append(
                 f"{path}: committed manifest {_CHANGE_WORDS[status]} "
-                f"in commit {commit} (manifests are write-once; issue a new "
-                "manifest instead)"
+                f"in commit {commit} and its contents (blob {blob[:12]}) are "
+                "not present at any manifest path in HEAD (manifests are "
+                "write-once; issue a new manifest instead)"
             )
 
     # Rule 2b: tree comparison base -> HEAD.
@@ -352,28 +427,40 @@ def check_append_only(registry_root: Path) -> tuple[list[str], int]:
             "diff",
             "--no-renames",
             "--diff-filter=DMT",
-            "--name-status",
+            "--raw",
+            "--no-abbrev",
             "-z",
             base,
             "HEAD",
         ],
         toplevel,
     )
-    for _commit, status, path in _name_status_z(base_diff):
+    for _commit, status, blob, path in _raw_z(base_diff):
         if status in _CHANGE_WORDS and _is_manifest_shaped(path):
+            if blob in head_blobs:
+                continue
             errors.append(
                 f"{path}: committed manifest {_CHANGE_WORDS[status]} "
-                f"between {base_desc} and HEAD"
+                f"between {base_desc} and HEAD and its contents (blob "
+                f"{blob[:12]}) are not present at any manifest path in HEAD"
             )
 
-    # Rule 3: working tree still has every HEAD manifest, byte-identical.
+    # Rule 3: the working tree still holds every HEAD manifest's bytes.
     # No pathspec (WR-17): a staged registry move shows as deletes at the old
     # path before it is ever committed.
-    changed = _git(["diff", "--no-renames", "--name-status", "-z", "HEAD"], toplevel)
-    for _commit, status, path in _name_status_z(changed):
+    changed = _git(
+        ["diff", "--no-renames", "--raw", "--no-abbrev", "-z", "HEAD"], toplevel
+    )
+    for _commit, status, blob, path in _raw_z(changed):
         word = _CHANGE_WORDS.get(status)
         if word is not None and _is_manifest_shaped(path):
-            errors.append(f"{path}: committed manifest {word} in the working tree")
+            if blob in worktree_blobs:
+                continue
+            errors.append(
+                f"{path}: committed manifest {word} in the working tree and its "
+                f"contents (blob {blob[:12]}) are not present at any "
+                "manifest path in it"
+            )
 
     # Rule 6 (working-tree side), before rule 4 reads any file.
     non_regular = _non_regular_entries(manifests_dir, manifests_rel)
@@ -381,7 +468,7 @@ def check_append_only(registry_root: Path) -> tuple[list[str], int]:
     if non_regular or symlinked:
         # Rule 4 reads manifest bodies; through a symlink what it would read
         # is not the committed registry.
-        return list(dict.fromkeys(errors)), len(tracked)
+        return list(dict.fromkeys(errors)), len(tracked) or len(staged)
 
     # Rule 4: one sha256 per partition path across all manifests.
     seen: dict[str, tuple[str, str]] = {}
@@ -410,7 +497,7 @@ def check_append_only(registry_root: Path) -> tuple[list[str], int]:
 
     # A merge diffed against two parents that both held the manifest reports
     # the same change twice; say it once.
-    return list(dict.fromkeys(errors)), len(tracked)
+    return list(dict.fromkeys(errors)), len(tracked) or len(staged)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -440,7 +527,7 @@ def main(argv: list[str] | None = None) -> int:
     _base, base_desc = resolve_base(_toplevel_for(registry_root))
     print(
         f"PASS: {n_tracked} committed manifest(s) append-only against HEAD history "
-        f"(every commit vs every parent; tree base: {base_desc})"
+        f"(content-anchored; every commit vs every parent; tree base: {base_desc})"
     )
     return 0
 

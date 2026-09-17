@@ -379,13 +379,22 @@ def test_single_commit_repo_is_checked_not_vacuous(tmp_path: Path, capsys):
 
 def test_pointer_exemption_is_exactly_by_date(tmp_path: Path):
     """03-REVIEW-ITER2.md IN-13: a `by-date-archive/` directory is not a
-    pointer directory, so a manifest inside it is protected."""
-    repo, registry, lake, m0 = _repo(tmp_path)
+    pointer directory, so a manifest inside it is protected.
+
+    The manifest is MOVED there rather than copied: since item 5 the check is
+    content-anchored, so deleting a byte-identical duplicate loses nothing and
+    is not a violation. Deleting the only copy of these bytes is."""
+    repo, registry, lake, _m0 = _repo(tmp_path)
+    m1 = _issue(
+        registry, _write_partition(lake, "curated/date=2026-01-02/part-2.parquet", 2.0)
+    )
+    _commit_all(repo, "manifest 2")
     archive = registry / "manifests" / "BTCUSDT.trade" / "by-date-archive"
     archive.mkdir()
-    hidden = archive / _manifest_file(registry, m0["manifest_id"]).name
-    hidden.write_text(_manifest_file(registry, m0["manifest_id"]).read_text())
-    _commit_all(repo, "copy into by-date-archive")
+    hidden = archive / _manifest_file(registry, m1["manifest_id"]).name
+    _git(["mv", str(_manifest_file(registry, m1["manifest_id"])), str(hidden)], repo)
+    _commit_all(repo, "move into by-date-archive")
+    assert check_append_only(registry)[0] == [], "a content-preserving move is legal"
     hidden.unlink()
     _commit_all(repo, "delete it")
     errors, _ = check_append_only(registry)
@@ -599,3 +608,79 @@ def test_partition_path_escaping_the_lake_root_is_a_violation(
     _commit_all(repo, "escaping spelling")
     errors, _ = check_append_only(registry)
     assert any("escapes the lake root" in e for e in errors), errors
+
+
+# --- 03-FOLLOWUPS.md item 5: append-only is about CONTENT, not paths -------
+
+
+def _move_registry(repo: Path, registry: Path) -> Path:
+    moved = registry.parent / "registry_v2"
+    _git(["mv", str(registry), str(moved)], repo)
+    return moved
+
+
+def test_registry_move_that_preserves_every_manifest_passes(tmp_path: Path, capsys):
+    """WR-17's fix made ANY relocation a violation, which is over-strict: a
+    `git mv` that carries every manifest body across loses nothing. Only the
+    loss of content is a violation."""
+    repo, registry, lake, m0, m1 = _repo_with_two_manifests(tmp_path)
+    moved = _move_registry(repo, registry)
+    _commit_all(repo, "relocate registry, nothing dropped")
+
+    errors, tracked = check_append_only(moved)
+    assert errors == [], errors
+    assert tracked == 2
+    assert main(["--registry-root", str(moved)]) == 0
+    assert "PASS" in capsys.readouterr().out
+
+
+def test_staged_registry_move_preserving_every_manifest_passes(tmp_path: Path):
+    """The pre-commit view of the same move."""
+    repo, registry, lake, _m0, _m1 = _repo_with_two_manifests(tmp_path)
+    moved = _move_registry(repo, registry)
+    errors, _ = check_append_only(moved)
+    assert errors == [], errors
+
+
+def test_registry_move_that_edits_one_manifest_body_fails(tmp_path: Path):
+    """A move is not a licence to rewrite: the edited manifest's ORIGINAL
+    bytes no longer exist at any manifest path, and that is the violation."""
+    repo, registry, lake, _m0, m1 = _repo_with_two_manifests(tmp_path)
+    moved = _move_registry(repo, registry)
+    target = moved / "manifests" / "BTCUSDT.trade" / f"{m1['manifest_id']}.json"
+    body = json.loads(target.read_text())
+    body["partitions"][0]["sha256"] = "0" * 64
+    target.write_text(json.dumps(body, sort_keys=True, indent=2))
+    _commit_all(repo, "relocate registry and edit one manifest")
+
+    errors, _ = check_append_only(moved)
+    assert any(m1["manifest_id"] in e and "deleted" in e for e in errors), errors
+    assert main(["--registry-root", str(moved)]) == 1
+
+
+def test_an_in_place_edit_is_still_a_violation(tmp_path: Path):
+    """No move involved: the content-anchored rule must not have weakened the
+    plain case."""
+    repo, registry, lake, _m0, m1 = _repo_with_two_manifests(tmp_path)
+    target = _manifest_file(registry, m1["manifest_id"])
+    body = json.loads(target.read_text())
+    body["partitions"][0]["sha256"] = "1" * 64
+    target.write_text(json.dumps(body, sort_keys=True, indent=2))
+    _commit_all(repo, "edit a committed manifest in place")
+
+    errors, _ = check_append_only(registry)
+    assert any(m1["manifest_id"] in e and "modified" in e for e in errors), errors
+
+
+def test_a_move_out_of_any_manifests_directory_is_a_violation(tmp_path: Path):
+    """ "Content survives" means "survives AS A MANIFEST". Moving the registry
+    somewhere with no `manifests` component hides every body from every rule
+    that protects it."""
+    repo, registry, lake, _m0, _m1 = _repo_with_two_manifests(tmp_path)
+    flat = registry.parent / "registry_v2" / "json_blobs"
+    flat.parent.mkdir(parents=True, exist_ok=True)
+    _git(["mv", str(registry / "manifests"), str(flat)], repo)
+    _commit_all(repo, "flatten the registry")
+
+    errors, _ = check_append_only(registry.parent / "registry_v2")
+    assert any("deleted" in e for e in errors), errors
