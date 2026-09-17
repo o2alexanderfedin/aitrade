@@ -75,18 +75,20 @@ future plan can decide whether a nonzero count warrants a threshold.
 
 [l1_sparsity]
 degraded_seconds = 30
+regime_start_utc = "2026-09-12T06:37:10.882Z"
 notes = """
-Max inter-arrival gap (seconds) between consecutive bookTicker etime
-values. Only applicable from 2026-09-12T06:37:10.882Z onward (L1's own
-first captured etime, per the two-regime boundary decision) -- a day
-before that has no bookTicker curated partition at all and this check
-reports "n/a" for it, never "failed": a day with no L1 by design is not a
-degraded day. A day that DOES have a bookTicker curated partition but
-fewer than 2 rows (no pair of consecutive etimes to diff -- e.g. capture
-ran under a second before crashing) is also "n/a", with a `reason` string
-naming the row count (03-VERIFICATION.md gap-closure, T-03-07: this
-input shape previously returned a false "ok" with value_seconds=0.0, not
-triggered by any of the 4 real L1 days, all multi-million-row).
+Longest stretch (seconds) of the UTC day with no bookTicker update: the
+max of the interior inter-arrival gaps AND both day edges -- start of day
+to the first row, last row to the next UTC midnight (03-REVIEW.md WR-05:
+interior gaps alone let a capture that died mid-day, whose restart outage
+is not self-ledgered, score ok while hours of L1 were missing). On the
+regime-start date the leading gap is measured from regime_start_utc (L1's
+own first captured etime, per the two-regime boundary decision), not from
+midnight; the trailing edge of a day still in progress is not measured.
+A day before regime_start_utc has no bookTicker curated partition at all
+and emits no row -- a day with no L1 by design is not a degraded day. A
+partition with zero rows is "n/a"; a single row is measured by its edges
+(it used to be "n/a", T-03-07).
 """
 
 [etime_plausibility]

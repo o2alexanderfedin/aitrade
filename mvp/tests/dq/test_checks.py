@@ -246,43 +246,113 @@ def test_crossed_locked_book_counts_and_is_always_ok():
     assert result["count"] == 1
 
 
-def test_l1_sparsity_degrades_on_large_inter_arrival_gap():
-    base = 1_800_000_000_000_000_000
-    df = pl.DataFrame(
-        {"etime": [base, base + 1 * NS_PER_SECOND, base + 40 * NS_PER_SECOND]}
+def _l1_day(
+    date: str, start_s: float, end_s: float, step_s: float = 10.0
+) -> pl.DataFrame:
+    """bookTicker etimes on `date` every `step_s` seconds from `start_s` to
+    `end_s` seconds after that date's UTC midnight (int64 ns throughout)."""
+    import datetime as _dt
+
+    midnight = (
+        (_dt.date.fromisoformat(date) - _dt.date(1970, 1, 1)).days
+        * 86_400
+        * NS_PER_SECOND
     )
-    result = check_l1_sparsity(df, THRESHOLDS)
+    n = int((end_s - start_s) // step_s) + 1
+    first = midnight + int(start_s * NS_PER_SECOND)
+    return pl.DataFrame(
+        {"etime": [first + i * int(step_s * NS_PER_SECOND) for i in range(n)]}
+    )
+
+
+DAY_END_S = 86_399.0
+PAST = 4_000_000_000_000_000_000  # "now" far after every fixture day
+
+
+def test_l1_sparsity_degrades_on_large_inter_arrival_gap():
+    df = pl.concat(
+        [_l1_day("2026-09-14", 5, 36_000), _l1_day("2026-09-14", 36_040, DAY_END_S)]
+    )
+    result = check_l1_sparsity(df, THRESHOLDS, date="2026-09-14", now_ns=PAST)
     assert result["dq_status"] == "degraded"
-    assert result["value_seconds"] == pytest.approx(39.0, abs=1e-6)
+    assert result["value_seconds"] == pytest.approx(
+        45.0, abs=1e-6
+    )  # 35995 s -> 36040 s
 
 
 def test_l1_sparsity_ok_within_threshold():
-    base = 1_800_000_000_000_000_000
-    df = pl.DataFrame(
-        {"etime": [base, base + 1 * NS_PER_SECOND, base + 5 * NS_PER_SECOND]}
-    )
-    result = check_l1_sparsity(df, THRESHOLDS)
+    df = _l1_day("2026-09-14", 5, DAY_END_S)
+    result = check_l1_sparsity(df, THRESHOLDS, date="2026-09-14", now_ns=PAST)
     assert result["dq_status"] == "ok"
 
 
 def test_l1_sparsity_is_na_not_ok_on_zero_row_partition():
-    """03-VERIFICATION.md finding: a 0-row bookTicker partition cannot
-    produce an inter-arrival gap -- must be "n/a", never a false "ok"."""
+    """03-VERIFICATION.md finding: a 0-row bookTicker partition has no etime
+    at all -- "n/a", never a false "ok"."""
     df = pl.DataFrame({"etime": pl.Series([], dtype=pl.Int64)})
-    result = check_l1_sparsity(df, THRESHOLDS)
+    result = check_l1_sparsity(df, THRESHOLDS, date="2026-09-14", now_ns=PAST)
     assert result["dq_status"] == "n/a"
     assert result["value_seconds"] is None
     assert "reason" in result
 
 
-def test_l1_sparsity_is_na_not_ok_on_single_row_partition():
-    """Same shape, one row: still no pair to diff, still "n/a"."""
-    base = 1_800_000_000_000_000_000
-    df = pl.DataFrame({"etime": [base]})
-    result = check_l1_sparsity(df, THRESHOLDS)
-    assert result["dq_status"] == "n/a"
-    assert result["value_seconds"] is None
-    assert "reason" in result
+def test_l1_sparsity_single_row_partition_is_degraded_by_its_edges():
+    """One row can no longer hide: the gaps from midnight to it and from it
+    to the next midnight are measured (03-REVIEW.md WR-05). Previously n/a."""
+    df = _l1_day("2026-09-14", 43_200, 43_200)
+    result = check_l1_sparsity(df, THRESHOLDS, date="2026-09-14", now_ns=PAST)
+    assert result["dq_status"] == "degraded"
+
+
+# --- WR-05 (03-REVIEW.md): the start and end of the day are measured -------
+
+
+def test_l1_sparsity_counts_the_trailing_gap_of_a_capture_that_died_mid_day():
+    """Reproduction: daemon died at 12:00Z. Interior gaps are all 10 s, so
+    the old check said ok while 12 h of L1 were missing."""
+    df = _l1_day("2026-09-14", 5, 43_200)
+    result = check_l1_sparsity(df, THRESHOLDS, date="2026-09-14", now_ns=PAST)
+    assert result["dq_status"] == "degraded"
+    assert result["value_seconds"] == pytest.approx(
+        86_400 - 43_195, abs=1e-6
+    )  # last row 43195 s
+
+
+def test_l1_sparsity_counts_the_leading_gap_of_a_late_restart():
+    df = _l1_day("2026-09-15", 4 * 3600, DAY_END_S)
+    result = check_l1_sparsity(df, THRESHOLDS, date="2026-09-15", now_ns=PAST)
+    assert result["dq_status"] == "degraded"
+    assert result["value_seconds"] == pytest.approx(4 * 3600, abs=1e-6)
+
+
+def test_l1_sparsity_regime_start_day_measures_the_leading_gap_from_regime_start():
+    """2026-09-12: L1 capture began at 06:37:10.882Z by design (two-regime
+    boundary). The leading gap is measured from that instant, not midnight
+    -- explicitly, not by accident."""
+    regime_s = 6 * 3600 + 37 * 60 + 10.882
+    on_time = _l1_day("2026-09-12", regime_s + 1, DAY_END_S)
+    assert (
+        check_l1_sparsity(on_time, THRESHOLDS, date="2026-09-12", now_ns=PAST)[
+            "dq_status"
+        ]
+        == "ok"
+    )
+    late = _l1_day("2026-09-12", regime_s + 600, DAY_END_S)
+    result = check_l1_sparsity(late, THRESHOLDS, date="2026-09-12", now_ns=PAST)
+    assert result["dq_status"] == "degraded"
+    assert result["value_seconds"] == pytest.approx(600, abs=1e-3)
+
+
+def test_l1_sparsity_exempts_the_trailing_gap_of_the_in_progress_day():
+    df = _l1_day("2026-09-16", 5, 43_200)
+    import datetime as _dt
+
+    midnight = (
+        (_dt.date(2026, 9, 16) - _dt.date(1970, 1, 1)).days * 86_400 * NS_PER_SECOND
+    )
+    now_ns = midnight + 43_205 * NS_PER_SECOND
+    result = check_l1_sparsity(df, THRESHOLDS, date="2026-09-16", now_ns=now_ns)
+    assert result["dq_status"] == "ok"
 
 
 # --- resync_windows_for_date: etime_approx naming (03-VERIFICATION.md ---

@@ -105,6 +105,7 @@ does not hide a conversion from it, and must never be used to try.
 from __future__ import annotations
 
 import datetime as dt
+import time
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -167,6 +168,7 @@ class CrossedLockedBookThresholds:
 @dataclass(frozen=True)
 class L1SparsityThresholds:
     degraded_seconds: float
+    regime_start_utc: str
     notes: str
 
 
@@ -470,30 +472,66 @@ def check_crossed_locked_book(bookticker_df: pl.DataFrame) -> dict:
 # --------------------------------------------------------------------------
 
 
-def check_l1_sparsity(bookticker_df: pl.DataFrame, thresholds: DQThresholds) -> dict:
-    """Max inter-arrival gap (seconds) between consecutive `etime` values
-    in `bookticker_df`. The caller (report.py) is responsible for emitting
-    `"n/a"` instead of calling this at all on a day with no bookTicker
-    curated partition (June-Aug, before L1's own first etime) -- a day
-    with no L1 by design is not a degraded day.
+def _ns_from_iso_utc(text: str) -> int:
+    """Parse an ISO 8601 UTC timestamp (e.g. `2026-09-12T06:37:10.882Z`) to
+    int64 ns since epoch in pure integer arithmetic."""
+    parsed = dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
+    delta = parsed - dt.datetime(1970, 1, 1, tzinfo=dt.UTC)
+    micro_ns = delta.microseconds * 1_000
+    return delta.days * NS_PER_DAY + delta.seconds * NS_PER_SECOND + micro_ns
 
-    A 0-or-1-row partition (e.g. a day capture ran for under a second
-    before crashing) cannot produce an inter-arrival gap at all -- there
-    is no pair of consecutive rows to diff. This is a DIFFERENT case from
-    "no bookTicker partition exists" above (that is the caller's `n/a`),
-    but it deserves the identical `"n/a"` verdict for the identical reason:
-    the statistic is structurally undefined on this input shape, so `"ok"`
-    would be a false green, not a passing measurement (03-VERIFICATION.md
-    finding, T-03 gap-closure)."""
+
+def check_l1_sparsity(
+    bookticker_df: pl.DataFrame,
+    thresholds: DQThresholds,
+    *,
+    date: str,
+    now_ns: int | None = None,
+) -> dict:
+    """Largest stretch (seconds) of `date` with no bookTicker update: the max
+    of the INTERIOR inter-arrival gaps AND the two day edges (03-REVIEW.md
+    WR-05) -- the leading gap from the start of the day to the first row,
+    and the trailing gap from the last row to the next UTC midnight.
+
+    Measuring interior gaps only let a daemon that died at 12:00Z (and whose
+    restart outage is not self-ledgered) score `ok` on both days while 16 h
+    of L1 were missing.
+
+    Two edges are treated explicitly, not by accident:
+    - the TWO-REGIME BOUNDARY: L1 capture began at
+      `thresholds.l1_sparsity.regime_start_utc` (2026-09-12T06:37:10.882Z);
+      on that date the leading gap is measured from that instant, not from
+      midnight (a day before it has no L1 by design);
+    - the IN-PROGRESS day: when `now_ns` (default: the current time) is
+      before `date`'s next midnight, the trailing gap is not yet a gap and is
+      not measured. `build_curated_range` does not build such days anyway.
+
+    `n/a` only for a partition with no rows at all (no etime to measure
+    from). The caller emits nothing for a day with no bookTicker partition.
+    """
     etimes = bookticker_df.sort("etime")["etime"]
-    if etimes.len() < 2:
+    if etimes.len() == 0:
         return {
             "check": "l1_sparsity",
             "dq_status": "n/a",
             "value_seconds": None,
-            "reason": f"fewer than 2 rows ({etimes.len()}) -- no inter-arrival gap computable",
+            "reason": "0 rows -- no etime to measure gaps from",
         }
-    max_gap_ns = etimes.diff().drop_nulls().max()
+
+    day_start = _ns_midnight_utc(date)
+    day_end = day_start + NS_PER_DAY
+    regime_start = _ns_from_iso_utc(thresholds.l1_sparsity.regime_start_utc)
+    lead_from = max(day_start, regime_start)
+    now = time.time_ns() if now_ns is None else now_ns
+
+    first, last = int(etimes[0]), int(etimes[-1])
+    gaps = {"leading": max(first - lead_from, 0)}
+    if etimes.len() >= 2:
+        gaps["interior"] = int(etimes.diff().drop_nulls().max())
+    if now >= day_end:
+        gaps["trailing"] = max(day_end - last, 0)
+
+    where, max_gap_ns = max(gaps.items(), key=lambda kv: kv[1])
     max_gap_seconds = max_gap_ns / NS_PER_SECOND
     status = (
         "degraded"
@@ -504,6 +542,12 @@ def check_l1_sparsity(bookticker_df: pl.DataFrame, thresholds: DQThresholds) -> 
         "check": "l1_sparsity",
         "dq_status": status,
         "value_seconds": max_gap_seconds,
+        "reason": f"max gap is {where}"
+        + (
+            ""
+            if "trailing" in gaps
+            else "; trailing edge not measured (day in progress)"
+        ),
     }
 
 

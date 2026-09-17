@@ -218,7 +218,7 @@ def build_report_rows_for_date(
             df = _read_curated(manifest, lake_root)
             crossed = check_crossed_locked_book(df)
             rows.append({"date": date, "symbol": symbol, "stream": stream, **crossed})
-            sparsity = check_l1_sparsity(df, thresholds)
+            sparsity = check_l1_sparsity(df, thresholds, date=date)
             rows.append({"date": date, "symbol": symbol, "stream": stream, **sparsity})
 
     return rows
