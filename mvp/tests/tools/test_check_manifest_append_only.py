@@ -537,3 +537,48 @@ def test_uncommitted_symlinked_ancestor_of_the_registry_fails(tmp_path: Path):
     assert any("alias" in e and "symlink in the working tree" in e for e in errors), (
         errors
     )
+
+
+# --- 03-REVIEW-ITER3.md IN-16: non-ASCII paths (git quotes them without -z) --
+
+
+def _non_ascii_manifest(repo: Path, registry: Path, lake: Path) -> Path:
+    # git's default (and CI's): quote non-ASCII paths. Pinned in the repo's own
+    # config because a developer's global `core.quotePath=false` hides the bug.
+    _git(["config", "core.quotePath", "true"], repo)
+    manifest = issue_manifest(
+        dataset="BTCUSDT.tradé",
+        symbol="BTCUSDT",
+        stream="trade",
+        tier="curated",
+        schema_version=1,
+        inputs=[],
+        partitions=[_write_partition(lake, "curated/q/part-q.parquet", 5.0)],
+        code_hash="deadbeef",
+        registry_root=registry,
+    )
+    _commit_all(repo, "manifest under a non-ASCII dataset directory")
+    return registry / "manifests" / "BTCUSDT.tradé" / f"{manifest['manifest_id']}.json"
+
+
+def test_non_ascii_manifest_is_counted_and_its_committed_delete_is_caught(
+    tmp_path: Path,
+):
+    repo, registry, lake, _m0 = _repo(tmp_path)
+    path = _non_ascii_manifest(repo, registry, lake)
+    assert check_append_only(registry) == ([], 2)
+    path.unlink()
+    _commit_all(repo, "delete it")
+    errors, _ = check_append_only(registry)
+    assert any("BTCUSDT.tradé/" in e and "deleted in commit" in e for e in errors), (
+        errors
+    )
+
+
+def test_non_ascii_manifest_deleted_in_the_working_tree_is_caught(tmp_path: Path):
+    repo, registry, lake, _m0 = _repo(tmp_path)
+    _non_ascii_manifest(repo, registry, lake).unlink()
+    errors, _ = check_append_only(registry)
+    assert any(
+        "BTCUSDT.tradé/" in e and "deleted in the working tree" in e for e in errors
+    ), errors

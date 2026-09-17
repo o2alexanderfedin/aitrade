@@ -118,7 +118,8 @@ def _git(args: list[str], cwd: Path) -> str:
         ["git", *args],
         cwd=cwd,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="surrogateescape",
         env=scrubbed_git_env(),
     )
     if result.returncode != 0:
@@ -139,6 +140,31 @@ def _git_try(args: list[str], cwd: Path) -> str | None:
         env=scrubbed_git_env(),
     )
     return result.stdout.strip() if result.returncode == 0 else None
+
+
+def _name_status_z(output: str) -> list[tuple[str, str, str]]:
+    """Parse `-z --name-status` output (optionally with `--format=commit %H`
+    headers, as `git log` prints them) into `(commit, status, path)`.
+
+    Always `-z` (03-REVIEW-ITER3.md IN-16): without it git prints a
+    non-ASCII, tab, quote or newline path C-quoted (`"...trad\\303\\251/..."`),
+    and no path comparison matches it. With it, a path is verbatim. Every
+    field is NUL-terminated; git puts a newline before the first status
+    after a commit header. With `--no-renames` a status is a single letter,
+    followed by exactly one path."""
+    records: list[tuple[str, str, str]] = []
+    commit = "?"
+    tokens = output.split("\0")
+    index = 0
+    while index < len(tokens):
+        token = tokens[index].lstrip("\n")
+        index += 1
+        if token.startswith("commit "):
+            commit = token.split()[1][:12]
+        elif len(token) == 1 and token.isalpha() and index < len(tokens):
+            records.append((commit, token, tokens[index]))
+            index += 1
+    return records
 
 
 def _is_pointer(rel_to_manifests: str) -> bool:
@@ -277,10 +303,12 @@ def check_append_only(registry_root: Path) -> tuple[list[str], int]:
 
     # Rule 6 (HEAD side) + rule 5 + input to rule 3: manifests tracked in HEAD.
     tracked: list[str] = []
-    for line in _git(
-        ["ls-tree", "-r", "HEAD", "--", manifests_rel], toplevel
-    ).splitlines():
-        meta, _, path = line.partition("\t")
+    for record in _git(
+        ["ls-tree", "-r", "-z", "HEAD", "--", manifests_rel], toplevel
+    ).split("\0"):
+        if not record:
+            continue
+        meta, _, path = record.partition("\t")
         mode = meta.split()[0]
         if not path.startswith(manifests_rel + "/"):
             continue
@@ -305,54 +333,48 @@ def check_append_only(registry_root: Path) -> tuple[list[str], int]:
             "--diff-filter=DMT",
             "--format=commit %H",
             "--name-status",
+            "-z",
             "HEAD",
         ],
         toplevel,
     )
-    commit = "?"
-    for line in history.splitlines():
-        if line.startswith("commit "):
-            commit = line.split()[1][:12]
-            continue
-        fields = line.split("\t")
-        if len(fields) == 2 and _is_manifest_shaped(fields[1]):
+    for commit, status, path in _name_status_z(history):
+        if status in _CHANGE_WORDS and _is_manifest_shaped(path):
             errors.append(
-                f"{fields[1]}: committed manifest {_CHANGE_WORDS[fields[0][0]]} "
+                f"{path}: committed manifest {_CHANGE_WORDS[status]} "
                 f"in commit {commit} (manifests are write-once; issue a new "
                 "manifest instead)"
             )
 
     # Rule 2b: tree comparison base -> HEAD.
     base, base_desc = resolve_base(toplevel)
-    for line in _git(
+    base_diff = _git(
         [
             "diff",
             "--no-renames",
             "--diff-filter=DMT",
             "--name-status",
+            "-z",
             base,
             "HEAD",
         ],
         toplevel,
-    ).splitlines():
-        fields = line.split("\t")
-        if len(fields) == 2 and _is_manifest_shaped(fields[1]):
+    )
+    for _commit, status, path in _name_status_z(base_diff):
+        if status in _CHANGE_WORDS and _is_manifest_shaped(path):
             errors.append(
-                f"{fields[1]}: committed manifest {_CHANGE_WORDS[fields[0][0]]} "
+                f"{path}: committed manifest {_CHANGE_WORDS[status]} "
                 f"between {base_desc} and HEAD"
             )
 
     # Rule 3: working tree still has every HEAD manifest, byte-identical.
     # No pathspec (WR-17): a staged registry move shows as deletes at the old
     # path before it is ever committed.
-    changed = _git(["diff", "--no-renames", "--name-status", "HEAD"], toplevel)
-    for line in changed.splitlines():
-        fields = line.split("\t")
-        if len(fields) != 2 or not _is_manifest_shaped(fields[1]):
-            continue
-        word = _CHANGE_WORDS.get(fields[0][0])
-        if word is not None:
-            errors.append(f"{fields[1]}: committed manifest {word} in the working tree")
+    changed = _git(["diff", "--no-renames", "--name-status", "-z", "HEAD"], toplevel)
+    for _commit, status, path in _name_status_z(changed):
+        word = _CHANGE_WORDS.get(status)
+        if word is not None and _is_manifest_shaped(path):
+            errors.append(f"{path}: committed manifest {word} in the working tree")
 
     # Rule 6 (working-tree side), before rule 4 reads any file.
     non_regular = _non_regular_entries(manifests_dir, manifests_rel)
