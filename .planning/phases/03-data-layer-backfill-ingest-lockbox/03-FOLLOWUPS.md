@@ -469,3 +469,25 @@ Both land at the next restart, which is the user's to approve.
 
 _Completed: 2026-09-17_
 _Branch: `feature/phase-03-followups` (8 commits on top of `3a8e852`)_
+
+
+## Item 8 (orchestrator, after the agent's report) — laundering into the test fixture registry
+
+The agent's own "Not done" list flagged this, and it was a live hole in the only control against a
+manifest disappearing, so it was closed before the merge rather than carried.
+
+**Red-proof (real repo, scratch clone, 2026-09-17):** `git mv` of one of the 111 committed manifests
+into `mvp/tests/fixtures/lake_registry/manifests/BTCUSDT.trade/` →
+`PASS: 110 committed manifest(s) append-only`. Content anchoring asked "do these bytes still exist at
+a manifest path anywhere?" and the answer was yes, while the production registry had silently lost a
+manifest and the day it addressed no longer resolved.
+
+**Fix (a0a6048):** survival is judged within a realm — `_realm()` splits manifest paths into
+`fixture` (under `tests/.../fixtures/...`) and `production`, and the HEAD/worktree blob pools are
+keyed by realm. A content-preserving relocation still passes (that is what item 5 exists to allow);
+laundering in either direction now fails.
+
+**Verification:** the same scratch repro now FAILS with both rule 2a and 2b naming the deleted
+manifest. Two new tests cover both directions; collapsing `_realm` to a constant fails exactly those
+two and nothing else (mutation-checked). Full suite 628 passed; all 15 hooks pass; the real registry
+still passes at 111 manifests.
