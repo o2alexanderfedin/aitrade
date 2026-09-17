@@ -32,7 +32,12 @@ import polars as pl
 from data.backfill.downloader import daterange
 from data.capture.rotation import write_parquet_atomic
 from data.ingest.trade_side import resolve_side
-from data.store import by_date_index_path, issue_manifest, manifest_path
+from data.store import (
+    by_date_index_path,
+    issue_manifest,
+    manifest_path,
+    manifest_source,
+)
 
 __all__ = [
     "materialize_seq",
@@ -352,10 +357,10 @@ def recompute_build_stats(
     _chosen, stats, na_stats = _select_with_na_stats(
         stream, archive_df, capture_df, bool(archive_files)
     )
-    if stats["chosen_source"] != _manifest_source(manifest):
+    if stats["chosen_source"] != manifest_source(manifest):
         raise ValueError(
             f"recompute_build_stats: sources now select {stats['chosen_source']!r} but "
-            f"manifest {manifest_id} was built from {_manifest_source(manifest)!r} -- "
+            f"manifest {manifest_id} was built from {manifest_source(manifest)!r} -- "
             "rebuild (supersede) instead of re-deriving stats"
         )
 
@@ -605,16 +610,6 @@ def _manifested_partition_paths(registry_root: Path, dataset: str) -> set[str]:
     return paths
 
 
-def _manifest_source(manifest: dict) -> str:
-    """`"archive"` if the manifest's inputs are the raw archive partition,
-    else `"capture"` -- read from the manifest itself (committed, bound to
-    its id), not from the mutable build_stats.json."""
-    inputs = manifest.get("inputs", [])
-    if inputs and all("/source=archive/" in i["path"] for i in inputs):
-        return "archive"
-    return "capture"
-
-
 def build_curated_range(
     symbol: str,
     stream: str,
@@ -723,7 +718,7 @@ def build_curated_range(
                 )
                 continue
 
-            current_source = _manifest_source(current)
+            current_source = manifest_source(current)
             archive_published = _archive_published(symbol, stream, date, lake_root)
             if not (
                 stream == "trade" and current_source == "capture" and archive_published

@@ -17,6 +17,8 @@
 #   (5) l1_sparsity         -- max inter-arrival gap in bookTicker etime
 #   (6) etime_plausibility  -- manifest etime_range within [date-1d, date+1d]
 #   (6b) event_time_plausibility -- partition event_time range, same window
+#   (6c) rtime_plausibility -- receive clock, judged per manifest SOURCE
+#        (capture: skew from etime; archive: download-ordering)
 # plus resync_warmup, the post-gap warm-up window duration feeding the
 # resync_windows sidecar (not itself one of the six numbered checks).
 
@@ -146,6 +148,45 @@ dq_status="failed" (pauses the loader); n/a when the partition has no
 non-null event_time. rtime is NOT gated: archive-sourced rows carry the
 staged archive file's local mtime (data/ingest/normalize.py), measured
 outside the window on 106 of 111 real days.
+"""
+
+[rtime_plausibility]
+capture_skew_min_seconds = -60.0
+capture_skew_max_seconds = 3600.0
+notes = """
+The local receive clock, judged against the one thing it means for the
+manifest's own source -- there is no single window that fits both
+(03-FOLLOWUPS.md item 4). Source is read from the manifest's `inputs`
+(data.store.manifest_source), not from the mutable build_stats.json.
+
+CAPTURE-sourced: rtime is a real per-message arrival time, so it must sit
+close to etime. Measured (rtime - etime) over all 4 real capture days
+(BTCUSDT bookTicker 2026-09-12..15, 104.9M rows): min -0.192s, max
++307.069s, p50 between -0.019s and +0.022s, p99.9 between 0.669s and
+4.555s. Negative skew is the local clock running slightly ahead of
+Binance's; the 307s tail is a backlog of frames buffered during the host's
+own battery sleep flushing on wake (see data/capture/power.py), not a slow
+network. Bounds are -60s / +3600s: 312x and 11.7x headroom over the worst
+real day, chosen so a longer host sleep cannot manufacture a false pause,
+while still catching the defect this gate exists for -- a wrongly scaled
+rtime is off by DECADES (raw ms read as ns lands in 1970; seconds read as
+ns lands in 1970 too; an over-multiplied value lands centuries ahead).
+
+ARCHIVE-sourced: rtime is the DOWNLOAD time. normalize_archive_frame
+stamps every row of the day with the staged file's own mtime -- a single
+literal (verified: rtime_min == rtime_max on all 107 real archive days),
+legitimately far from etime (measured 21.5h to 107.9 days). A skew window
+is meaningless there, so the ORDERING is what is checked instead:
+etime_max <= rtime_min (the file cannot predate the data it contains).
+
+BOTH sources also require rtime_max <= manifest.built_at: data cannot have
+arrived after the manifest describing it was written. True on all 111 real
+manifests.
+
+dq_status is "ok" or "failed" only -- no degraded tier (a receive clock
+outside these bounds is a unit/ordering defect, not a matter of degree) --
+and "n/a" when the partitions carry no non-null rtime. "failed" pauses
+load_curated. Measured result on the real lake: ok on all 111 manifests.
 """
 
 [resync_warmup]

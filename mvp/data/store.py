@@ -196,6 +196,21 @@ def partition_path_problem(path: object) -> str | None:
     return None
 
 
+def manifest_source(manifest: dict) -> str:
+    """`"archive"` if every one of the manifest's inputs is a raw-archive
+    partition, else `"capture"` -- read from the manifest itself (committed
+    and bound to its id), never from the mutable `build_stats.json`.
+
+    Lives here, not in `data.ingest.curated_build`, because two readers need
+    it: the builder's supersede logic and the DQ report's source-dependent
+    `rtime` gate (`data.dq.checks.check_rtime_plausibility`).
+    """
+    inputs = manifest.get("inputs", [])
+    if inputs and all("/source=archive/" in i["path"] for i in inputs):
+        return "archive"
+    return "capture"
+
+
 def _atomic_write_json(path: Path, body: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(path.suffix + ".tmp")

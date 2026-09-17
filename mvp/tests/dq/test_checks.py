@@ -571,3 +571,152 @@ def test_event_time_plausibility_uses_the_etime_window_and_scales():
     assert status((min(ns) // 1_000, max(ns) // 1_000)) == "failed"  # under
     assert status((min(ns), max(ns) + 3 * 86_400 * 1_000_000_000)) == "failed"
     assert status((None, None)) == "n/a"  # no event_time values to judge
+
+
+# --- 03-FOLLOWUPS.md item 4: rtime is judged by the manifest's own source ---
+
+
+def _rtime_manifest(etime_max: int, built_at: int) -> dict:
+    return {
+        "built_at": built_at,
+        "etime_range": [etime_max - 86_400 * 10**9, etime_max],
+    }
+
+
+def _rtime_status(stats, source, manifest) -> dict:
+    from data.dq.checks import check_rtime_plausibility
+
+    return check_rtime_plausibility(stats, source, manifest, THRESHOLDS)
+
+
+def test_rtime_plausibility_capture_allows_real_measured_skew():
+    """The real capture population must pass: measured skew over the 4 real
+    capture days runs from -0.192 s to +307.069 s (a post-sleep backlog
+    flush), and the bounds are -60 s / +3600 s."""
+    etime_max = 1_789_430_399_999_000_000
+    manifest = _rtime_manifest(etime_max, built_at=etime_max + 10**12)
+    stats = {
+        "rtime_min": etime_max - 86_400 * 10**9,
+        "rtime_max": etime_max,
+        "skew_min": -192_158_000,
+        "skew_max": 307_068_672_000,
+    }
+    assert _rtime_status(stats, "capture", manifest)["dq_status"] == "ok"
+
+
+def test_rtime_plausibility_capture_fails_a_wrongly_scaled_receive_clock():
+    etime_max = 1_789_430_399_999_000_000
+    manifest = _rtime_manifest(etime_max, built_at=etime_max + 10**12)
+    # rtime left in raw milliseconds: lands in 1970, ~56 years before etime.
+    raw_ms = etime_max // 1_000_000
+    result = _rtime_status(
+        {
+            "rtime_min": raw_ms,
+            "rtime_max": raw_ms,
+            "skew_min": raw_ms - etime_max,
+            "skew_max": raw_ms - etime_max,
+        },
+        "capture",
+        manifest,
+    )
+    assert result["dq_status"] == "failed"
+    assert "below" in result["reason"]
+
+
+def test_rtime_plausibility_capture_fails_a_skew_beyond_the_ceiling():
+    etime_max = 1_789_430_399_999_000_000
+    manifest = _rtime_manifest(etime_max, built_at=etime_max + 10 * 86_400 * 10**9)
+    result = _rtime_status(
+        {
+            "rtime_min": etime_max,
+            "rtime_max": etime_max + 2 * 3600 * 10**9,
+            "skew_min": 0,
+            "skew_max": 2 * 3600 * 10**9,  # 2 h > the 3600 s ceiling
+        },
+        "capture",
+        manifest,
+    )
+    assert result["dq_status"] == "failed"
+    assert "above" in result["reason"]
+
+
+def test_rtime_plausibility_capture_fails_when_the_skew_cannot_be_computed():
+    """rtime present but no etime to compare it with: "could not judge it"
+    is never an ok."""
+    etime_max = 1_789_430_399_999_000_000
+    manifest = _rtime_manifest(etime_max, built_at=etime_max + 10**12)
+    result = _rtime_status(
+        {
+            "rtime_min": etime_max,
+            "rtime_max": etime_max,
+            "skew_min": None,
+            "skew_max": None,
+        },
+        "capture",
+        manifest,
+    )
+    assert result["dq_status"] == "failed"
+
+
+def test_rtime_plausibility_archive_accepts_a_download_long_after_the_day():
+    """The archive population: one rtime literal per day, measured 21.5 h to
+    107.9 days after etime. A skew window would pause all 107 real days."""
+    etime_max = 1_780_358_399_294_000_000
+    built_at = 1_789_594_165_761_991_000
+    downloaded = 1_789_592_751_978_096_932  # the real staged-file mtime
+    stats = {
+        "rtime_min": downloaded,
+        "rtime_max": downloaded,
+        "skew_min": downloaded - etime_max - 86_400 * 10**9,
+        "skew_max": downloaded - etime_max,
+    }
+    manifest = _rtime_manifest(etime_max, built_at)
+    assert _rtime_status(stats, "archive", manifest)["dq_status"] == "ok"
+    # ...and the same day scored as capture-sourced is a failure, which is
+    # exactly why the check has to know the source.
+    assert _rtime_status(stats, "capture", manifest)["dq_status"] == "failed"
+
+
+def test_rtime_plausibility_archive_fails_a_download_predating_its_own_data():
+    etime_max = 1_780_358_399_294_000_000
+    manifest = _rtime_manifest(etime_max, built_at=etime_max + 10**15)
+    result = _rtime_status(
+        {
+            "rtime_min": etime_max - 10**12,
+            "rtime_max": etime_max - 10**12,
+            "skew_min": 0,
+            "skew_max": 0,
+        },
+        "archive",
+        manifest,
+    )
+    assert result["dq_status"] == "failed"
+    assert "predate" in result["reason"]
+
+
+def test_rtime_plausibility_fails_an_rtime_after_the_manifest_was_issued():
+    etime_max = 1_789_430_399_999_000_000
+    built_at = etime_max + 10**12
+    for source in ("capture", "archive"):
+        result = _rtime_status(
+            {
+                "rtime_min": built_at + 10**9,
+                "rtime_max": built_at + 10**9,
+                "skew_min": 0,
+                "skew_max": 0,
+            },
+            source,
+            _rtime_manifest(etime_max, built_at),
+        )
+        assert result["dq_status"] == "failed", source
+        assert "built_at" in result["reason"]
+
+
+def test_rtime_plausibility_is_na_without_rtime_values():
+    manifest = _rtime_manifest(1_789_430_399_999_000_000, built_at=10**19)
+    result = _rtime_status(
+        {"rtime_min": None, "rtime_max": None, "skew_min": None, "skew_max": None},
+        "capture",
+        manifest,
+    )
+    assert result["dq_status"] == "n/a"
