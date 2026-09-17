@@ -1,0 +1,7 @@
+# The committed CI fixture lake's parquet partition (tests/fixtures/lake/)
+# is scanned byte-for-byte by tools/check_no_manifest_rewrite.py --full
+# (sha256 comparison against the committed manifest's recorded value, see
+# generate_manifest_fixture.py's docstring). `binary` disables git's
+# text/eol conversion entirely for these files so a clone/checkout can
+# never silently mutate the bytes the committed sha256 covers.
+*.parquet binary

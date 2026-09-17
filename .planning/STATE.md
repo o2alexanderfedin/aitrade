@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 02-04-PLAN.md Tasks 1-2; Task 3 (human-verify checkpoint) pending
-last_updated: "2026-09-14T02:46:07.546Z"
-last_activity: 2026-09-14
+status: ready_to_plan
+stopped_at: Phase 3 complete and merged to develop; Phase 4 ready to plan
+last_updated: "2026-09-17T07:40:00.000Z"
+last_activity: 2026-09-17
 progress:
   total_phases: 11
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 8
   completed_plans: 8
-  percent: 100
+  percent: 27
 ---
 
 # Project State
@@ -21,22 +21,22 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-10)
 
 **Core value:** A reproducible, leakage-proof two-stage pipeline achieving Net P&L > 0 and annualized Sharpe > 5 on a locked held-out walk-forward window under stated simplifications — produced by a workflow where agentic iteration verifiably improves the model.
-**Current focus:** Phase 2 — Stage 0: Living Spec, CI Guardrails & Tracking
+**Current focus:** Phase 3 — Data Layer: Backfill, Ingest & Lockbox
 
 ## Current Position
 
-Phase: 2 of 11 (Stage 0: Living Spec, CI Guardrails & Tracking) — EXECUTING
-Plan: 4 of 4
-Status: Ready to execute
-Last activity: 2026-09-14
+Phase: 4 of 11 (feature & label engine)
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-09-17
 
-Progress: [██████████] 100%
+Progress: [███░░░░░░░] 27%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 8
+- Total plans completed: 15
 - Average duration: -
 - Total execution time: -
 
@@ -44,7 +44,7 @@ Progress: [██████████] 100%
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 3 | 7 | - | - |
 
 **Recent Trend:**
 
@@ -101,10 +101,16 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- [Phase 1, deferred operational check — **premise now doubtful**]: Binance's documented ~24h forced close **did not occur** on `fstream` — Run F held both connections for 28h+ with no reconnect (largest gap 0.656s in the 24h-mark window). Reconnect handling is unit-tested and now logged (`connection X: closed code=... — reconnecting`); watch Run G's log for the first real close, whenever it comes, and confirm the ledger shows no gap.
-- [Phase 1, deferred operational check]: Eject `/Volumes/ProjectsSSD` while the daemon runs; confirm it records an outage and resumes cleanly without corrupting a partition, rather than crashing or writing a partial file.
+- [OPS, **ACTION REQUIRED BY USER**]: Run `sudo pmset -b disablesleep 1` on this Mac. Not yet done as of 2026-09-16 05:20 UTC (`battery_sleep_disabled()` still returns False). Without it, every minute the laptop spends unplugged is lost capture — see the Blockers section below for the measured cost. Verify afterwards with `./.venv/bin/python3 -c "from data.capture.power import battery_sleep_disabled; print(battery_sleep_disabled())"` → must print `True`.
+- [Phase 1, deferred operational check — **RESOLVED 2026-09-15**]: Binance's ~24h forced close is real after all. Run G logged repeated closes (`connection B: closed code=None reason='' after 53897.5s — reconnecting`, then A at 53962.9s, and many more; A reached attempt=12, B attempt=15 over ~52h). Every close reconnected automatically; reconnects lasting <5s produced no ledger row, longer ones did. Run F's 28h+ clean hold was luck, not a disproof.
+- [Phase 1, deferred operational check]: Eject `/Volumes/ProjectsSSD` while the daemon runs; confirm it records an outage and resumes cleanly without corrupting a partition, rather than crashing or writing a partial file. **Still open.**
 
 ### Blockers/Concerns
+
+- [OPS, 2026-09-16 — **root-caused, mitigation half-applied**]: **The Mac sleeps on battery and `caffeinate` cannot stop it.** Measured 2.71h of irreplaceable L1 lost in a 69.5h window (96.10% uptime), in three outages of 6053s, 2894s and 304s, plus a further ~54min on 09-15 evening. Cause is not the network and not the daemon: `pmset -g log` shows `Entering Sleep state due to 'Maintenance Sleep': TCPKeepAlive=active Using Batt (Charge:73%)` and later a `Clamshell Sleep`. `caffeinate -i -s`'s `PreventSystemSleep` assertion is honored **on AC power only**; on battery it is inert while still reporting as held (pmset showed it unbroken for 27h across all three sleeps), which is what made the loss invisible. The watchdog structurally cannot catch this — when the host sleeps, the watchdog stops ticking too.
+  - **Done:** `mvp/data/capture/power.py` + watchdog `__power__` ledger rows + a startup `WARNING: SLEEP RISK` line (commit 343d6d6, 9 tests, 5 mutation red-proofs). Live in Run H (PID 57329, restarted 2026-09-16 05:19:45Z, 7.4s gap, seq resumed from sidecar).
+  - **Still needed:** the user must run `sudo pmset -b disablesleep 1`. The alarm makes the risk visible; only pmset makes it impossible.
+  - **Note for Phase 3 DQ design:** capture uptime is ~96%, not ~100%. The gap-ledger coverage check's thresholds must be set against that reality, and the two-regime dataset's L1 regime has real holes that features must not silently interpolate across.
 
 - [OPS, 2026-09-14 00:54 UTC — RESOLVED, but the lesson is permanent]: **OneDrive Files-On-Demand dehydrated the repo working tree and `.venv`** under disk pressure (internal volume at 97%). `ls -lO` showed `compressed,dataless` on `daemon.py`, `rotation.py`, `schema.py`, `uv.lock`, and 343/380 polars files. Python's import hung in `importlib.get_data` waiting on OneDrive. A daemon restart therefore stalled with no log output and no pidfile, costing ~2.5 min of capture. **Resolution: the canonical working checkout is now `/Volumes/ProjectsSSD/aihedgefund/repo`** (cloned from `origin/develop`, venv built there, Run G launched from it). The OneDrive checkout at `~/Library/CloudStorage/OneDrive-Personal/.../AiHedgeFund` is stale by design — do not commit there; do not open it in an editor expecting it to be current. Git objects there were mostly intact (8/400 sampled dataless) so the three local-only Phase 2 commits were pushed before switching.
 
@@ -113,7 +119,6 @@ Recent decisions affecting current work:
 - [Phase 1]: Capture has not started yet. Roadmap was created 2026-06-10; it is now 2026-09-11, so ~3 months of L1 the roadmap assumed would be accruing were never captured. L1-dependent phases are gated on capture depth from the day the daemon actually starts.
 - [Phase 8]: Q3 (GPU spec & training budget) unresolved — blocks transformer track; mvp.md says needed before v0
 - [Phase 11]: Q5 (2nd-tier symbol choice) — check tick-size/filter re-tick history of candidates first
-- [Phase 2, Plan 04]: Task 3 (checkpoint:human-verify, gate=blocking) is PENDING human review. Evidence (8 red-proof transcripts, 2 GitHub Actions run URLs) is gathered in 02-04-SUMMARY.md's CHECKPOINT EVIDENCE section. Phase 2 should not be marked complete in ROADMAP.md until a human reviews and responds "approved".
 
 ## Deferred Items
 
@@ -125,6 +130,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-14
-Stopped at: Phases 1–2 complete and merged. Next: `/gsd-autonomous --from 3` (Data Layer — backfill, ingest, lockbox). Work ONLY from /Volumes/ProjectsSSD/aihedgefund/repo (OneDrive checkout is dehydrated/stale). Capture daemon Run G (PID 10771) running from that checkout's mvp/.venv. git-flow is NOT initialised in the SSD clone — use `git merge --no-ff` (identical result) or run `git flow init -d` first.
-Resume file: .planning/phases/02-stage-0-living-spec-ci-guardrails-tracking/02-04-SUMMARY.md
+Last session: 2026-09-17
+Stopped at: Phase 3 (Data Layer) complete — 6 plans + gap closure, verification 5/5 (T-03-09 resolved: CI now runs check_manifest_id_integrity + --full against a committed fixture lake), three review/fix iterations (ITER3: 0 critical; all 3 warnings + 5 info fixed in 03-REVIEW-FIX-ITER3.md), 548 tests, CI green; merged to develop with `git merge --no-ff`. Design lesson carried forward: static source-scanning guardrails (ms→ns single site, lockbox containment) do not converge against every spelling — they are defense-in-depth against accidents; the load-bearing guarantees are runtime/data controls (etime/event_time plausibility → `failed` → loader pause; chmod 0000 lockbox + loader containment + MLflow-first one-look token; sha256 on every manifest read; append-only history check over all parents). New guardrails should be designed runtime-first. Next: `/gsd-autonomous --from 4` (Feature & Label Engine). Work ONLY from /Volumes/ProjectsSSD/aihedgefund/repo. Capture daemon Run J (PID 72546, schema v2, per-run raw segment files). Open user action: `sudo pmset -b disablesleep 1`.
+Resume file: .planning/phases/03-data-layer-backfill-ingest-lockbox/03-REVIEW-FIX-ITER3.md

@@ -1,0 +1,189 @@
+# Data-quality check thresholds -- TOML source of truth mirroring
+# mvp/spec/catalogue.py's registry pattern (mvp/data/dq/checks.py's
+# _load_toml/frozen-dataclass loader parses this exactly the same way
+# spec/catalogue.py parses features.toml/labels.toml).
+#
+# Rendered into mvp/spec.md's "Data quality" pitfall subsection between the
+# <!-- catalogue:dq_thresholds:begin --> / :end markers by
+# mvp/spec/render.py's render_dq_thresholds_table(). mvp/tools/check_spec_diff.py
+# CI-rejects a drift between this file and spec.md's rendered table.
+#
+# Six checks, numbered per 03-CONTEXT.md/03-RESEARCH.md:
+#   (1) gap_coverage        -- capture-outage seconds/day (ledger-derived)
+#   (2) reconciliation      -- capture<->archive trade_id mismatch, curated/precomputed
+#   (3) na_placeholder      -- X="NA" placeholder trade drop rate, curated/precomputed
+#   (3b) probable_loss      -- trade-id skip runs on pre-capture archive days (informational)
+#   (4) crossed_locked_book -- bid_price >= ask_price count (informational)
+#   (5) l1_sparsity         -- max inter-arrival gap in bookTicker etime
+#   (6) etime_plausibility  -- manifest etime_range within [date-1d, date+1d]
+#   (6b) event_time_plausibility -- partition event_time range, same window
+# plus resync_warmup, the post-gap warm-up window duration feeding the
+# resync_windows sidecar (not itself one of the six numbered checks).
+
+[gap_coverage]
+degraded_seconds = 60
+failed_seconds = 900
+notes = """
+Measured against STATE.md's real, root-caused battery-sleep outages
+(6053s, 2894s, 3276s, 3016s, 304s and smaller -- host sleeps on battery
+because caffeinate's PreventSystemSleep assertion is honored on AC power
+only; see mvp/data/capture/power.py). failed_seconds=900 is ALREADY
+exceeded by 2026-09-14 and 2026-09-15 in the live gap ledger -- the
+acknowledgement mechanism is exercised from day one, not as a rare edge
+case (03-RESEARCH.md). Never raise this threshold to make those days pass;
+acknowledge them instead.
+"""
+
+[reconciliation]
+degraded_pct = 0.5
+notes = """
+Reads curated_meta/.../build_stats.json's PRECOMPUTED
+reconciliation_missing_from_capture/reconciliation_missing_from_archive
+fields (computed over the archive/capture trade_id overlap range BEFORE the
+non-chosen source is discarded) -- never recomputed from curated Parquet,
+which structurally contains only one source per day. X="NA" placeholder
+rows are EXCLUDED from both id sets before diffing (03-REVIEW.md WR-04):
+they consume ids the archive omits by design, so counting them as
+"missing from archive" was a structural false positive (2026-09-12's
+0.753% was exactly its 4,270 placeholders). Real values after the fix
+(regenerated 2026-09-17): missing_from_archive=0 on 09-12..09-15;
+missing_from_capture 0.17% (09-12), 0% (09-13), 4.78% (09-14), 6.36%
+(09-15) -- the last two are capture losing ids during that day's
+battery-sleep outages. Acknowledged per-day, not threshold-widened.
+"""
+
+[na_placeholder]
+degraded_pct = 2.0
+notes = """
+Reads build_stats.json's PRECOMPUTED na_placeholder_rate. The rate is a
+property of the LIVE stream, so it is taken from the capture side whenever
+capture exists for the day (na_placeholder_rate_source="capture"),
+regardless of which source curated chose (03-REVIEW.md WR-04: the archive
+has no placeholder rows and is chosen on every published day, so a
+chosen-source rate was 0.0 everywhere). Recomputing it from curated
+Parquet would be tautologically zero (already filtered). Measured real
+capture-side rates: 0.75% (09-12), 0.48% (09-13), 0.44% (09-14),
+0.32% (09-15).
+"""
+
+[probable_loss]
+flag_run_ids_over = 100
+flag_span_seconds_over = 1
+notes = """
+03-CONTEXT.md (locked): on pre-capture archive days (chosen source archive,
+no capture partition for the day) trade-id skip runs are flagged
+probable-loss and never hard-fail. INFORMATIONAL: dq_status is always "ok"
+(like crossed_locked_book) -- it never pauses the loader. On archive data an
+X="NA" placeholder burst and a genuine loss are indistinguishable by trade
+ids alone, so a pausing version made a human acknowledge noise on volatile
+days. The report still carries the flagged-run count, the largest run, the
+largest span and the largest flagged run, so a real loss is visible.
+A skip run is diff(trade_id) - 1 > 0 over the day sorted by trade_id; its
+span is the etime step across the skip. A run is flagged only when BOTH
+run_ids > flag_run_ids_over AND span > flag_span_seconds_over.
+MEASURED 2026-09-17, read-only over all 107 curated archive trade days
+(2026-06-01..2026-09-15, 857,144 skip runs): run sizes 1: 837,907;
+2-5: 19,137; 6-20: 100; >20: 0 -- max 16 ids (2026-08-19). The 100 runs of
+6-20 ids span at most 0.021 s (single-second NA bursts in fast markets).
+Neither axis alone is a discriminator: 87,733 runs span > 1 s, all of 1-5
+ids, up to 10.886 s (a lone placeholder in a quiet market; consecutive
+trades with no skip are up to 15.378 s apart), and a >100-id placeholder
+storm inside a few ms cannot be ruled out from three months of data.
+Margins: 100 ids is 6x the 16-id ceiling; 1 s is ~48x the 0.021 s span
+ceiling of runs above 5 ids. Runs satisfying both: 0 of 857,144. The first
+version (max_na_run_ids=5, measured over 6 capture days, degraded) paused
+2026-06-07, 07-06, 07-10, 08-19, 08-22, 08-25 -- all false positives (runs
+of 6-16 ids within 0.00-0.02 s). Days with a capture overlap report n/a
+here: reconciliation against capture is the loss detector there.
+"""
+
+[crossed_locked_book]
+notes = """
+Informational per-filter drop count (bid_price >= ask_price rows in
+curated bookTicker), always dq_status="ok" -- no numeric threshold per
+03-CONTEXT.md's check (4) description. Reported alongside the count so a
+future plan can decide whether a nonzero count warrants a threshold.
+"""
+
+[l1_sparsity]
+degraded_seconds = 30
+regime_start_utc = "2026-09-12T06:37:10.882Z"
+notes = """
+Longest stretch (seconds) of the UTC day with no bookTicker update: the
+max of the interior inter-arrival gaps AND both day edges -- start of day
+to the first row, last row to the next UTC midnight (03-REVIEW.md WR-05:
+interior gaps alone let a capture that died mid-day, whose restart outage
+is not self-ledgered, score ok while hours of L1 were missing). On the
+regime-start date the leading gap is measured from regime_start_utc (L1's
+own first captured etime, per the two-regime boundary decision), not from
+midnight; the trailing edge of a day still in progress is not measured.
+A day before regime_start_utc has no bookTicker curated partition at all
+and emits no row -- a day with no L1 by design is not a degraded day. A
+partition with zero rows is "n/a"; a single row is measured by its edges
+(it used to be "n/a", T-03-07).
+"""
+
+[etime_plausibility]
+notes = """
+Any violation is unconditionally dq_status="failed" -- no degraded tier.
+Reads manifest["etime_range"] (already computed at manifest-issuance time
+by data/store.py:issue_manifest, no re-scan needed) and checks both bounds
+fall within [date - 1 day, date + 2 days) -- i.e. the whole of date-1,
+date, and date+1 (a closed three-calendar-day window around `date`,
+generous enough to absorb ordinary rtime/etime skew around midnight
+without ever accepting a manifest that is off by a whole extra day).
+"""
+
+[event_time_plausibility]
+notes = """
+The etime_plausibility window applied to the partition's event_time column
+(03-REVIEW-ITER3.md IN-20): the exchange's event time `E` is converted by
+its own ms_to_ns call at parse time, so a wrong scale there was invisible
+to the etime gate. Manifests do not record an event_time range, so the DQ
+report builder computes [min, max] of the non-null values from the
+partition. Outside [date - 1 day, date + 2 days) is unconditionally
+dq_status="failed" (pauses the loader); n/a when the partition has no
+non-null event_time. rtime is NOT gated: archive-sourced rows carry the
+staged archive file's local mtime (data/ingest/normalize.py), measured
+outside the window on 106 of 111 real days.
+"""
+
+[resync_warmup]
+seconds = 60
+notes = """
+Post-gap warm-up window duration: curated rows within `seconds` after a
+collapsed (deduped) merged-silent outage's gap_end are tagged
+post_gap_warmup=true by Phase 4's feature pipeline, joining against this
+plan's resync_windows.parquet sidecar (curated partitions themselves are
+write-once and are never rewritten to add this column -- 03-CONTEXT.md
+"resync-tagged" pitfall mitigation, delivered as a sidecar, not a rebuild).
+60s is a placeholder pending Phase 4's own measurement of how long
+feature state actually takes to re-stabilize after a real reconnect; not
+itself one of the six numbered DQ checks or a pause-triggering signal.
+
+NAMED, BOUNDED EXCEPTION to "etime is the only clock, rtime joins nothing"
+(03-VERIFICATION.md gap-closure finding 3): an outage boundary has no real
+etime by definition (no message arrived during it), so
+resync_windows_for_date's join columns (gap_end_etime_approx,
+warmup_end_etime_approx -- explicitly suffixed, never a bare _rtime name
+used silently as etime) are the outage's own rtime values, approximated as
+etime. A real per-message rtime->etime lookup was investigated and
+rejected: (1) archive-sourced curated trade rows (all 107 real trade days)
+carry a single per-day ingest-time rtime LITERAL, not a real per-message
+receive time (data/ingest/normalize.py:normalize_archive_frame) --
+measured 16-40 HOUR "errors" against real 09-14/09-15 outage boundaries,
+not a bounded approximation at all; (2) even capture-sourced bookTicker
+rows can be a STALE BACKLOG FLUSH, not a fresh reading, at the exact
+boundary -- measured 2 of 8 real 09-14/09-15 boundaries off by ~the
+outage's own duration (303.7s of a 303.8s outage; 5.9s of a 5.8s outage):
+the row at gap_end_rtime carries an etime near the outage's START,
+followed by a dense burst of more stale rows (5,412 within 2s for one
+outage), consistent with frames buffered during the machine's own
+battery-sleep (data/capture/power.py) flushing on wake. The other 6 of 8
+resolved within 0.11s. Measured whole-partition rtime-etime skew (BTCUSDT
+bookTicker 2026-09-14, 38.6M rows): p50=-7.2ms, p90=110.9ms, p99=472.3ms,
+p99.9=2.047s, max=307.07s.
+Read seconds=60 as "60 curated-etime seconds after an APPROXIMATELY
+located boundary", not etime-exact. Full transcript:
+03-07-GAPS-SUMMARY.md.
+"""

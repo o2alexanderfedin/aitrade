@@ -1,0 +1,14 @@
+{
+  "acknowledged": [
+    {
+      "check": "l1_sparsity",
+      "dq_status": "degraded"
+    }
+  ],
+  "date": "2026-09-12",
+  "reason": "gap_coverage=ok this day (no connection-level outage in the gap ledger); l1_sparsity check (5) degraded (42.53s max inter-arrival gap at 2026-09-12T18:56:10Z-18:56:52Z, >30s threshold). Not correlated with any merged-silent/connection-silent gap-ledger row -- trades continued flowing through this window (this is exactly the isolated per-stream sparsity check (5) exists to catch, which check (1)'s connection-level watchdog structurally cannot see since it monitors merged liveness across streams, not per-stream inter-arrival gaps). Root cause not further investigated by this plan (a genuine, if brief, real-market or capture-side L1 pause); acknowledged as a known, measured characteristic of this day's L1 capture.",
+  "stream": "bookTicker",
+  "symbol": "BTCUSDT",
+  "when": "2026-09-16T22:08:09Z",
+  "who": "phase-3-execution"
+}

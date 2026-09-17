@@ -8,7 +8,6 @@ file). check_spec_diff.* git-ref tests build a scratch git repo under `tmp_path`
 dependence on this checkout's actual HEAD/history.
 """
 
-import os
 import subprocess
 from pathlib import Path
 
@@ -18,10 +17,12 @@ from spec.render import (
     FEATURES_END,
     LABELS_BEGIN,
     LABELS_END,
+    load_dq_thresholds_raw,
     render_features_table,
     render_labels_table,
     render_spec,
 )
+from tools.git_env import scrubbed_git_env
 from tools.check_spec_diff import (
     check_drift,
     git_show_toml,
@@ -87,6 +88,14 @@ SAMPLE_SPEC_MD = """# Sample spec
 <!-- catalogue:labels:end -->
 
 **Rules:** more unrelated prose.
+
+## Data quality
+
+<!-- catalogue:dq_thresholds:begin -->
+| Check | Threshold(s) | Notes |
+| --- | --- | --- |
+| `dq_stub` | x=1 | old, left untouched when dq_thresholds is not passed |
+<!-- catalogue:dq_thresholds:end -->
 """
 
 
@@ -185,11 +194,16 @@ def test_render_spec_against_real_repo_state_is_idempotent_on_second_run():
 #: hang on a GPG prompt or run an unexpected hook against a "hermetic" test
 #: scratch repo -- the same hermeticity gap Phase 1's disk-state lesson
 #: exists to avoid).
-_GIT_ENV = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+# Built per call, never captured at import: `git commit -- <pathspec>` exports
+# GIT_DIR + GIT_INDEX_FILE into its pre-commit hook (which runs this suite), and
+# inheriting them makes `cwd=` a lie -- scratch-repo writes land in the outer
+# repo's temporary index and kill the commit. See tools/git_env.py.
+def _git_env() -> dict[str, str]:
+    return scrubbed_git_env(isolate_config=True)
 
 
 def _git(args: list[str], cwd: Path) -> None:
-    subprocess.run(["git", *args], cwd=cwd, check=True, env=_GIT_ENV)
+    subprocess.run(["git", *args], cwd=cwd, check=True, env=_git_env())
 
 
 def _init_scratch_repo(tmp_path: Path) -> Path:
@@ -264,7 +278,10 @@ def test_main_warns_and_exits_zero_when_base_ref_unresolvable(
     # Real committed mvp/spec.md already matches its own TOML (checked by the repo
     # tests above); here we just need *some* spec.md that renders driftlessly against
     # the monkeypatched FEATURES/LABELS, so build one from render_spec directly.
-    spec_md = render_spec(SAMPLE_SPEC_MD, FEATURES, LABELS)
+    # dq_thresholds is NOT monkeypatched on `tools.check_spec_diff` (main() always
+    # loads it via spec.render's own, real DQ_THRESHOLDS_TOML path) -- use the same
+    # real values here so the scratch spec.md's DQ block matches what main() renders.
+    spec_md = render_spec(SAMPLE_SPEC_MD, FEATURES, LABELS, load_dq_thresholds_raw())
     (tmp_path / "spec.md").write_text(spec_md)
 
     exit_code = check_spec_diff_main(["--base-ref", "HEAD~999"])
@@ -313,7 +330,14 @@ def test_spec_diff_main_fails_when_feature_removed(monkeypatch, tmp_path, capsys
         "| Embargo | Notes |\n"
         "| --- | --- | --- | --- | --- |\n"
         "<!-- catalogue:labels:end -->\n"
+        "<!-- catalogue:dq_thresholds:begin -->\n"
+        "<!-- catalogue:dq_thresholds:end -->\n"
     )
+    # dq_thresholds is loaded from the REAL project path by main() (not monkeypatched
+    # here, unlike load_features/load_labels above) -- render the real table in so the
+    # scratch spec.md is driftless on that block; this test's assertions only care
+    # about the removed-feature failure, not the DQ block.
+    spec_md = render_spec(spec_md, {}, {}, load_dq_thresholds_raw())
     (repo / "mvp" / "spec.md").write_text(spec_md)
 
     exit_code = check_spec_diff_main(["--base-ref", "HEAD~1"])
@@ -341,7 +365,7 @@ def test_default_base_ref_resolves_to_merge_base_with_develop(tmp_path):
         cwd=repo,
         capture_output=True,
         text=True,
-        env=_GIT_ENV,
+        env=_git_env(),
     ).stdout.strip()
     assert base_ref == expected
 

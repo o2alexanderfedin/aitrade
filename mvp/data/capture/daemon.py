@@ -56,6 +56,7 @@ from pathlib import Path
 
 from data.capture.config import DataRootError, validate_data_root
 from data.capture.gap_ledger import GapLedger
+from data.capture.power import sleep_risk
 from data.capture.rotation import consume, sweep_orphan_tmp_files
 from data.capture.seq import SeqAssigner, resume_seq_assigner
 from data.capture.streams import combined_public_stream_url
@@ -318,6 +319,14 @@ async def run_daemon(args: argparse.Namespace) -> None:
     caffeinate_proc = spawn_caffeinate()
     if caffeinate_proc is not None:
         print(f"caffeinate spawned: pid={caffeinate_proc.pid}", flush=True)
+
+    # caffeinate's -s assertion is honored on AC power ONLY; on battery
+    # macOS still enters Maintenance Sleep and capture stops silently.
+    # Say so at startup rather than only discovering it in the ledger
+    # hours later. See data/capture/power.py.
+    startup_sleep_risk = sleep_risk()
+    if startup_sleep_risk is not None:
+        print(f"WARNING: SLEEP RISK — {startup_sleep_risk}", flush=True)
 
     queue: asyncio.Queue = asyncio.Queue(maxsize=QUEUE_MAXSIZE)
     shutdown_event = asyncio.Event()

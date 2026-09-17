@@ -297,3 +297,28 @@ def test_mandatory_tag_keys_match_spec_md():
         f"MANDATORY_TAG_KEYS {set(MANDATORY_TAG_KEYS)} -- the spec is the "
         "contract, keep both in lockstep"
     )
+
+
+# --- WR-01 (03-REVIEW.md): DQ acknowledgement ids ride on start_tracked_run ---
+
+
+def test_dq_ack_ids_are_logged_as_a_run_tag_at_creation(tmp_path):
+    tracking_uri = build_tracking_uri(str(tmp_path))
+    try:
+        run = start_tracked_run(
+            str(tmp_path),
+            dict(VALID_TAGS),
+            "test-experiment",
+            min_free_gb=0.0,
+            dq_ack_ids=[
+                "BTCUSDT__trade__2026-09-14",
+                "BTCUSDT__bookTicker__2026-09-14",
+            ],
+        )
+        fetched = MlflowClient(tracking_uri).get_run(run.info.run_id)
+        assert (
+            fetched.data.tags["dq_ack_ids"]
+            == "BTCUSDT__bookTicker__2026-09-14,BTCUSDT__trade__2026-09-14"
+        )
+    finally:
+        mlflow.end_run()

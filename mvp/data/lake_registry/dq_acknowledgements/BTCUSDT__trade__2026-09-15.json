@@ -1,0 +1,14 @@
+{
+  "acknowledged": [
+    {
+      "check": "reconciliation",
+      "dq_status": "degraded"
+    }
+  ],
+  "date": "2026-09-15",
+  "reason": "reconciliation degraded: missing_from_capture_pct=6.3574% (317,032 archive trade ids capture never received; missing_from_archive_pct=0.0000% once X=\"NA\" placeholders are excluded). Cause: that day's capture outages -- host sleeps on battery because caffeinate's PreventSystemSleep assertion is honored on AC power only (see power.py, commit 343d6d6; `sudo pmset -b disablesleep 1` is the pending OS-level fix). Collapsed outages this day: 5.8s (00:44:04-00:44:10Z), 6052.6s (00:44:38-02:25:31Z), 148.3s (02:25:54-02:28:22Z), 160.9s (16:20:48-16:23:29Z), 3274.5s (16:23:44-17:18:18Z). The curated trade partition is ARCHIVE-sourced and does not contain the capture gap; gap_coverage is n/a for archive-sourced trade days (the L1 impact is acknowledged separately on the bookTicker stream). Reason corrected by the 03-REVIEW-FIX pass: the original acknowledgement also cited gap_coverage FAILED on the trade stream, which no longer applies after WR-04.",
+  "stream": "trade",
+  "symbol": "BTCUSDT",
+  "when": "2026-09-17T02:53:44Z",
+  "who": "phase-3-review-fix (original: phase-3-execution, 2026-09-16T22:08:09Z)"
+}

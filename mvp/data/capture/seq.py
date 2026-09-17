@@ -125,7 +125,16 @@ def resume_seq_assigner(
                 )
 
                 if candidates:
-                    lazy_frames = [pl.scan_parquet(p) for p in candidates]
+                    # 03-06-PLAN.md belt-and-braces fix: project to the one
+                    # column this function needs BEFORE the concat. A
+                    # restart's date=... directory can hold both pre- and
+                    # post-schema-bump files (e.g. TRADE_SCHEMA v1 without
+                    # exec_type alongside v2 with it) -- a whole-row concat
+                    # would hit SchemaError/ShapeError on that mix. `seq` is
+                    # identical across schema versions, so projecting first
+                    # makes the concat schema-agnostic for free, with no
+                    # diagonal_relaxed/schema-tolerance machinery needed.
+                    lazy_frames = [pl.scan_parquet(p).select("seq") for p in candidates]
                     lf = (
                         lazy_frames[0]
                         if len(lazy_frames) == 1

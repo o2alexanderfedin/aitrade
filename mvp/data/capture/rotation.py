@@ -74,6 +74,25 @@ def partition_dir(data_root: Path, symbol: str, stream: str) -> Path:
     return data_root / "parsed" / f"symbol={symbol}" / f"stream={stream}"
 
 
+def write_parquet_atomic(
+    df: pl.DataFrame, final_path: Path, *, compression: str = "zstd"
+) -> None:
+    """Write `df` to `final_path` atomically: a `.tmp`-suffixed sibling write
+    followed by `Path.replace()`, creating `final_path`'s parent directory
+    first if needed.
+
+    Extracted from `write_partition_atomic`'s formerly-inline per-date-loop
+    pair (pure refactor -- see 03-01-PLAN.md Task 3) so both this module's
+    own caller and every later writer (`data/ingest/normalize.py`'s raw-tier
+    writer, Plan 02's curated-tier writer) call ONE atomic-write primitive
+    rather than each inlining its own `.tmp`+`replace` pair.
+    """
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = final_path.with_suffix(final_path.suffix + ".tmp")
+    df.write_parquet(tmp_path, compression=compression)
+    tmp_path.replace(final_path)
+
+
 def write_partition_atomic(
     rows: list[dict], schema: dict, data_root: Path, symbol: str, stream: str
 ) -> list[Path]:
@@ -96,11 +115,8 @@ def write_partition_atomic(
     for date_key, sub_df in parts.items():
         date_value = date_key[0]
         part_dir = base_dir / f"date={date_value}"
-        part_dir.mkdir(parents=True, exist_ok=True)
         final_path = part_dir / f"part-{time.time_ns()}.parquet"
-        tmp_path = final_path.with_suffix(final_path.suffix + ".tmp")
-        sub_df.write_parquet(tmp_path, compression="zstd")
-        tmp_path.replace(final_path)
+        write_parquet_atomic(sub_df, final_path)
         written.append(final_path)
 
     return written

@@ -13,6 +13,17 @@
 # version drift this project doesn't need (02-RESEARCH.md Pitfall 2, option
 # (a)). `uv run --directory mvp ruff ...` always runs the exact `ruff==0.15.*`
 # resolved in `mvp/uv.lock`, identically to CI.
+#
+# `default_stages: [pre-commit]` (Phase 3 Plan 02): introduced alongside this
+# phase's first `stages: [pre-push]`-scoped hook (check-no-manifest-rewrite-full,
+# below). Without this, a hook with no explicit `stages:` key defaults to EVERY
+# installed stage -- once `pre-commit install --hook-type pre-push` registers a
+# pre-push git hook, every pre-existing hook here (ruff, pytest, the other
+# guardrails) would silently start re-running on every push too. Pinning the
+# default keeps every hook's execution scope exactly what it was before this
+# plan, except the two manifest-rewrite hooks, which declare their own stage
+# explicitly.
+default_stages: [pre-commit]
 repos:
   - repo: local
     hooks:
@@ -58,6 +69,12 @@ repos:
         language: system
         pass_filenames: false
 
+      - id: lockbox-containment
+        name: check_lockbox_containment
+        entry: uv run --locked --directory mvp python -m tools.check_lockbox_containment
+        language: system
+        pass_filenames: false
+
       - id: numba-globals
         name: check_numba_globals
         entry: uv run --locked --directory mvp python -m tools.check_numba_globals
@@ -67,6 +84,57 @@ repos:
       - id: spec-diff
         name: check_spec_diff
         entry: uv run --locked --directory mvp python -m tools.check_spec_diff
+        language: system
+        pass_filenames: false
+
+      - id: check-no-manifest-rewrite
+        name: check_no_manifest_rewrite
+        entry: uv run --locked --directory mvp python -m tools.check_no_manifest_rewrite
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: check-no-manifest-rewrite-full
+        name: check_no_manifest_rewrite --full
+        entry: uv run --locked --directory mvp python -m tools.check_no_manifest_rewrite --full
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+      # 03-VERIFICATION.md gap-closure finding 1: the real-lake --full leg
+      # above unconditionally SKIPs on any machine without /Volumes/ProjectsSSD
+      # mounted (every GitHub Actions runner, forever, by construction) --
+      # structurally unable to ever exercise verify_manifest's real scan
+      # code in CI. This leg points the SAME --full scan at a small,
+      # committed fixture lake instead, so the real code path executes on
+      # every push regardless of what's mounted. Default `pre-commit` stage
+      # (fast -- a few KB, not the real multi-GB lake).
+      - id: check-no-manifest-rewrite-fixture
+        name: check_no_manifest_rewrite --full (CI fixture lake)
+        entry: uv run --locked --directory mvp python -m tools.check_no_manifest_rewrite --full --lake-root tests/fixtures/lake --registry-root tests/fixtures/lake_registry
+        language: system
+        pass_filenames: false
+
+      # 03-VERIFICATION.md gap-closure finding 1: needs no mounted lake at
+      # all (manifest JSON is git-committed) -- recomputes manifest_id from
+      # each committed manifest's own body and compares against both the
+      # manifest_id field and the filename, catching a hand-edited or
+      # corrupted manifest on every push, on every machine.
+      - id: check-manifest-id-integrity
+        name: check_manifest_id_integrity
+        entry: uv run --locked --directory mvp python -m tools.check_manifest_id_integrity
+        language: system
+        pass_filenames: false
+
+      # 03-REVIEW.md CR-02: the two manifest checks above only compare the
+      # working tree with itself, so an in-place partition rewrite plus a
+      # reissued manifest (old one deleted) passed both. This one anchors
+      # immutability to git history: no committed manifest may ever be
+      # deleted/modified, and no two manifests may name one partition path
+      # with different sha256. A shallow clone FAILS (never SKIPs).
+      - id: check-manifest-append-only
+        name: check_manifest_append_only
+        entry: uv run --locked --directory mvp python -m tools.check_manifest_append_only
         language: system
         pass_filenames: false
 

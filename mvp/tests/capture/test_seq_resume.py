@@ -31,7 +31,7 @@ from data.capture.rotation import (
     write_seq_state_atomic,
 )
 from data.capture.seq import SeqAssigner, resume_seq_assigner
-from data.schema import BOOKTICKER_SCHEMA
+from data.schema import BOOKTICKER_SCHEMA, TRADE_SCHEMA
 from tests.fixtures.payloads import SAMPLE_BOOKTICKER_FRAME, SAMPLE_TRADE_FRAME
 
 
@@ -266,6 +266,39 @@ def test_resume_seq_assigner_stale_sidecar_takes_max_of_sidecar_and_scan(
 
     healed = read_seq_sidecar(tmp_path, "BTCUSDT")
     assert healed["bookTicker"]["seq"] == 9
+
+
+def test_resume_seq_assigner_tolerates_mixed_schema_version_directory(
+    tmp_path: Path,
+) -> None:
+    """Test 5 (03-06-PLAN.md): a date=... directory straddling this plan's
+    own restart holds both a v1-shaped part file (no exec_type) and a
+    v2-shaped part file (exec_type present) -- resume_seq_assigner must
+    project to `seq` before concatenating, never raising a schema/shape
+    error on the mixed directory."""
+    event_ms = int(datetime(2026, 9, 12, tzinfo=timezone.utc).timestamp() * 1000)
+    rows_v1 = [_trade_row(seq, event_ms + seq) for seq in range(5)]  # seq 0..4
+    for row in rows_v1:
+        row.pop("exec_type", None)
+    schema_v1 = {k: v for k, v in TRADE_SCHEMA.items() if k != "exec_type"}
+    written_v1 = write_partition_atomic(
+        rows_v1, schema_v1, tmp_path, "BTCUSDT", "trade"
+    )
+    assert len(written_v1) == 1
+
+    time.sleep(0.001)  # ensure a distinct part-<ns> filename for the 2nd file
+    rows_v2 = [_trade_row(seq, event_ms + seq) for seq in range(5, 9)]  # seq 5..8
+    written_v2 = write_partition_atomic(
+        rows_v2, TRADE_SCHEMA, tmp_path, "BTCUSDT", "trade"
+    )
+    assert len(written_v2) == 1
+    assert "exec_type" in pl.read_parquet(written_v2[0]).columns
+    assert "exec_type" not in pl.read_parquet(written_v1[0]).columns
+
+    assigner = SeqAssigner()
+    resume_seq_assigner(assigner, tmp_path, "BTCUSDT", ["bookTicker", "trade"])
+
+    assert assigner.next("BTCUSDT", "trade") == 9  # max seq on disk (8) + 1
 
 
 def test_resume_seq_assigner_5000_partitions_with_sidecar_under_10_seconds(
