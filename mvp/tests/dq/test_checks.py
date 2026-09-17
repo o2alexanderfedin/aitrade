@@ -503,3 +503,51 @@ def test_probable_loss_sorts_by_trade_id_and_needs_two_trades():
     assert check_probable_loss(shuffled, THRESHOLDS)["count"] == 1
     single = check_probable_loss(_trades([(1, _T0)]), THRESHOLDS)
     assert single["dq_status"] == "n/a"
+
+
+# --- 03-REVIEW-ITER2.md CR-06: the runtime backstop for a wrong ms->ns scale --
+
+
+def _day_of_binance_ms(date: str) -> pl.Series:
+    """A full UTC day of Binance millisecond timestamps (first and last ms)."""
+    from data.dq.checks import _ns_midnight_utc
+
+    start_ms = _ns_midnight_utc(date) // 1_000_000
+    return pl.Series("time", [start_ms, start_ms + 86_400_000 - 1], dtype=pl.Int64)
+
+
+def _plausibility_of(etimes: list[int], date: str) -> str:
+    manifest = {"etime_range": [min(etimes), max(etimes)]}
+    return check_etime_plausibility(manifest, date, THRESHOLDS)["dq_status"]
+
+
+def test_etime_plausibility_pins_the_four_ms_to_ns_scaling_outcomes():
+    """`tools/check_ms_to_ns_site.py` only enforces the single-site hygiene
+    invariant and is statically evadable; correctness of the scale is carried
+    by this data gate, whose `failed` pauses `load_curated`. Pin all four
+    outcomes so the backstop cannot silently regress."""
+    date = "2026-09-12"
+    ms = _day_of_binance_ms(date)
+    frame = pl.DataFrame({"time": ms})
+
+    correct = frame.select(pl.col("time") * 1_000_000)["time"].to_list()
+    assert _plausibility_of(correct, date) == "ok"
+
+    forgot = ms.to_list()  # raw ms stored as if ns: 1970-01-21
+    assert _plausibility_of(forgot, date) == "failed"
+
+    under = frame.select(pl.col("time") * 1_000)["time"].to_list()  # us, 1970-01-21
+    assert _plausibility_of(under, date) == "failed"
+
+    # Over-converted: ms * 1e9 is not representable in int64 (~1.79e21 > 9.22e18).
+    exact = [t * 1_000_000_000 for t in ms.to_list()]
+    assert all(v > 2**63 - 1 for v in exact)
+    assert _plausibility_of(exact, date) == "failed"
+    with pytest.raises((TypeError, OverflowError)):
+        pl.Series("etime", exact, dtype=pl.Int64)  # a strict Int64 build refuses it
+    # ...but a polars Int64 EXPRESSION (the ingest path) wraps silently, so the
+    # gate -- not an exception -- is what catches it: a day spans 86.4e6 ms,
+    # i.e. 8.64e16 ns after the wrap, far wider than the 3-day window.
+    wrapped = frame.select(pl.col("time") * 1_000_000_000)["time"].to_list()
+    assert wrapped != exact
+    assert _plausibility_of(wrapped, date) == "failed"

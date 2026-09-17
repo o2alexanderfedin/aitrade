@@ -40,12 +40,49 @@ version only fired on a `BinOp` whose operand was literally `1_000_000` (or
      `duration(milliseconds=...)`, `timedelta(milliseconds=...)`, or a call
      receiving a `"datetime64[ms]"`/`"timedelta64[ms]"` dtype string.
 
-ACCEPTED GAPS (static analysis cannot see these; stated, not silently
-unclaimed): a value that only reaches the multiplication through a
-function's return value, a call argument bound to a parameter without a
-default, a container lookup (`SCALES["ms"]`), `getattr`/`eval`/`exec`, or a
-sequence of partial scalings (`t *= 1000` twice). `Datetime("ns")` casts of
-already-ns data are not sites.
+WHAT THIS CHECK IS, AND IS NOT (03-REVIEW-ITER2.md CR-06). It enforces a
+HYGIENE invariant: exactly one ms-to-ns conversion site, so a new
+Binance-ms dataset reuses `data.capture.parse.ms_to_ns` instead of growing
+its own. It does NOT carry the correctness of the scale, and it is
+statically evadable by ordinary code. Each review round closed the
+reproduced spellings and the next found more; this module stops trying to
+enumerate every way to write x10^6. Known residual class (each passes this
+scan):
+- a constant wrapped in a call: `pl.lit(1_000_000)`, `np.int64(1_000_000)`,
+  `int("1000000")`, also through `.mul(pl.lit(...))`;
+- tuple-unpacked or walrus bindings (`MS, NS = 1_000_000, 10**9`), `IfExp`
+  bindings, dict lookups (`SCALE["ms"]`), a function returning the constant,
+  a cross-module class attribute (`from m import Units; t * Units.MS`);
+- `functools.reduce(operator.mul, ...)`, `math.prod`, `t / 1e-6`, a
+  sequence of partial scalings (`t *= 1000` twice);
+- chain poisoning: a factor name that also has an unrelated numeric binding
+  anywhere in the module (`t = 0 ... t * 1000 * 1000`), and the
+  `_MAX_VALUES` cap on tracked bindings;
+- unit strings the matcher does not know (`astype("M8[ms]")`,
+  `Datetime("m" + "s")`), and ms->ns written as seconds arithmetic
+  (`t_ms * NS_PER_SECOND // 1000`) inside an allowlisted seconds-to-ns file;
+- `getattr`/`eval`/`exec`, notebooks, and anything under `tests/`.
+
+CORRECTNESS IS CARRIED AT RUNTIME by the data gate
+`data.dq.checks.check_etime_plausibility`: every curated manifest's
+`etime_range` must fall inside `[date - 1 day, date + 2 days)` of the day it
+claims, and its `failed` verdict pauses `data.store.load_curated`
+(`_dq_verdict_for_date` -> `_enforce_dq_pause` -> `DQPauseError`) unless a
+committed acknowledgement names that finding. Measured outcomes for a full
+UTC day of Binance ms timestamps (pinned by
+`tests/dq/test_checks.py::test_etime_plausibility_pins_the_four_ms_to_ns_scaling_outcomes`):
+- correct, ms * 1e6                      -> ok
+- conversion forgotten, raw ms as ns     -> failed (lands in January 1970)
+- under-converted, ms * 1e3              -> failed (lands in January 1970)
+- over-converted, ms * 1e9               -> not representable in int64
+  (~1.79e21 > 9.22e18): a strict `pl.Series(..., dtype=pl.Int64)` build
+  raises `TypeError` and numpy raises `OverflowError`, but a polars Int64
+  EXPRESSION -- the ingest path, `ms_to_ns(pl.col("time"))` -- wraps
+  silently. The gate still fails it: a day spans 86.4e6 ms, i.e. 8.64e16 ns
+  after the wrap, far wider than the 3-day window.
+A wrong scale therefore cannot reach a training run without a human
+acknowledging a `failed` etime_plausibility; what this static check adds is
+early, readable feedback in the common accidental case.
 
 SECONDARY CHECK -- seconds-to-ns: legitimate sites convert *seconds* to
 nanoseconds (ttl/threshold/duration config and display, not Binance ms
