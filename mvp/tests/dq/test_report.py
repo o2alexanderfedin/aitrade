@@ -443,3 +443,82 @@ def test_build_curated_day_writes_build_stats_before_issuing_the_manifest(
         )
     )
     assert stats["partition_sha256"] == hashlib.sha256(part.read_bytes()).hexdigest()
+
+
+# --- WR-04 (03-REVIEW.md): each check measures the source it is about ------
+
+
+def _archive_day(lake_root, registry_root, trade_ids, *, capture_available):
+    trade_df = pl.DataFrame(
+        {
+            "trade_id": trade_ids,
+            "etime": [1_789_171_200_000_000_000 + i for i in range(len(trade_ids))],
+            "price": [1.0] * len(trade_ids),
+        }
+    )
+    return _issue_and_write_build_stats(
+        lake_root,
+        registry_root,
+        SYMBOL,
+        "trade",
+        DATE,
+        trade_df,
+        build_stats={
+            "chosen_source": "archive",
+            "archive_available": True,
+            "capture_available": capture_available,
+            "reconciliation_missing_from_capture": 0 if capture_available else None,
+            "reconciliation_missing_from_archive": 0 if capture_available else None,
+            "reconciliation_overlap_rows": len(trade_ids)
+            if capture_available
+            else None,
+            "na_placeholder_dropped": 0,
+            "na_placeholder_rate": 0.0,
+        },
+    )
+
+
+def _failed_outage_ledger() -> pl.DataFrame:
+    start = 1_789_171_200_000_000_000 + 3600 * 1_000_000_000
+    return pl.DataFrame(
+        [
+            {
+                "stream": "__connection__",
+                "conn_id": "merged",
+                "gap_start_rtime": start,
+                "gap_end_rtime": start + 3000 * 1_000_000_000,
+                "cause": "merged-silent: no message for 3000.0s",
+                "detected_at": start,
+                "ledger_version": 2,
+            }
+        ],
+        schema=GAP_LEDGER_SCHEMA,
+    )
+
+
+def test_capture_outage_does_not_fail_an_archive_sourced_trade_day(tmp_path: Path):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    _archive_day(lake_root, registry_root, [1, 2, 3], capture_available=True)
+    rows = build_report_rows_for_date(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_failed_outage_ledger(),
+    )
+    assert _statuses(rows, "trade")["gap_coverage"] == "n/a"
+
+
+def test_pre_capture_archive_day_reports_probable_loss(tmp_path: Path):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    _archive_day(lake_root, registry_root, [1, 2, 3, 40, 41], capture_available=False)
+    rows = build_report_rows_for_date(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_empty_ledger(),
+    )
+    assert _statuses(rows, "trade").get("probable_loss") == "degraded"

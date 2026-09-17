@@ -38,6 +38,7 @@ from data.dq.checks import (
     check_gap_coverage,
     check_l1_sparsity,
     check_na_placeholder,
+    check_probable_loss,
     check_reconciliation,
     load_dq_thresholds,
     resync_windows_for_date,
@@ -147,9 +148,11 @@ def build_stats_problem(build_stats: dict | None, manifest: dict) -> str | None:
     )
 
 
-def _read_curated(manifest: dict, lake_root: Path) -> pl.DataFrame:
+def _read_curated(
+    manifest: dict, lake_root: Path, columns: list[str] | None = None
+) -> pl.DataFrame:
     frames = [
-        pl.read_parquet(Path(lake_root) / part["path"])
+        pl.read_parquet(Path(lake_root) / part["path"], columns=columns)
         for part in manifest["partitions"]
     ]
     return pl.concat(frames, how="vertical")
@@ -182,19 +185,52 @@ def build_report_rows_for_date(
         if manifest is None:
             continue
 
-        gap = check_gap_coverage(ledger_df, date, thresholds)
+        stats_path = build_stats_path(lake_root, symbol, stream, date)
+        build_stats = (
+            json.loads(stats_path.read_text()) if stats_path.exists() else None
+        )
+        stats_problem = (
+            build_stats_problem(build_stats, manifest) if stream == "trade" else None
+        )
+        archive_sourced_trades = (
+            stream == "trade"
+            and stats_problem is None
+            and build_stats.get("chosen_source") == "archive"
+        )
+
+        if archive_sourced_trades:
+            # 03-REVIEW.md WR-04(a): a capture outage says nothing about an
+            # archive-sourced trade day's completeness (L1 for the same
+            # outage is still covered by the bookTicker stream's row).
+            gap = {
+                "check": "gap_coverage",
+                "dq_status": "n/a",
+                "reason": "archive-sourced trade day: capture outages do not affect it",
+            }
+        else:
+            gap = check_gap_coverage(ledger_df, date, thresholds)
         rows.append({"date": date, "symbol": symbol, "stream": stream, **gap})
 
         etime_check = check_etime_plausibility(manifest, date, thresholds)
         rows.append({"date": date, "symbol": symbol, "stream": stream, **etime_check})
 
-        stats_path = build_stats_path(lake_root, symbol, stream, date)
-        build_stats = (
-            json.loads(stats_path.read_text()) if stats_path.exists() else None
-        )
+        if archive_sourced_trades:
+            if build_stats.get("capture_available"):
+                loss = {
+                    "check": "probable_loss",
+                    "dq_status": "n/a",
+                    "reason": "capture overlaps this day: reconciliation is the loss detector",
+                }
+            else:
+                loss = check_probable_loss(
+                    _read_curated(manifest, lake_root, columns=["trade_id"])[
+                        "trade_id"
+                    ],
+                    thresholds,
+                )
+            rows.append({"date": date, "symbol": symbol, "stream": stream, **loss})
 
         if stream == "trade":
-            stats_problem = build_stats_problem(build_stats, manifest)
             if stats_problem is not None:
                 # Fail closed (03-REVIEW.md WR-02): without the precomputed
                 # stats the reconciliation and NA checks cannot run, and

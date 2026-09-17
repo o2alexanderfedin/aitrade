@@ -41,6 +41,7 @@ __all__ = [
     "read_capture_partition",
     "build_curated_day",
     "build_curated_range",
+    "recompute_build_stats",
 ]
 
 
@@ -132,18 +133,24 @@ def select_source_for_day(
 
     if archive_available and capture_available:
         id_col = "trade_id" if "trade_id" in archive_df.columns else "update_id"
-        overlap_min = max(archive_df[id_col].min(), capture_df[id_col].min())
-        overlap_max = min(archive_df[id_col].max(), capture_df[id_col].max())
+        # X="NA" placeholder rows consume trade ids the archive omits by
+        # design; they are never "missing from archive" (03-REVIEW.md WR-04:
+        # counting them flipped ordinary days to degraded -- all 4,270 such
+        # ids on 2026-09-12 were placeholders). Excluded from BOTH sides.
+        archive_ids_df = _without_na_placeholders(archive_df)
+        capture_ids_df = _without_na_placeholders(capture_df)
+        overlap_min = max(archive_ids_df[id_col].min(), capture_ids_df[id_col].min())
+        overlap_max = min(archive_ids_df[id_col].max(), capture_ids_df[id_col].max())
         if overlap_min <= overlap_max:
             archive_overlap_ids = set(
-                archive_df.filter(pl.col(id_col).is_between(overlap_min, overlap_max))[
-                    id_col
-                ].to_list()
+                archive_ids_df.filter(
+                    pl.col(id_col).is_between(overlap_min, overlap_max)
+                )[id_col].to_list()
             )
             capture_overlap_ids = set(
-                capture_df.filter(pl.col(id_col).is_between(overlap_min, overlap_max))[
-                    id_col
-                ].to_list()
+                capture_ids_df.filter(
+                    pl.col(id_col).is_between(overlap_min, overlap_max)
+                )[id_col].to_list()
             )
             stats["reconciliation_missing_from_capture"] = len(
                 archive_overlap_ids - capture_overlap_ids
@@ -195,6 +202,18 @@ def filter_na_placeholders(df: pl.DataFrame) -> tuple[pl.DataFrame, int]:
     return cleaned, drop_count
 
 
+_NA_SIGNATURE_COLUMNS = ("schema_version", "price", "qty")
+
+
+def _without_na_placeholders(df: pl.DataFrame) -> pl.DataFrame:
+    """`df` minus X="NA" placeholder rows when it is a trade frame carrying
+    the columns the placeholder signature needs; otherwise `df` unchanged
+    (bookTicker frames have no such concept)."""
+    if not all(c in df.columns for c in _NA_SIGNATURE_COLUMNS):
+        return df
+    return filter_na_placeholders(df)[0]
+
+
 def read_capture_partition(date_dir: Path) -> pl.DataFrame | None:
     """Schema-tolerant read of a capture `parsed/.../date=.../` directory:
     per-file `pl.scan_parquet` then `pl.concat(..., how="diagonal_relaxed")`
@@ -216,6 +235,142 @@ def _atomic_write_json(path: Path, body: dict) -> None:
     tmp_path = path.with_suffix(path.suffix + ".tmp")
     tmp_path.write_text(json.dumps(body, sort_keys=True, indent=2, default=str))
     tmp_path.replace(path)
+
+
+def _select_with_na_stats(
+    stream: str,
+    archive_df: pl.DataFrame | None,
+    capture_df: pl.DataFrame | None,
+    published: bool,
+) -> tuple[pl.DataFrame, dict, dict]:
+    """Choose the day's source and compute every derived statistic the DQ
+    report needs from BOTH sources before the non-chosen one is discarded:
+    reconciliation (NA placeholders excluded) and the NA-placeholder counts.
+
+    NA rate (03-REVIEW.md WR-04): the archive omits placeholder rows by
+    construction and is chosen on every published day, so a rate taken from
+    the chosen source is 0.0 on every published day. The rate is a property
+    of the LIVE stream, so it is reported from the capture side whenever
+    capture exists for the day (`na_placeholder_rate_source`), and from the
+    chosen source otherwise. `na_placeholder_dropped` stays the count
+    actually dropped from the curated output."""
+    na_stats: dict = {
+        "na_placeholder_dropped": 0,
+        "na_placeholder_rate": 0.0,
+        "na_placeholder_rate_source": None,
+        "capture_rows_pre_filter": None,
+        "capture_na_placeholder_dropped": None,
+    }
+    capture_na = archive_na = 0
+    if stream == "trade":
+        if capture_df is not None:
+            capture_rows = capture_df.height
+            capture_df, capture_na = filter_na_placeholders(capture_df)
+            na_stats["capture_rows_pre_filter"] = capture_rows
+            na_stats["capture_na_placeholder_dropped"] = capture_na
+        archive_rows = archive_df.height if archive_df is not None else 0
+        if archive_df is not None:
+            archive_df, archive_na = filter_na_placeholders(archive_df)
+
+    chosen_df, stats = select_source_for_day(archive_df, capture_df, published)
+
+    if stream == "trade":
+        chosen_capture = stats["chosen_source"] == "capture"
+        na_stats["na_placeholder_dropped"] = (
+            capture_na if chosen_capture else archive_na
+        )
+        if na_stats["capture_rows_pre_filter"]:
+            na_stats["na_placeholder_rate"] = (
+                capture_na / na_stats["capture_rows_pre_filter"]
+            )
+            na_stats["na_placeholder_rate_source"] = "capture"
+        else:
+            na_stats["na_placeholder_rate"] = (
+                archive_na / archive_rows if archive_rows else 0.0
+            )
+            na_stats["na_placeholder_rate_source"] = stats["chosen_source"]
+    return chosen_df, stats, na_stats
+
+
+def recompute_build_stats(
+    symbol: str,
+    stream: str,
+    date: str,
+    lake_root: Path,
+    capture_root: Path,
+    *,
+    registry_root: Path,
+) -> tuple[dict | None, dict]:
+    """Regenerate `build_stats.json` for an ALREADY BUILT day from its
+    sources, without writing any partition or manifest (both write-once).
+
+    `build_stats.json` is derived and re-computable; this exists so a fix to
+    how the statistics are computed (03-REVIEW.md WR-04) can be applied to
+    days already built. Guards, all fail-closed (`ValueError`):
+    - the day's by-date manifest must exist;
+    - the recomputed chosen source must equal the manifest's source, and
+      every manifest input's sha256 must still match its file on disk, so
+      the statistics describe the same bytes the partition was built from.
+    Preserves the binding to the manifest (`manifest_id`, partition path and
+    sha256). Returns `(previous_stats_or_None, new_stats)`.
+    """
+    lake_root = Path(lake_root)
+    dataset = f"{symbol}.{stream}"
+    idx_path = by_date_index_path(registry_root, dataset, symbol, stream, date)
+    if not idx_path.exists():
+        raise ValueError(
+            f"recompute_build_stats: no curated manifest for {dataset} {date}"
+        )
+    manifest_id = json.loads(idx_path.read_text())["manifest_id"]
+    manifest = json.loads(
+        manifest_path(registry_root, dataset, manifest_id).read_text()
+    )
+
+    for entry in manifest["inputs"]:
+        on_disk = hashlib.sha256(Path(entry["path"]).read_bytes()).hexdigest()
+        if on_disk != entry["sha256"]:
+            raise ValueError(
+                f"recompute_build_stats: input {entry['path']} no longer matches "
+                f"manifest {manifest_id} (sha256 {on_disk} != {entry['sha256']})"
+            )
+
+    archive_dir = (
+        lake_root
+        / "raw"
+        / f"symbol={symbol}"
+        / f"stream={stream}"
+        / "source=archive"
+        / f"date={date}"
+    )
+    archive_files = (
+        sorted(archive_dir.glob("part-*.parquet")) if archive_dir.exists() else []
+    )
+    archive_df = pl.read_parquet(archive_files[0]) if archive_files else None
+    capture_df = read_capture_partition(
+        Path(capture_root) / f"symbol={symbol}" / f"stream={stream}" / f"date={date}"
+    )
+    _chosen, stats, na_stats = _select_with_na_stats(
+        stream, archive_df, capture_df, bool(archive_files)
+    )
+    if stats["chosen_source"] != _manifest_source(manifest):
+        raise ValueError(
+            f"recompute_build_stats: sources now select {stats['chosen_source']!r} but "
+            f"manifest {manifest_id} was built from {_manifest_source(manifest)!r} -- "
+            "rebuild (supersede) instead of re-deriving stats"
+        )
+
+    stats_path = _curated_build_stats_path(lake_root, symbol, stream, date)
+    previous = json.loads(stats_path.read_text()) if stats_path.exists() else None
+    part = manifest["partitions"][0]
+    new_stats = {
+        **stats,
+        **na_stats,
+        "partition_path": part["path"],
+        "partition_sha256": part["sha256"],
+        "manifest_id": manifest_id,
+    }
+    _atomic_write_json(stats_path, new_stats)
+    return previous, new_stats
 
 
 def build_curated_day(
@@ -278,7 +433,9 @@ def build_curated_day(
     )
     capture_df = read_capture_partition(capture_dir)
 
-    chosen_df, stats = select_source_for_day(archive_df, capture_df, published)
+    chosen_df, stats, na_stats = _select_with_na_stats(
+        stream, archive_df, capture_df, published
+    )
     chosen_source = stats["chosen_source"]
 
     if chosen_source == "archive":
@@ -301,14 +458,10 @@ def build_curated_day(
         ]
 
     if stream == "trade":
-        pre_filter_rows = chosen_df.height
-        chosen_df, na_dropped = filter_na_placeholders(chosen_df)
-        na_rate = na_dropped / pre_filter_rows if pre_filter_rows > 0 else 0.0
+        chosen_df, _already_filtered = filter_na_placeholders(chosen_df)
         chosen_df = resolve_side(chosen_df)
         sort_keys = ["etime", "trade_id"]
     else:
-        na_dropped = 0
-        na_rate = 0.0
         sort_keys = ["etime", "update_id"]
 
     chosen_df = materialize_seq(chosen_df, sort_keys)
@@ -354,8 +507,7 @@ def build_curated_day(
     # manifest_id is filled in right after issuance.
     build_stats = {
         **stats,
-        "na_placeholder_dropped": na_dropped,
-        "na_placeholder_rate": na_rate,
+        **na_stats,
         "partition_path": partition_entry["path"],
         "partition_sha256": partition_entry["sha256"],
         "manifest_id": None,

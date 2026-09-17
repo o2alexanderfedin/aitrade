@@ -131,6 +131,7 @@ __all__ = [
     "check_gap_coverage",
     "check_reconciliation",
     "check_na_placeholder",
+    "check_probable_loss",
     "check_crossed_locked_book",
     "check_l1_sparsity",
     "check_etime_plausibility",
@@ -157,6 +158,12 @@ class ReconciliationThresholds:
 @dataclass(frozen=True)
 class NaPlaceholderThresholds:
     degraded_pct: float
+    notes: str
+
+
+@dataclass(frozen=True)
+class ProbableLossThresholds:
+    max_na_run_ids: int
     notes: str
 
 
@@ -188,6 +195,7 @@ class DQThresholds:
     gap_coverage: GapCoverageThresholds
     reconciliation: ReconciliationThresholds
     na_placeholder: NaPlaceholderThresholds
+    probable_loss: ProbableLossThresholds
     crossed_locked_book: CrossedLockedBookThresholds
     l1_sparsity: L1SparsityThresholds
     etime_plausibility: EtimePlausibilityThresholds
@@ -208,6 +216,7 @@ def load_dq_thresholds(path: Path = DQ_THRESHOLDS_TOML) -> DQThresholds:
             gap_coverage=GapCoverageThresholds(**raw["gap_coverage"]),
             reconciliation=ReconciliationThresholds(**raw["reconciliation"]),
             na_placeholder=NaPlaceholderThresholds(**raw["na_placeholder"]),
+            probable_loss=ProbableLossThresholds(**raw["probable_loss"]),
             crossed_locked_book=CrossedLockedBookThresholds(
                 **raw["crossed_locked_book"]
             ),
@@ -452,6 +461,49 @@ def check_na_placeholder(build_stats: dict, thresholds: DQThresholds) -> dict:
         "dq_status": status,
         "value_pct": pct,
         "dropped": dropped,
+    }
+
+
+# --------------------------------------------------------------------------
+# Check (3b): probable loss on pre-capture archive days
+# --------------------------------------------------------------------------
+
+
+def check_probable_loss(trade_ids: pl.Series, thresholds: DQThresholds) -> dict:
+    """03-CONTEXT.md (locked): "on pre-capture days, skip runs longer than the
+    maximum observed NA run are flagged `probable-loss` in the DQ report and
+    never hard-fail."
+
+    Trade-id contiguity is not a loss detector on the archive by itself: the
+    archive omits X="NA" placeholder rows, which still consume ids, so every
+    placeholder leaves a skip. But placeholders come in short runs -- the
+    longest run of consecutive placeholder ids measured over every captured
+    day is `thresholds.probable_loss.max_na_run_ids`. A skip run
+    (`diff(trade_id) - 1`) longer than that is not explained by placeholders
+    alone and is flagged. Status is `"degraded"` (pauses the loader until a
+    human acknowledges it), never `"failed"`. `count` = number of flagged
+    runs; `value_pct` is not used."""
+    ids = trade_ids.sort()
+    if ids.len() < 2:
+        return {
+            "check": "probable_loss",
+            "dq_status": "n/a",
+            "count": None,
+            "reason": f"fewer than 2 trade ids ({ids.len()})",
+        }
+    skips = ids.diff().drop_nulls() - 1
+    limit = thresholds.probable_loss.max_na_run_ids
+    flagged = skips.filter(skips > limit)
+    max_skip = int(skips.max())
+    status = "degraded" if flagged.len() else "ok"
+    return {
+        "check": "probable_loss",
+        "dq_status": status,
+        "count": int(flagged.len()),
+        "reason": (
+            f"max_skip_run_ids={max_skip}; runs_over_max_na_run({limit})="
+            f"{flagged.len()}; ids_in_flagged_runs={int(flagged.sum()) if flagged.len() else 0}"
+        ),
     }
 
 

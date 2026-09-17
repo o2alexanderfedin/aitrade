@@ -12,6 +12,7 @@
 #   (1) gap_coverage        -- capture-outage seconds/day (ledger-derived)
 #   (2) reconciliation      -- capture<->archive trade_id mismatch, curated/precomputed
 #   (3) na_placeholder      -- X="NA" placeholder trade drop rate, curated/precomputed
+#   (3b) probable_loss      -- trade-id skip runs on pre-capture archive days
 #   (4) crossed_locked_book -- bid_price >= ask_price count (informational)
 #   (5) l1_sparsity         -- max inter-arrival gap in bookTicker etime
 #   (6) etime_plausibility  -- manifest etime_range within [date-1d, date+1d]
@@ -37,32 +38,50 @@ degraded_pct = 0.5
 notes = """
 Reads curated_meta/.../build_stats.json's PRECOMPUTED
 reconciliation_missing_from_capture/reconciliation_missing_from_archive
-fields (Plan 02's select_source_for_day, computed over the archive/capture
-trade_id overlap range BEFORE the non-chosen source is discarded) -- never
-recomputed from curated Parquet, which structurally contains only one
-source per day and cannot answer a reconciliation question after the fact
-(the same always-green-check defect class Phase 1 shipped once already).
-Measured real values: 2026-09-12 missing_from_archive=0.753% (capture-side
-X="NA" placeholder rows that were never destined for curated output --
-a structural artifact of the whole-source-switch design, not curated-data
-corruption), 2026-09-13=0.485% (just under), 2026-09-14=4.784% and
-2026-09-15=6.359% (both correlate with that day's own gap_coverage outage
--- the same connectivity loss that caused the outage also caused capture
-to miss archive trade ids). Acknowledged per-day, not threshold-widened.
+fields (computed over the archive/capture trade_id overlap range BEFORE the
+non-chosen source is discarded) -- never recomputed from curated Parquet,
+which structurally contains only one source per day. X="NA" placeholder
+rows are EXCLUDED from both id sets before diffing (03-REVIEW.md WR-04):
+they consume ids the archive omits by design, so counting them as
+"missing from archive" was a structural false positive (2026-09-12's
+0.753% was exactly its 4,270 placeholders). Real values after the fix
+(regenerated 2026-09-17): missing_from_archive=0 on 09-12..09-15;
+missing_from_capture 0.17% (09-12), 0% (09-13), 4.78% (09-14), 6.36%
+(09-15) -- the last two are capture losing ids during that day's
+battery-sleep outages. Acknowledged per-day, not threshold-widened.
 """
 
 [na_placeholder]
 degraded_pct = 2.0
 notes = """
-Reads curated_meta/.../build_stats.json's PRECOMPUTED
-na_placeholder_dropped/na_placeholder_rate fields (Plan 02's
-filter_na_placeholders output, persisted at curated-build time) -- never
-recomputed from curated Parquet, which is by construction already filtered
-clean of these rows (a rate recomputed from clean data is tautologically
-always zero, the same always-green-check shape as the reconciliation
-check's own corrected design above). Measured real values: 0.0% on every
-built day so far (all four probed days chose the archive source, which has
-no X="NA" rows by construction).
+Reads build_stats.json's PRECOMPUTED na_placeholder_rate. The rate is a
+property of the LIVE stream, so it is taken from the capture side whenever
+capture exists for the day (na_placeholder_rate_source="capture"),
+regardless of which source curated chose (03-REVIEW.md WR-04: the archive
+has no placeholder rows and is chosen on every published day, so a
+chosen-source rate was 0.0 everywhere). Recomputing it from curated
+Parquet would be tautologically zero (already filtered). Measured real
+capture-side rates: 0.75% (09-12), 0.48% (09-13), 0.44% (09-14),
+0.32% (09-15).
+"""
+
+[probable_loss]
+max_na_run_ids = 5
+notes = """
+03-CONTEXT.md (locked): on pre-capture archive days (chosen source archive,
+no capture partition for the day), trade-id skip runs (diff(trade_id) - 1)
+longer than the maximum observed X="NA" placeholder run are flagged
+probable-loss -- dq_status "degraded", never "failed". Placeholder rows
+consume trade ids the archive omits, so shorter skips are expected.
+max_na_run_ids=5 is MEASURED (2026-09-17, read-only over every captured
+trade day): longest run of consecutive placeholder trade ids per day was
+5 (09-12), 5 (09-13), 3 (09-14), 3 (09-15), 4 (09-16), 2 (09-17 partial),
+over 55,905 placeholder rows. Days with a capture overlap report n/a here:
+reconciliation against capture is the loss detector there. First real
+run flagged 6 of the 103 pre-capture days (2026-06-07, 07-06, 07-10, 08-19,
+08-22, 08-25; longest skip 16 ids) -- paused pending a human decision, not
+auto-acknowledged. Re-measure as capture history grows: a longer observed
+placeholder run raises this number.
 """
 
 [crossed_locked_book]

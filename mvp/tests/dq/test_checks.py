@@ -398,3 +398,24 @@ def test_resync_windows_empty_ledger_has_the_same_etime_approx_schema():
         "gap_end_etime_approx",
         "warmup_end_etime_approx",
     }
+
+
+# --- WR-04 (03-REVIEW.md): probable-loss on pre-capture archive days --------
+
+
+def test_probable_loss_flags_skip_runs_longer_than_the_max_observed_na_run():
+    from data.dq.checks import check_probable_loss
+
+    limit = THRESHOLDS.probable_loss.max_na_run_ids
+    ok_ids = pl.Series([1, 2, 2 + limit + 1, 2 + limit + 2])  # skip run == limit
+    assert check_probable_loss(ok_ids, THRESHOLDS)["dq_status"] == "ok"
+
+    lossy = pl.Series([1, 2, 2 + limit + 2, 2 + limit + 3, 100])  # skips limit+1 and 89
+    result = check_probable_loss(lossy, THRESHOLDS)
+    assert result["dq_status"] == "degraded"  # never "failed"
+    assert result["count"] == 2
+    assert "max_skip_run_ids=89" in result["reason"]
+
+
+def test_probable_loss_threshold_is_the_measured_max_na_run():
+    assert THRESHOLDS.probable_loss.max_na_run_ids == 5

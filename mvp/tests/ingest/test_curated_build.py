@@ -219,3 +219,164 @@ def test_build_curated_day_refuses_second_write_same_day(tmp_path: Path):
             registry_root=registry_root,
             code_hash="deadbeef",
         )
+
+
+# --- WR-04 (03-REVIEW.md): NA placeholders never count as missing ----------
+
+
+def _capture_trades(ids: list[int], na_ids: set[int]) -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "trade_id": ids,
+            "etime": [1_000 * i for i in ids],
+            "price": [0.0 if i in na_ids else 100.0 for i in ids],
+            "qty": [0.0 if i in na_ids else 1.0 for i in ids],
+            "exec_type": ["NA" if i in na_ids else "TRADE" for i in ids],
+            "schema_version": [2] * len(ids),
+        }
+    )
+
+
+def test_reconciliation_excludes_capture_na_placeholders():
+    """The live stream delivers X="NA" placeholder rows that consume trade
+    ids the archive omits by design. They are not "missing from archive"
+    (03-CONTEXT: over the 2026-09-12 overlap all 4,270 such ids were NA)."""
+    archive_df = pl.DataFrame(
+        {
+            "trade_id": [1, 2, 4, 5, 7, 8],
+            "price": [1.0] * 6,
+            "qty": [1.0] * 6,
+            "schema_version": [1] * 6,
+        }
+    )
+    capture_df = _capture_trades(list(range(1, 9)), na_ids={3, 6})
+    _chosen, stats = select_source_for_day(archive_df, capture_df, published=True)
+    assert stats["reconciliation_missing_from_archive"] == 0
+    assert stats["reconciliation_missing_from_capture"] == 0
+    assert stats["reconciliation_overlap_rows"] == 6
+
+
+def test_build_stats_reports_the_capture_side_na_rate_on_an_archive_day(tmp_path: Path):
+    """On a published day the archive is chosen and has no NA rows, so a rate
+    taken from the chosen source is 0.0 on every published day. The NA rate
+    is a property of the live stream: report it from capture when it exists."""
+    import json
+
+    from data.ingest.curated_build import build_curated_day
+
+    lake_root = tmp_path / "lake"
+    capture_root = tmp_path / "capture"
+    archive_dir = (
+        lake_root / "raw/symbol=BTCUSDT/stream=trade/source=archive/date=2026-09-12"
+    )
+    archive_dir.mkdir(parents=True)
+    ids = [1, 2, 4, 5, 7, 8]
+    pl.DataFrame(
+        {
+            "trade_id": ids,
+            "etime": [1_000 * i for i in ids],
+            "event_time": [1_000 * i for i in ids],
+            "price": [100.0] * 6,
+            "qty": [1.0] * 6,
+            "is_buyer_maker": [True, False] * 3,
+            "seq": [-1] * 6,
+            "rtime": [0] * 6,
+            "source": ["archive"] * 6,
+            "schema_version": [1] * 6,
+        }
+    ).write_parquet(archive_dir / "part-1.parquet")
+    cap_dir = capture_root / "symbol=BTCUSDT/stream=trade/date=2026-09-12"
+    cap_dir.mkdir(parents=True)
+    _capture_trades(list(range(1, 9)), na_ids={3, 6}).with_columns(
+        pl.lit(True).alias("is_buyer_maker"), pl.lit(0).alias("seq")
+    ).write_parquet(cap_dir / "part-1.parquet")
+
+    build_curated_day(
+        "BTCUSDT",
+        "trade",
+        "2026-09-12",
+        lake_root,
+        capture_root,
+        registry_root=tmp_path / "registry",
+        code_hash="deadbeef",
+    )
+    stats = json.loads(
+        (
+            lake_root
+            / "curated_meta/symbol=BTCUSDT/stream=trade/date=2026-09-12/build_stats.json"
+        ).read_text()
+    )
+    assert stats["chosen_source"] == "archive"
+    assert stats["na_placeholder_rate"] == pytest.approx(2 / 8)
+    assert stats["reconciliation_missing_from_archive"] == 0
+
+
+def test_recompute_build_stats_rederives_stats_without_touching_partitions(
+    tmp_path: Path,
+):
+    """The regeneration path used to apply the WR-04 fix to already-built
+    days: stats are re-derived from the same sources, the manifest binding is
+    preserved, and no partition or manifest is written."""
+    import json
+
+    from data.ingest.curated_build import recompute_build_stats
+
+    test_build_stats_reports_the_capture_side_na_rate_on_an_archive_day(tmp_path)
+    lake_root, capture_root, registry_root = (
+        tmp_path / "lake",
+        tmp_path / "capture",
+        tmp_path / "registry",
+    )
+    stats_path = (
+        lake_root
+        / "curated_meta/symbol=BTCUSDT/stream=trade/date=2026-09-12/build_stats.json"
+    )
+    built = json.loads(stats_path.read_text())
+    stale = {
+        **built,
+        "reconciliation_missing_from_archive": 2,
+        "na_placeholder_rate": 0.0,
+    }
+    stats_path.write_text(json.dumps(stale))
+    before = sorted(p.name for p in (lake_root / "curated").rglob("*")) + sorted(
+        p.name for p in registry_root.rglob("*")
+    )
+
+    previous, new = recompute_build_stats(
+        "BTCUSDT",
+        "trade",
+        "2026-09-12",
+        lake_root,
+        capture_root,
+        registry_root=registry_root,
+    )
+    assert previous == stale
+    assert new == built
+    assert json.loads(stats_path.read_text()) == built
+    after = sorted(p.name for p in (lake_root / "curated").rglob("*")) + sorted(
+        p.name for p in registry_root.rglob("*")
+    )
+    assert after == before
+
+
+def test_recompute_build_stats_refuses_when_inputs_changed(tmp_path: Path):
+    from data.ingest.curated_build import recompute_build_stats
+
+    test_build_stats_reports_the_capture_side_na_rate_on_an_archive_day(tmp_path)
+    archive = next(
+        (
+            tmp_path
+            / "lake/raw/symbol=BTCUSDT/stream=trade/source=archive/date=2026-09-12"
+        ).glob("*.parquet")
+    )
+    with open(archive, "ab") as fh:
+        fh.write(b"\0")
+    with pytest.raises(ValueError, match="no longer matches"):
+        recompute_build_stats(
+            "BTCUSDT",
+            "trade",
+            "2026-09-12",
+            tmp_path / "lake",
+            tmp_path / "capture",
+            registry_root=tmp_path / "registry",
+        )
