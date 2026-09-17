@@ -744,6 +744,19 @@ def check_rtime_plausibility(
     other direction (a seconds-as-ns or over-multiplied value lands
     centuries in the future).
 
+    - **anything else**: `"failed"`, with a reason that says the source has
+      no bounds and names where to add them. 03-REVIEW-FOLLOWUPS.md WR-03:
+      `manifest_source` used to answer `"capture"` for everything that was
+      not provably archive -- no `inputs` key, an empty list, a mixed list,
+      a future `/source=tardis/` -- so the first vendor-sourced dataset
+      would have been judged by the capture skew window and paused on every
+      single day, with the report blaming a window that was never meant for
+      it. The pause is the same; what changes is that the message is
+      actionable. Measured read-only over all 111 committed by-date
+      manifests: 4 capture, 107 archive, zero unknown -- no real day
+      changes verdict (pinned by
+      `tests/dq/test_checks.py::test_every_real_manifest_still_has_a_known_source`).
+
     `"failed"` (pauses `load_curated`) on any violation; `"n/a"` when the
     partitions have no non-null `rtime`. No degraded tier: a receive clock
     outside these bounds is a unit/ordering defect, not a matter of degree.
@@ -767,7 +780,28 @@ def check_rtime_plausibility(
             f"rtime_max {rtime_max} is after the manifest's own built_at {built_at}"
         )
 
-    if source == "archive":
+    # Imported inside the function so this module keeps importing nothing
+    # from `data.*` -- it is a pure-function module by design, and
+    # `data.store` pulls in git and polars IO. The vocabulary has exactly one
+    # owner (`manifest_source`), so it is read from there rather than
+    # restated here and left to drift.
+    from data.store import KNOWN_MANIFEST_SOURCES
+
+    if source not in KNOWN_MANIFEST_SOURCES:
+        problems.append(
+            f"source {source!r} has no rtime bounds: the manifest's own "
+            "`inputs` do not all name one known /source=<name>/ (missing, "
+            "empty, mixed, or a source this codebase has never scored). "
+            "Refusing to judge the receive clock by a window meant for a "
+            "different population -- a vendor download's rtime is a DOWNLOAD "
+            "time, days from etime, and the capture skew window would pause "
+            "every single day. Add bounds for this source under "
+            "[rtime_plausibility] in mvp/spec/dq_thresholds.toml (e.g. "
+            f"`{source}_skew_min_seconds`/`{source}_skew_max_seconds`, or an "
+            "ordering rule like the archive branch's) and the matching branch "
+            "in data.dq.checks.check_rtime_plausibility"
+        )
+    elif source == "archive":
         if rtime_min < etime_max:
             problems.append(
                 f"archive-sourced: rtime_min {rtime_min} precedes the day's last "

@@ -720,3 +720,108 @@ def test_rtime_plausibility_is_na_without_rtime_values():
         manifest,
     )
     assert result["dq_status"] == "n/a"
+
+
+# --- 03-REVIEW-FOLLOWUPS.md WR-03: an unknown source must not default -------
+
+
+@pytest.mark.parametrize(
+    ("label", "inputs"),
+    [
+        ("no inputs key", None),
+        ("empty inputs list", []),
+        ("a vendor source", [{"path": "raw/source=tardis/symbol=BTCUSDT/x.parquet"}]),
+        (
+            "a mixed list",
+            [
+                {"path": "raw/source=archive/symbol=BTCUSDT/x.parquet"},
+                {"path": "raw/source=capture/symbol=BTCUSDT/y.parquet"},
+            ],
+        ),
+        ("no recognisable shape at all", [{"path": "raw/somewhere/x.parquet"}]),
+        ("an input with no path key", [{"rows": 1}]),
+        (
+            "capture mixed with a vendor",
+            [
+                {"path": "/d/symbol=BTCUSDT/stream=trade/date=2026-01-01/p.parquet"},
+                {"path": "raw/source=tardis/symbol=BTCUSDT/x.parquet"},
+            ],
+        ),
+    ],
+    ids=["no-key", "empty", "vendor", "mixed", "no-shape", "no-path", "capture+vendor"],
+)
+def test_an_unrecognised_manifest_source_is_unknown_not_capture(label, inputs):
+    """`manifest_source` returned `"archive"` only when EVERY input path was
+    an archive partition, and `"capture"` for everything else -- including a
+    manifest with no inputs at all and a future `/source=tardis/`. Tardis is
+    this project's documented plan for historical L1, and a vendor download's
+    rtime is a download time, days from etime: it would have been judged by
+    the capture skew window and paused on every single day."""
+    from data.store import UNKNOWN_MANIFEST_SOURCE, manifest_source
+
+    manifest = {} if inputs is None else {"inputs": inputs}
+    assert manifest_source(manifest) == UNKNOWN_MANIFEST_SOURCE, label
+
+
+def test_the_two_known_sources_are_recognised_by_their_own_path_shape():
+    """Capture is recognised POSITIVELY, by the capture daemon's own layout,
+    not as the fall-through. `curated_build` records `str(path.resolve())`,
+    and only the archive staging tree is hive-partitioned by `source=` -- so
+    the fall-through used to be "capture", which is what made every unknown
+    source silently a capture one."""
+    from data.store import manifest_source
+
+    capture = "/Volumes/x/capture/parsed/symbol=BTCUSDT/stream=bookTicker/date=2026-09-12/part-1.parquet"  # noqa: E501
+    archive = "/Volumes/x/backfill/staged/source=archive/symbol=BTCUSDT/stream=trade/date=2026-06-01/p.parquet"
+    assert manifest_source({"inputs": [{"path": capture}]}) == "capture"
+    assert manifest_source({"inputs": [{"path": archive}]}) == "archive"
+
+
+def test_rtime_plausibility_fails_an_unknown_source_with_an_actionable_reason():
+    """`failed` pauses `load_curated`, which is right -- but the report must
+    say WHY, naming the file and section where the missing bounds go, rather
+    than blaming a skew window that was never meant for this source."""
+    from data.store import UNKNOWN_MANIFEST_SOURCE
+
+    etime_max = 1_789_430_399_999_000_000
+    manifest = _rtime_manifest(etime_max, built_at=etime_max + 10**12)
+    downloaded = etime_max + 5 * 86_400 * 10**9
+    result = _rtime_status(
+        {
+            "rtime_min": downloaded,
+            "rtime_max": downloaded,
+            "skew_min": downloaded - etime_max,
+            "skew_max": downloaded - etime_max,
+        },
+        UNKNOWN_MANIFEST_SOURCE,
+        manifest,
+    )
+    assert result["dq_status"] == "failed"
+    assert "capture-sourced" not in result["reason"], (
+        "an unknown source must not be blamed on the capture skew window"
+    )
+    assert "is above" not in result["reason"]
+    assert "dq_thresholds.toml" in result["reason"]
+    assert "rtime_plausibility" in result["reason"]
+
+
+def test_every_real_manifest_still_has_a_known_source():
+    """Measured read-only over all 111 committed by-date manifests: 4 capture,
+    107 archive, zero unknown. The fail-closed branch must not pause a single
+    real day."""
+    import json
+
+    from data.lake_paths import LAKE_REGISTRY_ROOT
+    from data.store import manifest_source
+
+    manifests_dir = LAKE_REGISTRY_ROOT / "manifests"
+    pointers = sorted(manifests_dir.rglob("by-date/*.json"))
+    assert len(pointers) == 111, f"expected 111 by-date pointers, found {len(pointers)}"
+
+    counts: dict[str, int] = {}
+    for pointer in pointers:
+        manifest_id = json.loads(pointer.read_text())["manifest_id"]
+        body = json.loads(next(manifests_dir.rglob(f"{manifest_id}.json")).read_text())
+        source = manifest_source(body)
+        counts[source] = counts.get(source, 0) + 1
+    assert counts == {"capture": 4, "archive": 107}, counts

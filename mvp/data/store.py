@@ -42,6 +42,7 @@ import hashlib
 import io
 import json
 import posixpath
+import re
 import subprocess
 import time
 import unicodedata
@@ -198,19 +199,74 @@ def partition_path_problem(path: object) -> str | None:
     return None
 
 
+#: The manifest sources this codebase knows how to judge. A source outside
+#: this set has no `rtime` bounds, so it cannot be scored (WR-03).
+KNOWN_MANIFEST_SOURCES: frozenset[str] = frozenset({"archive", "capture"})
+
+#: What `manifest_source` returns when it cannot name ONE known source.
+UNKNOWN_MANIFEST_SOURCE = "unknown"
+
+#: A raw-archive input names its source in a hive component, because the
+#: backfill staging tree is partitioned by it.
+_SOURCE_COMPONENT_RE = re.compile(r"/source=([^/]+)/")
+
+#: A capture input carries no `source=` component at all -- it is an
+#: absolute path into the capture daemon's OWN tree
+#: (`data.capture.rotation`: `<capture_root>/symbol=.../stream=.../date=...`)
+#: and `curated_build` records `str(path.resolve())` verbatim. Capture is
+#: therefore recognised POSITIVELY, by requiring all three hive components;
+#: it is NOT the fall-through, which is what made every unknown source
+#: silently a capture one (WR-03).
+#:
+#: RESIDUAL: a future source staged under the same three components and no
+#: `source=` marker would read as capture. Any new source must be staged
+#: with its own `/source=<name>/` component -- the backfill staging tree
+#: already is -- and that is the contract `check_rtime_plausibility`'s
+#: unknown-source message spells out.
+_CAPTURE_PATH_RE = re.compile(r"/symbol=[^/]+/stream=[^/]+/date=[^/]+/")
+
+
+def _input_source(path: object) -> str | None:
+    """The source one input path names, or `None` if it names none."""
+    if not isinstance(path, str):
+        return None
+    found = _SOURCE_COMPONENT_RE.search(path)
+    if found is not None:
+        return found.group(1)
+    return "capture" if _CAPTURE_PATH_RE.search(path) else None
+
+
 def manifest_source(manifest: dict) -> str:
-    """`"archive"` if every one of the manifest's inputs is a raw-archive
-    partition, else `"capture"` -- read from the manifest itself (committed
-    and bound to its id), never from the mutable `build_stats.json`.
+    """The ONE source every one of this manifest's inputs came from --
+    `"archive"`, `"capture"`, or `UNKNOWN_MANIFEST_SOURCE` -- read from the
+    manifest itself (committed and bound to its id), never from the mutable
+    `build_stats.json`.
 
     Lives here, not in `data.ingest.curated_build`, because two readers need
     it: the builder's supersede logic and the DQ report's source-dependent
     `rtime` gate (`data.dq.checks.check_rtime_plausibility`).
+
+    A THREE-WAY ANSWER, NOT A DEFAULT (03-REVIEW-FOLLOWUPS.md WR-03). This
+    used to return `"archive"` only when every input path contained
+    `/source=archive/` and `"capture"` for everything else -- so a manifest
+    with no `inputs` key, an empty list, a mixed list, or a future
+    `/source=tardis/` was judged by the capture branch's
+    `[-60 s, +3600 s]` `rtime - etime` skew window. A vendor download's
+    `rtime` is a DOWNLOAD time, days from `etime`; Tardis.dev is this
+    project's documented plan for historical L1, so the first vendor-sourced
+    dataset would have been paused on every single day, blamed on a window
+    that was never meant for it. Saying `"unknown"` out loud costs the same
+    pause and buys an actionable message.
     """
-    inputs = manifest.get("inputs", [])
-    if inputs and all("/source=archive/" in i["path"] for i in inputs):
-        return "archive"
-    return "capture"
+    sources: set[str | None] = {
+        _input_source(item.get("path") if isinstance(item, dict) else None)
+        for item in manifest.get("inputs") or []
+    }
+    if len(sources) == 1:
+        only = next(iter(sources))
+        if only in KNOWN_MANIFEST_SOURCES:
+            return only
+    return UNKNOWN_MANIFEST_SOURCE
 
 
 def _atomic_write_json(path: Path, body: dict) -> None:

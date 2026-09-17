@@ -730,12 +730,26 @@ def _trade_day_with_rtime(lake_root, registry_root, rtimes, *, inputs=None):
         stream="trade",
         tier="curated",
         schema_version=1,
-        inputs=inputs if inputs is not None else [],
+        inputs=inputs if inputs is not None else _CAPTURE_INPUT,
         partitions=[part],
         code_hash="deadbeef",
         registry_root=registry_root,
     )
 
+
+#: A capture-sourced input, spelled the way `curated_build` records one: an
+#: absolute path into the capture daemon's own tree, with no `source=`
+#: component. These fixtures used to pass `inputs=[]` and rely on
+#: `manifest_source`'s "everything else is capture" fall-through, which is
+#: exactly what 03-REVIEW-FOLLOWUPS.md WR-03 removed -- an empty inputs list
+#: now scores `unknown`, so the capture days have to say they are capture.
+_CAPTURE_INPUT = [
+    {
+        "path": "/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-12/part-1.parquet",
+        "rows": 2,
+        "sha256": "1" * 64,
+    }
+]
 
 _ARCHIVE_INPUT = [
     {
