@@ -40,7 +40,9 @@ STRICTLY BEFORE the trade's `etime`, never a quote at or after it (a
 trade's own price impact -- leakage into the very classification the quote
 is supposed to inform). Both frames must be sorted by `etime` before the
 join; this function sorts its own copies internally so callers never have
-to pre-sort.
+to pre-sort. Quote updates that share an `etime` are ordered by
+`update_id` (else `seq`) and only the last one per `etime` is joined
+(03-REVIEW.md WR-10), so the result never depends on input row order.
 
 `allow_exact_matches=False` (03-03-PLAN.md Task 3, fixed after the real
 2026-09-13 cross-check measured 57.5% agreement pre-fix): both `etime`
@@ -120,6 +122,38 @@ def resolve_side(df: pl.DataFrame, quotes: pl.DataFrame | None = None) -> pl.Dat
     return out.drop("_resolve_side_order")
 
 
+#: Columns that order quote updates sharing one `etime`, in preference order:
+#: Binance's own book-update id, then the curated tier's `(etime, seq)` seq.
+QUOTE_TIEBREAK_COLUMNS: tuple[str, ...] = ("update_id", "seq")
+
+
+def _prevailing_quote_per_etime(quotes: pl.DataFrame) -> pl.DataFrame:
+    """One quote per `etime`: the LAST update in `(etime, tiebreak)` order.
+
+    03-REVIEW.md WR-10: `quotes.sort("etime")` left same-millisecond updates
+    in file order, and `join_asof(strategy="backward")` took whichever came
+    last -- so the classification depended on input row order, not on
+    `update_id`/`seq` (62 % of real trades sit on a millisecond with more
+    than one quote update). Sorting by a total order and keeping the last
+    row per `etime` makes the result a pure function of the quote set.
+    Refuses (`ValueError`) tied `etime`s with no tiebreak column rather than
+    silently picking one."""
+    tiebreak = next((c for c in QUOTE_TIEBREAK_COLUMNS if c in quotes.columns), None)
+    if tiebreak is None:
+        if quotes["etime"].n_unique() != quotes.height:
+            raise ValueError(
+                "nearest_quote_side: quotes share an etime but carry no tiebreak "
+                f"column ({' or '.join(QUOTE_TIEBREAK_COLUMNS)}) -- the prevailing "
+                "quote would depend on input row order"
+            )
+        ordered = quotes.sort("etime")
+    else:
+        ordered = quotes.sort(["etime", tiebreak])
+    return ordered.unique(subset="etime", keep="last", maintain_order=True).select(
+        "etime", "bid_price", "ask_price"
+    )
+
+
 def nearest_quote_side(trades: pl.DataFrame, quotes: pl.DataFrame) -> pl.DataFrame:
     """Classify `trades` (rows needing a side) by the nearest L1 quote
     STRICTLY BEFORE each trade's `etime` (never at the same `etime` -- see
@@ -139,7 +173,7 @@ def nearest_quote_side(trades: pl.DataFrame, quotes: pl.DataFrame) -> pl.DataFra
     # input row N.
     trades_indexed = trades.with_row_index("_nqs_order")
     trades_sorted = trades_indexed.sort("etime")
-    quotes_sorted = quotes.sort("etime").select("etime", "bid_price", "ask_price")
+    quotes_sorted = _prevailing_quote_per_etime(quotes)
 
     joined = trades_sorted.join_asof(
         quotes_sorted, on="etime", strategy="backward", allow_exact_matches=False

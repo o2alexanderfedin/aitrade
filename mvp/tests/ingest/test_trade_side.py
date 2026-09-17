@@ -4,6 +4,7 @@ nearest-quote classifier, and the forced cross-check."""
 from __future__ import annotations
 
 import polars as pl
+import pytest
 
 from data.ingest.trade_side import (
     cross_check_agreement,
@@ -172,3 +173,40 @@ def test_cross_check_agreement_full_agreement_fixture():
     # row2 price=49  -> closer to bid(50)  -> nearest-quote -1, matches raw -1
     rate = cross_check_agreement(resolved, quotes)
     assert rate == 1.0
+
+
+# --- WR-10 (03-REVIEW.md): same-millisecond quotes are a total order -------
+
+
+def _tie_quotes(order: list[int], tiebreak: str = "update_id") -> pl.DataFrame:
+    """Two quote updates in the SAME millisecond before the trade: update 7
+    (bid 99, ask 200 -> trade at 100 is closer to the bid -> sell) and the
+    LATER update 8 (bid 10, ask 101 -> closer to the ask -> buy). The
+    prevailing quote is update 8, whatever the file order."""
+    rows = [
+        {"etime": 900, tiebreak: 7, "bid_price": 99.0, "ask_price": 200.0},
+        {"etime": 900, tiebreak: 8, "bid_price": 10.0, "ask_price": 101.0},
+        {"etime": 500, tiebreak: 1, "bid_price": 1.0, "ask_price": 2.0},
+    ]
+    return pl.DataFrame([rows[i] for i in order])
+
+
+@pytest.mark.parametrize("tiebreak", ["update_id", "seq"])
+def test_same_millisecond_quotes_classify_identically_in_any_input_order(tiebreak):
+    import itertools
+
+    trades = pl.DataFrame({"trade_id": [1], "etime": [1_000], "price": [100.0]})
+    results = {
+        tuple(order): nearest_quote_side(trades, _tie_quotes(list(order), tiebreak))[
+            "tradeSide_corrected"
+        ].to_list()
+        for order in itertools.permutations(range(3))
+    }
+    assert set(map(tuple, results.values())) == {(1,)}, results
+
+
+def test_same_millisecond_quotes_without_a_tiebreak_column_are_refused():
+    trades = pl.DataFrame({"trade_id": [1], "etime": [1_000], "price": [100.0]})
+    quotes = _tie_quotes([0, 1, 2]).drop("update_id")
+    with pytest.raises(ValueError, match="tiebreak"):
+        nearest_quote_side(trades, quotes)
