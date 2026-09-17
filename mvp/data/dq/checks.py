@@ -94,14 +94,12 @@ magnitude) -- only small, already-bounded DIFFERENCES (outage durations,
 at most a few days' worth of ns) are ever divided down to a float seconds
 value, and only for reporting.
 
-GUARDRAIL NOTE: `NS_PER_SECOND` is defined as a bare top-level assignment,
-never as a `* 1_000_000_000` / `/ 1_000_000_000` literal BinOp inline --
-`tools/check_ms_to_ns_site.py` AST-walks for exactly that literal pattern
-inside a `Mult`/`Div` node, allowlisted to three pre-existing files. Every
-division/multiplication in this module goes through the `NS_PER_SECOND`/
-`NS_PER_DAY` *names*, which the guardrail's predicate does not match (it
-only matches a literal `ast.Constant`, not a `Name` reference) -- so this
-file needs no entry in that allowlist.
+GUARDRAIL NOTE: this module's seconds<->ns arithmetic (`NS_PER_SECOND`,
+`NS_PER_DAY`, and the ns -> seconds display divisions) IS a seconds-to-ns
+site as far as `tools/check_ms_to_ns_site.py` is concerned, and is
+allowlisted there explicitly under `data/dq/checks.py`. That guardrail
+resolves names to values (03-REVIEW.md CR-05); binding a literal to a name
+does not hide a conversion from it, and must never be used to try.
 """
 
 from __future__ import annotations
@@ -116,8 +114,8 @@ import polars as pl
 PKG_ROOT = Path(__file__).resolve().parents[2]
 DQ_THRESHOLDS_TOML = PKG_ROOT / "spec" / "dq_thresholds.toml"
 
-#: See module docstring's GUARDRAIL NOTE -- never inline the literal
-#: `1_000_000_000` in a multiplication/division; always go through this name.
+#: Seconds <-> ns scale for day-boundary arithmetic and duration display. See
+#: the module docstring's GUARDRAIL NOTE (allowlisted, not hidden).
 NS_PER_SECOND = 1_000_000_000
 NS_PER_DAY = 86_400 * NS_PER_SECOND
 
