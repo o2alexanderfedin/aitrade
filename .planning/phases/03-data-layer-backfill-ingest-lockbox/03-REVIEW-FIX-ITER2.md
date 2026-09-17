@@ -112,7 +112,7 @@ local `develop`):
 - With rule 2a disabled, every merge and symlink test still failed through 2b. Only the
   linear edit-then-restore test went green, which is expected because the net tree diff is
   empty.
-- With rule 2b disabled, 2a alone kept every test red. The two views are independent, and
+- With rule 2b disabled, 2a alone still caught every bad repo (all tests passed). The two views are independent, and
   2b is the redundant one.
 
 **Out of reach (stated in the docstring).**
