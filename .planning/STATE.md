@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 02-04-PLAN.md Tasks 1-2; Task 3 (human-verify checkpoint) pending
-last_updated: "2026-09-14T02:46:07.546Z"
-last_activity: 2026-09-14
+status: ready_to_plan
+stopped_at: Phase 3 complete and merged to develop; Phase 4 ready to plan
+last_updated: "2026-09-17T07:40:00.000Z"
+last_activity: 2026-09-17
 progress:
   total_phases: 11
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 8
   completed_plans: 8
-  percent: 100
+  percent: 27
 ---
 
 # Project State
@@ -25,18 +25,18 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 
 ## Current Position
 
-Phase: 3 of 11 (Data Layer — Backfill, Ingest & Lockbox) — DISCUSSED, planning next
-Plan: 0 of ?
-Status: CONTEXT.md written; plan-phase not yet run
-Last activity: 2026-09-16
+Phase: 4 of 11 (feature & label engine)
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-09-17
 
-Progress: [██████████] 100%
+Progress: [███░░░░░░░] 27%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 8
+- Total plans completed: 15
 - Average duration: -
 - Total execution time: -
 
@@ -44,7 +44,7 @@ Progress: [██████████] 100%
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 3 | 7 | - | - |
 
 **Recent Trend:**
 
@@ -119,7 +119,6 @@ Recent decisions affecting current work:
 - [Phase 1]: Capture has not started yet. Roadmap was created 2026-06-10; it is now 2026-09-11, so ~3 months of L1 the roadmap assumed would be accruing were never captured. L1-dependent phases are gated on capture depth from the day the daemon actually starts.
 - [Phase 8]: Q3 (GPU spec & training budget) unresolved — blocks transformer track; mvp.md says needed before v0
 - [Phase 11]: Q5 (2nd-tier symbol choice) — check tick-size/filter re-tick history of candidates first
-- [Phase 2, Plan 04]: Task 3 (checkpoint:human-verify, gate=blocking) is PENDING human review. Evidence (8 red-proof transcripts, 2 GitHub Actions run URLs) is gathered in 02-04-SUMMARY.md's CHECKPOINT EVIDENCE section. Phase 2 should not be marked complete in ROADMAP.md until a human reviews and responds "approved".
 
 ## Deferred Items
 
@@ -131,6 +130,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-16
-Stopped at: Phase 3 discussed (CONTEXT.md + evidence/PROBE-RESULTS.md committed on feature/phase-03-data-layer-backfill-ingest-lockbox); two defects found and fixed en route (990b3af scratch-repo index corruption, 343d6d6 battery-sleep alarm). Phases 1–2 complete and merged. Next: `/gsd-autonomous --from 3` (Data Layer — backfill, ingest, lockbox). Work ONLY from /Volumes/ProjectsSSD/aihedgefund/repo (OneDrive checkout is dehydrated/stale). Capture daemon Run G (PID 10771) running from that checkout's mvp/.venv. git-flow is NOT initialised in the SSD clone — use `git merge --no-ff` (identical result) or run `git flow init -d` first.
-Resume file: .planning/phases/02-stage-0-living-spec-ci-guardrails-tracking/02-04-SUMMARY.md
+Last session: 2026-09-17
+Stopped at: Phase 3 (Data Layer) complete — 6 plans + gap closure, verification 5/5 (T-03-09 resolved: CI now runs check_manifest_id_integrity + --full against a committed fixture lake), three review/fix iterations (ITER3: 0 critical; all 3 warnings + 5 info fixed in 03-REVIEW-FIX-ITER3.md), 548 tests, CI green; merged to develop with `git merge --no-ff`. Design lesson carried forward: static source-scanning guardrails (ms→ns single site, lockbox containment) do not converge against every spelling — they are defense-in-depth against accidents; the load-bearing guarantees are runtime/data controls (etime/event_time plausibility → `failed` → loader pause; chmod 0000 lockbox + loader containment + MLflow-first one-look token; sha256 on every manifest read; append-only history check over all parents). New guardrails should be designed runtime-first. Next: `/gsd-autonomous --from 4` (Feature & Label Engine). Work ONLY from /Volumes/ProjectsSSD/aihedgefund/repo. Capture daemon Run J (PID 72546, schema v2, per-run raw segment files). Open user action: `sudo pmset -b disablesleep 1`.
+Resume file: .planning/phases/03-data-layer-backfill-ingest-lockbox/03-REVIEW-FIX-ITER3.md

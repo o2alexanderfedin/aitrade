@@ -1,7 +1,8 @@
 ---
 phase: 03-data-layer-backfill-ingest-lockbox
 verified: 2026-09-16T15:30:00Z
-status: human_needed
+status: passed
+human_verification_resolved: "2026-09-16 — user chose to improve rather than accept T-03-09: CI now runs check_manifest_id_integrity on every committed manifest and check_no_manifest_rewrite --full against a committed fixture lake (red-proved); plus check_manifest_append_only over full history."
 score: 5/5 must-haves verified (1 WARNING requiring a human disposition decision)
 overrides_applied: 0
 human_verification:
@@ -15,7 +16,7 @@ human_verification:
 **Phase Goal:** A canonical, immutable, manifest-addressed data lake exists with quality gates
 and a mechanically enforced held-out quarantine.
 **Verified:** 2026-09-16T15:30:00Z
-**Status:** human_needed
+**Status:** passed (human item T-03-09 resolved 2026-09-16 — see frontmatter)
 **Re-verification:** No — initial verification
 
 All evidence below was gathered by me, directly against the real mounted lake

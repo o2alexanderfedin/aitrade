@@ -17,13 +17,13 @@ Requirements for MVP exit. Each maps to roadmap phases. Source of truth: `mvp.md
 ### Data — Capture, Backfill, Quality
 
 - [x] **DATA-01**: Redundant capture daemon records Binance Swap (and Spot if feasible) L1 + trades to Parquet with a gap ledger, running from Phase 1 onward (L1 history is not backfillable — verified)
-- [ ] **DATA-02**: Trades backfilled from data.binance.vision with per-dataset unit registry handling format heterogeneity (spot ms→µs switch at 2025-01-01, futures ms, header differences)
-- [ ] **DATA-03**: Trade-side backfill preprocessing classifies legacy `tradeSide = 0` rows by nearest L1 quote; corrected side stored alongside raw (`tradeSide_raw`, `tradeSide_corrected`)
+- [x] **DATA-02**: Trades backfilled from data.binance.vision with per-dataset unit registry handling format heterogeneity (spot ms→µs switch at 2025-01-01, futures ms, header differences)
+- [x] **DATA-03**: Trade-side backfill preprocessing classifies legacy `tradeSide = 0` rows by nearest L1 quote; corrected side stored alongside raw (`tradeSide_raw`, `tradeSide_corrected`)
 - [x] **DATA-04**: All timestamps stored as int64 nanoseconds since epoch; `etime` is the only clock (documented local-clock exception for spot L1 if that route is chosen)
-- [ ] **DATA-05**: Ingest materializes an `(etime, seq)` arrival-order column so "last row of each etime" is deterministic
-- [ ] **DATA-06**: Parquet data lake partitioned by symbol/date with versioned schema; immutable, manifest-addressed artifacts
-- [ ] **DATA-07**: Daily data-quality report (dropped-event counts per filter, sparsity, resync warm-up tagging); degradation pauses training until acknowledged
-- [ ] **DATA-08**: Held-out lockbox mechanically enforced at the data-loader level (quarantined segments unreadable without an explicit one-look MLflow annotation)
+- [x] **DATA-05**: Ingest materializes an `(etime, seq)` arrival-order column so "last row of each etime" is deterministic
+- [x] **DATA-06**: Parquet data lake partitioned by symbol/date with versioned schema; immutable, manifest-addressed artifacts
+- [x] **DATA-07**: Daily data-quality report (dropped-event counts per filter, sparsity, resync warm-up tagging); degradation pauses training until acknowledged
+- [x] **DATA-08**: Held-out lockbox mechanically enforced at the data-loader level (quarantined segments unreadable without an explicit one-look MLflow annotation)
 
 ### Features & Labels
 
@@ -131,13 +131,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SPEC-03 | Phase 2 | Complete |
 | SPEC-04 | Phase 2 | Complete |
 | DATA-01 | Phase 1 | Complete |
-| DATA-02 | Phase 3 | Pending |
-| DATA-03 | Phase 3 | Pending |
+| DATA-02 | Phase 3 | Complete |
+| DATA-03 | Phase 3 | Complete |
 | DATA-04 | Phase 1 | Complete |
-| DATA-05 | Phase 3 | Pending |
-| DATA-06 | Phase 3 | Pending |
-| DATA-07 | Phase 3 | Pending |
-| DATA-08 | Phase 3 | Pending |
+| DATA-05 | Phase 3 | Complete |
+| DATA-06 | Phase 3 | Complete |
+| DATA-07 | Phase 3 | Complete |
+| DATA-08 | Phase 3 | Complete |
 | FEAT-01 | Phase 4 | Pending |
 | FEAT-02 | Phase 4 | Pending |
 | FEAT-03 | Phase 4 | Pending |

@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Capture Daemon & Repo Foundation** - Schedule-critical redundant L1+trades capture running day 1, repo skeleton under mvp/ (completed 2026-09-12)
 - [x] **Phase 2: Stage 0 — Living Spec, CI Guardrails & Tracking** - spec.md seeded with corrected policy math, catalogues wired into CI, MLflow foundation
-- [ ] **Phase 3: Data Layer — Backfill, Ingest & Lockbox** - Trades backfill, side correction, manifest-addressed store, DQ reports, mechanical lockbox quarantine
+- [x] **Phase 3: Data Layer — Backfill, Ingest & Lockbox** - Trades backfill, side correction, manifest-addressed store, DQ reports, mechanical lockbox quarantine (completed 2026-09-17)
 - [ ] **Phase 4: Feature & Label Engine** - Single numba streaming code path, catalogued L1 features, leakage-proven labels
 - [ ] **Phase 5: Fold Harness & Overfitting Controls** - 5-segment walk-forward with embargo, OOF fallback, selection-bias budget, negative-result log
 - [ ] **Phase 6: Event-Driven Simulator** - Numba flip-only sim with integer-tick accounting and oracle tests
@@ -78,12 +78,12 @@ Plans:
 **Plans**: 6 plans, 4 waves
 
 Plans:
-- [ ] 03-01-PLAN.md — Acquire + normalize + raw tier (unit registry, backfill client, ms_to_ns rename, raw partition write; real 2026-09-12 slice)
-- [ ] 03-02-PLAN.md — Curated build + manifest + store loader (trade-side resolution, (etime,seq) materialization, manifest issuance, check_no_manifest_rewrite; RP-1, RP-2)
-- [ ] 03-03-PLAN.md — Widen: full backfill window, monthly extract-to-disk, bookTicker curated tier, trade-side cross-check
-- [ ] 03-04-PLAN.md — DQ report (6 checks), pause enforcement, real battery-sleep acknowledgements; RP-4
-- [ ] 03-05-PLAN.md — Lockbox quarantine: token API, chmod 0000 barrier, containment guardrail; RP-3
-- [ ] 03-06-PLAN.md — Capture schema v2 (exec_type) + RawArchiveWriter fix + gated daemon restart
+- [x] 03-01-PLAN.md — Acquire + normalize + raw tier (unit registry, backfill client, ms_to_ns rename, raw partition write; real 2026-09-12 slice)
+- [x] 03-02-PLAN.md — Curated build + manifest + store loader (trade-side resolution, (etime,seq) materialization, manifest issuance, check_no_manifest_rewrite; RP-1, RP-2)
+- [x] 03-03-PLAN.md — Widen: full backfill window, monthly extract-to-disk, bookTicker curated tier, trade-side cross-check
+- [x] 03-04-PLAN.md — DQ report (6 checks), pause enforcement, real battery-sleep acknowledgements; RP-4
+- [x] 03-05-PLAN.md — Lockbox quarantine: token API, chmod 0000 barrier, containment guardrail; RP-3
+- [x] 03-06-PLAN.md — Capture schema v2 (exec_type) + RawArchiveWriter fix + gated daemon restart
 
 ### Phase 4: Feature & Label Engine
 **Goal**: One leakage-proven feature code path produces the decision-row matrix that training, inference, and the simulator all share
@@ -190,7 +190,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 |-------|----------------|--------|-----------|
 | 1. Capture Daemon & Repo Foundation | 4/4 | Complete | 2026-09-13 |
 | 2. Stage 0 — Living Spec, CI Guardrails & Tracking | 4/4 | Complete | 2026-09-14 |
-| 3. Data Layer — Backfill, Ingest & Lockbox | 0/TBD | Not started | - |
+| 3. Data Layer — Backfill, Ingest & Lockbox | 7/6 | Complete    | 2026-09-17 |
 | 4. Feature & Label Engine | 0/TBD | Not started | - |
 | 5. Fold Harness & Overfitting Controls | 0/TBD | Not started | - |
 | 6. Event-Driven Simulator | 0/TBD | Not started | - |
