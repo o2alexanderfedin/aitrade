@@ -3,10 +3,15 @@
 Enforces the 8-key mandatory tag schema declared in `mvp/spec.md`'s "MLflow tag
 schema" section *before* calling `mlflow.start_run` -- a run missing any mandatory
 tag is rejected, never silently logged with a partial tag set (spec.md, Pitfall 4
-in 02-RESEARCH.md: tags must be passed atomically via `start_run(tags=...)`, never
-via a follow-up `set_tags` call). Reuses Phase 1's `validate_data_root` for the
-MLflow tracking root guard -- no second cloud-sync/free-space check is written
-here.
+in 02-RESEARCH.md: the MANDATORY tags must be passed atomically via
+`start_run(tags=...)`, never via a follow-up `set_tags` call). Reuses Phase 1's
+`validate_data_root` for the MLflow tracking root guard -- no second
+cloud-sync/free-space check is written here.
+
+That atomicity rule is about the eight mandatory keys AT RUN CREATION. It is not
+a ban on `set_tags`: `log_data_provenance` below writes additive provenance tags
+(`dq_ack_ids`, `dq_ack_sha256`, `data_manifest_ids`) onto an already-created run,
+because only the loader knows what was read, and only once it has read it.
 
 Callers are responsible for ending the run (`mlflow.end_run()`), or using the
 returned `ActiveRun` as a context manager (`with start_tracked_run(...) as run:`) --

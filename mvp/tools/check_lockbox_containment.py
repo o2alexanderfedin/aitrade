@@ -233,7 +233,7 @@ LOCKBOX_MODULE = "data.lockbox"
 #: is the quarantined tier's own path segment. Joining it onto `lake_root()`
 #: globs the lockbox without any literal `"lockbox"` appearing in the file,
 #: which is how the CR-04 fix accidentally reopened the path rule.
-LOCKBOX_PATH_CONSTANTS = frozenset({"LOCKBOX_TIER", "LOCK_DIR_NAME"})
+LOCKBOX_PATH_CONSTANTS = frozenset({"LOCKBOX_TIER"})
 
 #: Attributes of `sys.modules` that hand out a module object.
 SYS_MODULES_GETTERS = frozenset({"get", "pop", "setdefault"})

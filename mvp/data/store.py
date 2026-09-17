@@ -907,8 +907,12 @@ def _log_provenance(manifest: dict, acks: list[tuple[str, str]]) -> None:
     computed them and discarded them, so a training run's provenance never
     showed what had been waived. `tracking.mlflow_utils` is imported lazily,
     inside the function: `data.store` must stay importable without pulling
-    `mlflow` in (see `tests/tracking/test_no_pandas_via_mlflow.py`), and a
-    tracking failure must never break a read.
+    `mlflow` in (see `tests/tracking/test_no_pandas_via_mlflow.py`).
+
+    A tracking failure is NOT swallowed. With no active run nothing is logged
+    and nothing raises, but if a run IS active and MLflow refuses the tags,
+    that exception propagates out of `load_curated`: provenance that cannot be
+    recorded is the same fail-closed direction as every other gate here.
     """
     from tracking.mlflow_utils import log_data_provenance
 

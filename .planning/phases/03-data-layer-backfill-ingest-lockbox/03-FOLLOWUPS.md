@@ -116,9 +116,16 @@ originally-allowlisted capture files, as before; the 2 newly-counted ones
 are item 4's own `NS_PER_SECOND` arithmetic inside the already-allowlisted
 `data/dq/checks.py`.
 
+The `_MAX_VALUES` cap is part of the fail-closed set, not of the folding set:
+once a name has 32 candidate bindings the scan STOPS recording later ones, so
+marking it opaque alone would only make the chain skip it -- still a silent
+pass for ITER2's "32 distinct bindings then `X = 1_000_000`" row. An
+OVERFLOWED binding used as a factor therefore fails the check outright.
+
 **Mutations caught:** wrappers off (6 tests), opaque factors folded into the
 product again (2), fail-closed rules off (6), unit regex narrowed back to a
-substring (2), reciprocal division off (1), cross-module class lookup off (1).
+substring (2), reciprocal division off (1), cross-module class lookup off (1),
+overflow rule off (1).
 
 **What remains, and it is in the docstring:** `getattr`/`eval`/`exec` and
 other runtime reflection, a scale read from data or config, notebooks,
@@ -131,11 +138,12 @@ ITER2 CR-07's `eval_all.py` still exited 0: a script that never spells the
 lockbox path and never names a private member could glob the quarantined
 tier and re-arm a consumed token. Three doors:
 
-- **`LOCKBOX_TIER`** (and `LOCK_DIR_NAME`). Public constants -- the CR-04 fix
-  exported the first -- but they are the quarantined tier's own path
-  segment, so `lake_root() / LOCKBOX_TIER` reaches it with no literal in
-  sight. Importing, aliasing or reading one off the module object is now a
-  finding in itself.
+- **`LOCKBOX_TIER`.** A public constant -- the CR-04 fix exported it -- but it
+  is the quarantined tier's own path segment, so `lake_root() / LOCKBOX_TIER`
+  reaches the tier with no literal in sight. Importing it, aliasing it or
+  reading it off the module object is now a finding in itself.
+  (`LOCK_DIR_NAME` is deliberately NOT in that set: `.locks/` lives under the
+  git-tracked token registry, not under the tier.)
 - **`sys.modules`.** A Subscript STORE creates no Attribute node, so
   `sys.modules["data.lockbox"] = fake` -- which replaces the module for every
   later importer -- was invisible. Stores and deletes are flagged, an
@@ -327,7 +335,10 @@ same-uid actions needing no manifest edit:
   `read_bytes()` and `pl.read_parquet` then REOPENED the file. New
   `read_verified_partitions` hashes the buffer it parses; `load_curated` and
   `open_lockbox` both use it. Cost: one extra read per partition (largest real
-  one 516 MiB, 3.86 GiB total).
+  one 516 MiB, 3.86 GiB total). Exercised at full scale on the real lake:
+  bookTicker 2026-09-15, the 516 MiB / 41,870,866-row day, loads in 2.1 s with
+  a 6.4 GiB peak footprint -- the DataFrame, not the buffer, dominates -- and
+  the row count matches ITER3's exactly.
 
 Measured read-only first: the real curated tier has **no hard-linked file**
 and `curated/` is a real directory. Mutations caught: hard-link check off,
@@ -374,10 +385,16 @@ the one alarm that exists to make an invisible data-loss condition visible.
 `pmset -g live`'s `SleepDisabled` is now the source of truth, with the
 `pmset -g custom` battery block kept as a fallback for hosts/OS versions that
 do print it there. WR-11's contract is unchanged: None still means "could not
-tell", and is returned only when no `pmset` call answered at all. (If either
-command answered and neither names the key, that IS an answer -- the setting
-is not in effect -- and the result is False. That is what the existing
-`_CUSTOM_SLEEP_ENABLED` test asserts, and it still holds.)
+tell", and is returned only when no `pmset` call answered at all.
+
+**One deviation from the brief, stated.** The brief asked for False "only if
+`pmset -g live` answered successfully". What is implemented is False if
+EITHER command answered and neither names the key. The reason is the existing
+`test_battery_sleep_disabled_reads_the_battery_block_not_the_ac_block`, which
+feeds `custom` alone and asserts False; the brief's literal rule would have
+made that None and changed behaviour on hosts where `custom` IS the answer.
+The implemented rule is a superset of the brief's and preserves the
+None-means-undeterminable semantics, which is the property WR-11 cares about.
 
 **Real-host verification, read-only:** `battery_sleep_disabled() -> True`,
 `sleep_risk() -> None` while on AC with the setting in effect. **Red-proof:**
@@ -417,6 +434,36 @@ Both land at the next restart, which is the user's to approve.
   today, so the capture bounds have been measured against bookTicker only.
 - **No gate for any other ms field.** `etime`, `event_time` and now `rtime`
   have runtime data gates; a future ms column has none until one is added.
+- **Content-anchoring means "survives at ANY manifest-shaped path", including
+  the test fixture registry.** A commit that deletes a real manifest and drops
+  its bytes into `tests/fixtures/lake_registry/manifests/` passes
+  `check_manifest_append_only`: the content survives, even though the id no
+  longer resolves through `LAKE_REGISTRY_ROOT`. This is the same shape as the
+  "amended away before merge" residual -- closing it would mean re-anchoring to
+  a path, which is the over-strictness item 5 exists to undo. Stated, not
+  chased.
+
+---
+
+## Near-misses (tests that passed for the wrong reason)
+
+1. **Item 2.** The resolved-path test spelled the tracking root `"<root>/./"`.
+   `pathlib` normalises `.` and a trailing slash on its own, so the test passed
+   against a mutant that compared UNRESOLVED paths -- it proved nothing. It now
+   uses a real symlink, which only `resolve()` collapses.
+2. **Item 6 / IN-10.** The swapped-file test swapped the partition on the FIRST
+   read, which is `resolve_manifest`'s verification pass. Both the fixed code
+   and a "parse from the path, not the buffer" mutant then raised a hash
+   mismatch, so the test proved re-verification rather than single-open
+   parsing. It now swaps on the verifying read inside
+   `read_verified_partitions` and asserts on the ROWS returned.
+3. **Item 1a.** The value-cap test asserted the MECHANISM (`"X" in
+   mod.opaque`) rather than the outcome. Tracing the actual ITER2 bypass
+   showed it still passed silently: `fold(X)` was non-empty, so no direct hit;
+   `X` was opaque, so it was skipped in the product; and `X` does not match the
+   conversion-name regex. Marking it opaque was only half the fix. The rule now
+   fails closed on an overflowed factor, and the test asserts
+   `find_unresolvable_conversion_shapes` is non-empty.
 
 ---
 

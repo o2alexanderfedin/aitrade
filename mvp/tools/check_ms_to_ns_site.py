@@ -288,6 +288,12 @@ class _Module:
     #: `bindings` entry may still hold values (one branch resolved), but they
     #: must never be folded into a product -- see `_mult_chain_hits`.
     opaque: set[str] = field(default_factory=set)
+    #: Keys that hit `_MAX_VALUES` and therefore STOPPED recording later
+    #: bindings. A subset of `opaque`, tracked separately because it means
+    #: something stronger: this scan is knowingly blind to what the name may
+    #: hold, so using it as a factor fails the check outright rather than
+    #: being quietly skipped (03-REVIEW-ITER2.md CR-06's value-cap row).
+    overflowed: set[str] = field(default_factory=set)
     #: local alias -> ("from", module, name) or ("module", dotted module)
     imports: dict[str, tuple[str, str, str]] = field(default_factory=dict)
 
@@ -699,6 +705,7 @@ def _load_modules(root: Path) -> dict[str, _Module]:
                 current = mod.bindings.setdefault(key, set())
                 if len(current) >= _MAX_VALUES:
                     mod.opaque.add(key)  # overflowed: no longer trustworthy
+                    mod.overflowed.add(key)
                     continue
                 if not values <= current:
                     current |= values
@@ -884,8 +891,10 @@ def _unresolvable_in_module(resolver: _Resolver, mod: _Module) -> list[tuple[int
                     )
                     break
 
-    # A name that CLAIMS to be an ms<->ns scale, used as a factor, that this
-    # scan cannot resolve.
+    # Factors this scan is blind to: a name that CLAIMS to be an ms<->ns
+    # scale and does not resolve, and a name whose bindings overflowed the
+    # value cap (so a later `X = 1_000_000` was never recorded and the chain
+    # would pass with the cap's stale values).
     for node in ast.walk(mod.tree):
         if not (isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult)):
             continue
@@ -897,17 +906,24 @@ def _unresolvable_in_module(resolver: _Resolver, mod: _Module) -> list[tuple[int
                 if isinstance(factor, ast.Attribute)
                 else None
             )
-            if (
-                label is not None
-                and CONVERSION_NAME_RE.search(label)
-                and not resolver.fold(mod, factor)
-            ):
+            if label is None:
+                continue
+            if CONVERSION_NAME_RE.search(label) and not resolver.fold(mod, factor):
                 findings.append(
                     (
                         node.lineno,
                         f"{label!r} names an ms<->ns scale factor but does not "
                         "resolve to a value -- refusing to assume it is not a "
                         "conversion",
+                    )
+                )
+            if label in mod.overflowed or f"*.{label}" in mod.overflowed:
+                findings.append(
+                    (
+                        node.lineno,
+                        f"{label!r} has more than {_MAX_VALUES} candidate "
+                        "bindings, so later ones were never recorded -- its "
+                        "scale cannot be proven",
                     )
                 )
     return sorted(set(findings))

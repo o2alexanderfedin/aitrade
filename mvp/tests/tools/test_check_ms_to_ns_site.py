@@ -287,18 +287,23 @@ def test_cross_module_class_attribute_is_resolved(tmp_path: Path):
 
 
 def test_the_value_cap_no_longer_hides_a_later_binding(tmp_path: Path):
-    """Once 32 values were tracked for a name, later bindings were dropped and
-    the name silently stopped resolving. An overflowed binding is now opaque,
-    so it can never be folded into a product as if it were a known constant."""
+    """The ITER2 bypass row: 32 distinct bindings, then `X = 1_000_000`.
+
+    The 33rd value was dropped, so `X` never resolved to 1e6 and `t * X`
+    registered nothing. Marking the binding opaque alone would only make the
+    chain skip it -- still a silent pass. An OVERFLOWED binding used as a
+    factor therefore fails the check outright.
+    """
     fill = "".join(f"X = {i}\n" for i in range(40))
     root = _pkg(
         tmp_path,
-        {"data/x.py": fill + "X = 1_000_000\ndef f(t):\n    return t * X * 1\n"},
+        {"data/x.py": fill + "X = 1_000_000\ndef f(t):\n    return t * X\n"},
     )
-    from tools import check_ms_to_ns_site as t
-
-    modules = t._load_modules(root)
-    assert "X" in modules["data.x"].opaque
+    assert _ms_sites(root) == [], "the cap really does hide the 1e6 binding"
+    assert tool.find_unresolvable_conversion_shapes(root), (
+        "an overflowed binding used as a factor must fail the check, not be "
+        "quietly skipped"
+    )
 
 
 UNRESOLVABLE = [
