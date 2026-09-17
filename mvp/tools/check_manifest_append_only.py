@@ -43,8 +43,10 @@ RULES (all resolved against real git objects, every subprocess through
    exact bytes still sit at a manifest path. Dropping a manifest in the
    move, editing one on the way, type-changing one, or moving them
    somewhere with no `manifests` component -- all still fail, because in
-   each case some body no longer exists as a manifest. The test fixture
-   registry under `tests/fixtures/lake_registry/manifests/` is protected by
+   each case some body no longer exists as a manifest. Survival is judged
+   WITHIN A REALM (`_realm`): a real manifest moved into
+   `tests/fixtures/lake_registry/manifests/` does not count as surviving,
+   and neither does the reverse. The test fixture registry is protected by
    the same rule.
 
    Two independent views, because a merge commit hides changes from a plain
@@ -197,22 +199,44 @@ def _raw_z(output: str) -> list[tuple[str, str, str, str]]:
     return records
 
 
-def _head_manifest_blobs(toplevel: Path) -> set[str]:
+#: Path components that mark a manifest as belonging to the TEST FIXTURE
+#: registry rather than the real one.
+_FIXTURE_MARKERS = ("tests", "fixtures")
+
+
+def _realm(repo_rel: str) -> str:
+    """Which registry world a manifest path belongs to: `"fixture"` for the
+    committed test fixture registry, `"production"` for every other.
+
+    Content anchoring (rule 2, WR-17) asks "do these bytes still exist at a
+    manifest path?". Asked repo-wide, the answer is yes when a REAL manifest
+    is `git mv`-ed into `tests/fixtures/lake_registry/manifests/` -- the
+    bytes survive, the count silently drops, and the day it addressed no
+    longer resolves (red-proved 2026-09-17: a laundered manifest passed with
+    "110 committed manifest(s)"). Surviving must therefore mean surviving in
+    the SAME realm, which still permits the relocation rule 2 exists to
+    allow -- just not one that launders production data into fixtures, or
+    fixture data into production."""
+    parts = repo_rel.split("/")
+    return "fixture" if all(m in parts for m in _FIXTURE_MARKERS) else "production"
+
+
+def _head_manifest_blobs(toplevel: Path) -> dict[str, set[str]]:
     """Every blob id sitting at a manifest-shaped path in `HEAD`'s tree,
-    anywhere in the repository -- rule 2's "did this content survive?" set."""
-    blobs: set[str] = set()
+    grouped by `_realm` -- rule 2's "did this content survive?" set."""
+    blobs: dict[str, set[str]] = {"production": set(), "fixture": set()}
     for record in _git(["ls-tree", "-r", "-z", "HEAD"], toplevel).split("\0"):
         if not record:
             continue
         meta, _, path = record.partition("\t")
         fields = meta.split()
         if len(fields) >= 3 and _is_manifest_shaped(path):
-            blobs.add(fields[2])
+            blobs[_realm(path)].add(fields[2])
     return blobs
 
 
-def _worktree_manifest_blobs(toplevel: Path) -> set[str]:
-    """The same set for the WORKING TREE: hash the on-disk bytes of every
+def _worktree_manifest_blobs(toplevel: Path) -> dict[str, set[str]]:
+    """The same realm-keyed sets for the WORKING TREE: hash the on-disk bytes of every
     tracked-or-staged manifest-shaped path, through `git hash-object` so the
     repository's own object format is used.
 
@@ -225,10 +249,14 @@ def _worktree_manifest_blobs(toplevel: Path) -> set[str]:
         if path and _is_manifest_shaped(path)
     ]
     present = [path for path in listed if (toplevel / path).is_file()]
+    blobs: dict[str, set[str]] = {"production": set(), "fixture": set()}
     if not present:
-        return set()
+        return blobs
     hashed = _git(["hash-object", "--no-filters", "--", *present], toplevel)
-    return {line.strip() for line in hashed.splitlines() if line.strip()}
+    for path, line in zip(present, hashed.splitlines(), strict=True):
+        if line.strip():
+            blobs[_realm(path)].add(line.strip())
+    return blobs
 
 
 def _is_manifest_shaped(repo_rel: str) -> bool:
@@ -411,8 +439,8 @@ def check_append_only(registry_root: Path) -> tuple[list[str], int]:
     )
     for commit, status, blob, path in _raw_z(history):
         if status in _CHANGE_WORDS and _is_manifest_shaped(path):
-            if blob in head_blobs:
-                continue  # content still present under some manifest path
+            if blob in head_blobs[_realm(path)]:
+                continue  # content still present under a manifest path in its realm
             errors.append(
                 f"{path}: committed manifest {_CHANGE_WORDS[status]} "
                 f"in commit {commit} and its contents (blob {blob[:12]}) are "
@@ -437,7 +465,7 @@ def check_append_only(registry_root: Path) -> tuple[list[str], int]:
     )
     for _commit, status, blob, path in _raw_z(base_diff):
         if status in _CHANGE_WORDS and _is_manifest_shaped(path):
-            if blob in head_blobs:
+            if blob in head_blobs[_realm(path)]:
                 continue
             errors.append(
                 f"{path}: committed manifest {_CHANGE_WORDS[status]} "
@@ -454,7 +482,7 @@ def check_append_only(registry_root: Path) -> tuple[list[str], int]:
     for _commit, status, blob, path in _raw_z(changed):
         word = _CHANGE_WORDS.get(status)
         if word is not None and _is_manifest_shaped(path):
-            if blob in worktree_blobs:
+            if blob in worktree_blobs[_realm(path)]:
                 continue
             errors.append(
                 f"{path}: committed manifest {word} in the working tree and its "

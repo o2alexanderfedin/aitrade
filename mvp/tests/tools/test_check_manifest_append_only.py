@@ -684,3 +684,65 @@ def test_a_move_out_of_any_manifests_directory_is_a_violation(tmp_path: Path):
 
     errors, _ = check_append_only(registry.parent / "registry_v2")
     assert any("deleted" in e for e in errors), errors
+
+
+def test_laundering_a_manifest_into_the_test_fixture_registry_fails(tmp_path: Path):
+    """Content anchoring asked repo-wide let a REAL manifest be `git mv`-ed
+    into `tests/fixtures/lake_registry/manifests/`: the bytes survived, so the
+    move passed, while the production registry silently lost a manifest and
+    the day it addressed stopped resolving (red-proved 2026-09-17 against the
+    real repo: "PASS: 110 committed manifest(s)" after laundering one of 111).
+    Survival is judged within a realm, so this must fail."""
+    repo, registry, lake, _m0, m1 = _repo_with_two_manifests(tmp_path)
+    fixture_dir = (
+        repo
+        / "mvp"
+        / "tests"
+        / "fixtures"
+        / "lake_registry"
+        / "manifests"
+        / "BTCUSDT.trade"
+    )
+    fixture_dir.mkdir(parents=True)
+    victim = _manifest_file(registry, m1["manifest_id"])
+    _git(["mv", str(victim), str(fixture_dir / victim.name)], repo)
+    _commit_all(repo, "launder a production manifest into the test fixtures")
+
+    errors, tracked = check_append_only(registry)
+    assert any(m1["manifest_id"] in e and "deleted" in e for e in errors), errors
+    assert tracked == 1, "the production registry really did lose a manifest"
+    assert main(["--registry-root", str(registry)]) == 1
+
+
+def test_laundering_a_fixture_manifest_into_the_real_registry_fails(tmp_path: Path):
+    """The reverse direction: a fixture manifest may not vanish into the
+    production registry either, or a CI fixture leg could be hollowed out
+    while the production run vouches for the bytes."""
+    repo, registry, lake, _m0, _m1 = _repo_with_two_manifests(tmp_path)
+    fixture_registry = repo / "mvp" / "tests" / "fixtures" / "lake_registry"
+    fixture_part = _write_partition(
+        lake, "curated/date=2026-01-09/part-9.parquet", 99.0
+    )
+    fixture_manifest = _issue(fixture_registry, fixture_part)
+    _commit_all(repo, "fixture manifest")
+
+    source = (
+        fixture_registry
+        / "manifests"
+        / "BTCUSDT.trade"
+        / f"{fixture_manifest['manifest_id']}.json"
+    )
+    _git(
+        [
+            "mv",
+            str(source),
+            str(_manifest_file(registry, fixture_manifest["manifest_id"])),
+        ],
+        repo,
+    )
+    _commit_all(repo, "launder a fixture manifest into the production registry")
+
+    errors, _ = check_append_only(fixture_registry)
+    assert any(
+        fixture_manifest["manifest_id"] in e and "deleted" in e for e in errors
+    ), errors
