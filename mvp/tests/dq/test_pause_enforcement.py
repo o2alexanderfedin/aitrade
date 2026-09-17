@@ -226,3 +226,144 @@ def test_ok_status_needs_no_acknowledgement(tmp_path: Path):
         lake_root=lake_root,
     )
     assert loaded.height == 1
+
+
+# --- WR-01 (03-REVIEW.md): the acknowledgement's CONTENT is validated -------
+
+
+@pytest.mark.parametrize(
+    ("label", "content"),
+    [
+        ("zero-byte file", ""),
+        ("not JSON", "ok\n"),
+        ("JSON but not an object", "[]"),
+        (
+            "missing reason",
+            json.dumps(
+                {
+                    "date": "2026-09-12",
+                    "symbol": "BTCUSDT",
+                    "stream": "trade",
+                    "who": "alex",
+                    "when": "2026-09-16T00:00:00Z",
+                }
+            ),
+        ),
+        (
+            "blank reason",
+            json.dumps(
+                {
+                    "date": "2026-09-12",
+                    "symbol": "BTCUSDT",
+                    "stream": "trade",
+                    "reason": "   ",
+                    "who": "alex",
+                    "when": "2026-09-16T00:00:00Z",
+                }
+            ),
+        ),
+        (
+            "empty who",
+            json.dumps(
+                {
+                    "date": "2026-09-12",
+                    "symbol": "BTCUSDT",
+                    "stream": "trade",
+                    "reason": "known outage",
+                    "who": "",
+                    "when": "2026-09-16T00:00:00Z",
+                }
+            ),
+        ),
+        (
+            "unparseable when",
+            json.dumps(
+                {
+                    "date": "2026-09-12",
+                    "symbol": "BTCUSDT",
+                    "stream": "trade",
+                    "reason": "known outage",
+                    "who": "alex",
+                    "when": "yesterday",
+                }
+            ),
+        ),
+        (
+            "copied from another date",
+            json.dumps(
+                {
+                    "date": "2026-09-11",
+                    "symbol": "BTCUSDT",
+                    "stream": "trade",
+                    "reason": "known outage",
+                    "who": "alex",
+                    "when": "2026-09-16T00:00:00Z",
+                }
+            ),
+        ),
+        (
+            "copied from another stream",
+            json.dumps(
+                {
+                    "date": "2026-09-12",
+                    "symbol": "BTCUSDT",
+                    "stream": "bookTicker",
+                    "reason": "known outage",
+                    "who": "alex",
+                    "when": "2026-09-16T00:00:00Z",
+                }
+            ),
+        ),
+    ],
+)
+def test_invalid_acknowledgement_does_not_unpause_a_failed_day(
+    tmp_path: Path, label: str, content: str
+):
+    lake_root = tmp_path / "lake"
+    registry_root = tmp_path / "registry"
+    date = "2026-09-12"
+    manifest = _issue_manifest(lake_root, registry_root, date)
+    _write_report(lake_root, "BTCUSDT", "trade", date, "failed")
+    ack = dq_acknowledgement_path(registry_root, "BTCUSDT", "trade", date)
+    ack.parent.mkdir(parents=True, exist_ok=True)
+    ack.write_text(content)
+
+    with pytest.raises(DQPauseError, match="acknowledgement"):
+        load_curated(
+            manifest["manifest_id"],
+            "BTCUSDT.trade",
+            registry_root=registry_root,
+            lake_root=lake_root,
+        )
+
+
+def test_acknowledgement_ids_are_reported_for_mlflow_tagging(tmp_path: Path):
+    from data.store import dq_acknowledgement_ids
+
+    lake_root = tmp_path / "lake"
+    registry_root = tmp_path / "registry"
+    date = "2026-09-12"
+    manifest = _issue_manifest(lake_root, registry_root, date)
+    _write_report(lake_root, "BTCUSDT", "trade", date, "failed")
+    _write_acknowledgement(registry_root, "BTCUSDT", "trade", date, "known outage")
+
+    assert dq_acknowledgement_ids(
+        manifest, registry_root=registry_root, lake_root=lake_root
+    ) == ["BTCUSDT__trade__2026-09-12"]
+
+
+def test_every_committed_real_acknowledgement_is_valid():
+    """The committed audit trail must satisfy the same validation the loader
+    applies -- otherwise a real day would silently re-pause (or worse, a
+    malformed ack would have been unpausing it)."""
+    from data.lake_paths import LAKE_REGISTRY_ROOT
+    from data.store import validate_dq_acknowledgement
+
+    files = sorted((LAKE_REGISTRY_ROOT / "dq_acknowledgements").glob("*.json"))
+    assert files
+    for f in files:
+        symbol, stream, date = f.stem.split("__")
+        assert (
+            validate_dq_acknowledgement(f, symbol=symbol, stream=stream, date=date)
+            is None
+        ), f

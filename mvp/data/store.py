@@ -36,6 +36,7 @@ reads; importing it back would be circular).
 
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import json
 import time
@@ -50,10 +51,12 @@ __all__ = [
     "ManifestTierError",
     "canonicalize_manifest",
     "compute_manifest_id",
+    "dq_acknowledgement_ids",
     "dq_acknowledgement_path",
     "dq_report_path",
     "issue_manifest",
     "resolve_manifest",
+    "validate_dq_acknowledgement",
     "load_curated",
     "manifest_path",
     "by_date_index_path",
@@ -361,23 +364,109 @@ def _dq_status_for_date(
     )
 
 
-def _enforce_dq_pause(manifest: dict, *, registry_root: Path, lake_root: Path) -> None:
-    """DATA-07's mechanical training pause: for every date this manifest
-    covers, require an `"ok"` status OR a matching committed acknowledgement.
-    Raises `DQPauseError` naming every unacknowledged day if any remain.
-    """
+#: Fields every DQ acknowledgement JSON must carry (03-CONTEXT.md: "reason +
+#: who + when, git-committed"), plus the (date, symbol, stream) it
+#: acknowledges, which must match the file it lives in.
+DQ_ACK_REQUIRED_FIELDS: tuple[str, ...] = (
+    "date",
+    "symbol",
+    "stream",
+    "reason",
+    "who",
+    "when",
+)
+
+
+def validate_dq_acknowledgement(
+    ack_path: Path, *, symbol: str, stream: str, date: str
+) -> str | None:
+    """Return `None` if `ack_path` is a valid acknowledgement of
+    `(symbol, stream, date)`, else a one-line reason it is not.
+
+    03-REVIEW.md WR-01: existence alone used to unpause a day, so a zero-byte
+    file (or an ack copied from another date/stream) unpaused a `failed` day.
+    Valid means: parses as a JSON object; every `DQ_ACK_REQUIRED_FIELDS` key
+    is a non-blank string; `date`/`symbol`/`stream` equal the day being
+    loaded; `when` parses as an ISO 8601 timestamp."""
+    if not ack_path.exists():
+        return "no acknowledgement file"
+    try:
+        body = json.loads(ack_path.read_text())
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        return f"acknowledgement is not valid JSON ({exc.__class__.__name__})"
+    if not isinstance(body, dict):
+        return "acknowledgement is not a JSON object"
+    for key in DQ_ACK_REQUIRED_FIELDS:
+        value = body.get(key)
+        if not isinstance(value, str) or not value.strip():
+            return f"acknowledgement field {key!r} is missing or blank"
+    expected = {"date": date, "symbol": symbol, "stream": stream}
+    for key, want in expected.items():
+        if body[key] != want:
+            return (
+                f"acknowledgement {key}={body[key]!r} does not match the "
+                f"acknowledged day's {key}={want!r}"
+            )
+    try:
+        dt.datetime.fromisoformat(body["when"].replace("Z", "+00:00"))
+    except ValueError:
+        return f"acknowledgement when={body['when']!r} is not an ISO 8601 timestamp"
+    return None
+
+
+def _dq_pause_findings(
+    manifest: dict, *, registry_root: Path, lake_root: Path
+) -> tuple[list[tuple[str, str, str | None]], list[str]]:
+    """For every date the manifest covers: `(unacknowledged, ack_ids)` where
+    `unacknowledged` lists `(date, status, detail)` for non-ok days without a
+    VALID acknowledgement and `ack_ids` lists the acknowledgement ids (file
+    stems) actually relied on to unpause a non-ok day."""
     symbol = manifest["symbol"]
     stream = manifest["stream"]
     dates = sorted({part["date"] for part in manifest["partitions"]})
 
     unacknowledged: list[tuple[str, str, str | None]] = []
+    ack_ids: list[str] = []
     for date in dates:
         status, detail = _dq_status_for_date(Path(lake_root), symbol, stream, date)
         if status == "ok":
             continue
         ack_path = dq_acknowledgement_path(Path(registry_root), symbol, stream, date)
-        if not ack_path.exists():
+        problem = validate_dq_acknowledgement(
+            ack_path, symbol=symbol, stream=stream, date=date
+        )
+        if problem is None:
+            ack_ids.append(ack_path.stem)
+        else:
+            detail = f"{detail}; {problem}" if detail else problem
             unacknowledged.append((date, status, detail))
+    return unacknowledged, ack_ids
+
+
+def dq_acknowledgement_ids(
+    manifest: dict, *, registry_root: Path, lake_root: Path
+) -> list[str]:
+    """The acknowledgement ids a `load_curated` of `manifest` relies on, for
+    logging as the `dq_ack_ids` MLflow tag via
+    `tracking.mlflow_utils.start_tracked_run(..., dq_ack_ids=...)` (03-CONTEXT:
+    "Acknowledgement ids are logged as an MLflow run tag")."""
+    _unacked, ack_ids = _dq_pause_findings(
+        manifest, registry_root=registry_root, lake_root=lake_root
+    )
+    return ack_ids
+
+
+def _enforce_dq_pause(manifest: dict, *, registry_root: Path, lake_root: Path) -> None:
+    """DATA-07's mechanical training pause: for every date this manifest
+    covers, require an `"ok"` status OR a matching, VALID committed
+    acknowledgement (`validate_dq_acknowledgement`). Raises `DQPauseError`
+    naming every unacknowledged day, and why, if any remain.
+    """
+    symbol = manifest["symbol"]
+    stream = manifest["stream"]
+    unacknowledged, _ack_ids = _dq_pause_findings(
+        manifest, registry_root=registry_root, lake_root=lake_root
+    )
 
     if unacknowledged:
         summary = "; ".join(
@@ -389,7 +478,8 @@ def _enforce_dq_pause(manifest: dict, *, registry_root: Path, lake_root: Path) -
         )
         raise DQPauseError(
             f"DQ pause: {symbol}.{stream} has unacknowledged day(s): {summary}. "
-            f"Add a git-committed acknowledgement JSON (e.g. {example_path}) to proceed."
+            "Add a valid git-committed acknowledgement JSON "
+            f"({', '.join(DQ_ACK_REQUIRED_FIELDS)}; e.g. {example_path}) to proceed."
         )
 
 

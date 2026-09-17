@@ -119,10 +119,19 @@ def start_tracked_run(
     tags: dict[str, str],
     experiment_name: str,
     min_free_gb: float = DEFAULT_MIN_FREE_GB,
+    *,
+    dq_ack_ids: list[str] | None = None,
 ):
     """Validate `tags` against `MANDATORY_TAG_KEYS` and `tracking_root` against
     `validate_data_root`, then start (and return) an MLflow run with all tags
     set atomically at run creation.
+
+    `dq_ack_ids` (03-CONTEXT.md DATA-07: "Acknowledgement ids are logged as an
+    MLflow run tag"): the DQ acknowledgement ids the run's data relied on
+    (`data.store.dq_acknowledgement_ids`). When given, they are logged as the
+    `dq_ack_ids` tag (sorted, comma-joined; `"none"` for an empty list) in the
+    same atomic `start_run(tags=...)` call -- this function stays the only
+    MLflow entry point.
 
     Raises `MissingTagError` if `tags` is missing any mandatory key, before
     any MLflow call. Re-raises `DataRootError` unmodified if `tracking_root`
@@ -144,4 +153,7 @@ def start_tracked_run(
     else:
         experiment_id = experiment.experiment_id
 
-    return mlflow.start_run(experiment_id=experiment_id, tags=dict(tags))
+    run_tags = dict(tags)
+    if dq_ack_ids is not None:
+        run_tags["dq_ack_ids"] = ",".join(sorted(set(dq_ack_ids))) or "none"
+    return mlflow.start_run(experiment_id=experiment_id, tags=run_tags)
