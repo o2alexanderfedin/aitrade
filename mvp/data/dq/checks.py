@@ -8,19 +8,80 @@ the same `_load_toml`/frozen-dataclass pattern `spec/catalogue.py` uses for
 `features.toml`/`labels.toml`.
 
 CLOCK CONVENTION -- rtime-as-etime approximation (03-RESEARCH.md's Q1,
-resolved here): `etime` is this project's only real clock, but a capture
-outage is, by definition, a window during which NO message arrived to
-carry a real `etime` -- there is nothing to key an outage's start/end on
-except the surrounding messages' `rtime` (wall-clock receive time). This
-module treats `gap_start_rtime`/`gap_end_rtime` AS IF they were etime
-bounds for day-bucketing and warm-up-window purposes (`split_at_day_boundaries`,
-`resync_windows_for_date`) -- a one-line approximation, good to within
-ordinary network latency, not a redesign. All day-boundary and duration
-arithmetic below is done in pure int64 nanosecond space (never a float
-division of the raw ~1.79e18 rtime/etime value itself, which would lose
-sub-nanosecond precision at that magnitude) -- only small, already-bounded
-DIFFERENCES (outage durations, at most a few days' worth of ns) are ever
-divided down to a float seconds value, and only for reporting.
+resolved here; bound MEASURED and NAMED, not just disclosed, per
+03-VERIFICATION.md gap-closure finding 3): `etime` is this project's only
+real clock, but a capture outage is, by definition, a window during which
+NO message arrived to carry a real `etime` -- there is nothing to key an
+outage's start/end on except the surrounding messages' `rtime` (wall-clock
+receive time). This module treats `gap_start_rtime`/`gap_end_rtime` AS IF
+they were etime bounds for day-bucketing purposes (`split_at_day_boundaries`)
+and, for the warm-up-window join Phase 4 performs against curated `etime`,
+exposes that same approximation through EXPLICITLY `_etime_approx`-suffixed
+columns (`resync_windows_for_date`'s `gap_end_etime_approx`/
+`warmup_end_etime_approx`) -- the approximation is unmissable at the call
+site, never hidden behind an honestly-`_rtime`-named column that is
+secretly joined against etime.
+
+NAMED, BOUNDED EXCEPTION -- why this is documentation, not a fix: a real
+per-message rtime->etime lookup (join each gap boundary's rtime against the
+nearest curated row's OWN real etime) was investigated and rejected as a
+"fix" for two independently sufficient reasons, both confirmed against
+real data (see `mvp/spec.md`'s Data-quality pitfall subsection for the
+same text with a permanent link):
+
+1. Archive-sourced curated `trade` rows (the ONLY source for all 107 real
+   trade days, per 03-03-SUMMARY) do not carry a real per-message `rtime`
+   at all -- `data/ingest/normalize.py:normalize_archive_frame` assigns
+   `rtime` as a single `pl.lit(rtime_ns, ...)` LITERAL (the staged file's
+   own `mtime`) to EVERY row of an entire curated day. A "nearest curated
+   trade row by rtime" lookup against this column is not an approximation
+   with a knowable error bound -- it is a comparison between two unrelated
+   clocks (a live capture-daemon wall-clock outage boundary vs. a single
+   archive-ingest timestamp that can be hours away from any real message
+   in that day), and was measured to produce 16-40 HOUR "errors" against
+   real 2026-09-14/09-15 outage boundaries -- meaningless, not bounded.
+2. Even for capture-sourced `bookTicker` rows, which DO carry a real
+   per-message `rtime`, a `"merged"`-connection outage's `gap_end_rtime` is
+   the `rtime` of whichever STREAM's message triggered reactive resumption
+   detection (`rotation.py:ingest`'s `last_seen_state["merged"]`) -- which
+   may be `trade`, not `bookTicker`. Measured against the real 2026-09-14
+   outage set: 6 of 8 boundaries resolved to a same-stream bookTicker row
+   within 0.05s, but one resolved 303.7s away -- essentially the ENTIRE
+   99-minute outage's duration -- because bookTicker's own first
+   post-outage message arrived long after the stream that actually
+   triggered resumption. A per-stream nearest-row lookup cannot bound this
+   error to within the 60s `resync_warmup` window it would be used to
+   compute; it can be worse than the window is wide.
+
+Given (1), a rewrite of `resync_windows_for_date` that "fixes" the join by
+looking up curated etime is not implementable for the trade stream at all
+without fabricating a receive time that was never captured; given (2), it
+would not be reliably correct for bookTicker either. This is what makes it
+a genuinely bounded EXCEPTION rather than a fixable bug: it does not claim
+etime-exactness, and Phase 4 must not treat `*_etime_approx` values as
+etime-exact join keys, only as approximate boundaries with the measured
+error characteristics below (03-07-GAPS-SUMMARY.md has the full transcript
+and raw percentiles).
+
+MEASURED SKEW (real data, `rtime - etime` across BTCUSDT bookTicker
+2026-09-14's full 38.6M-row curated partition -- see 03-07-GAPS-SUMMARY.md
+for the exact command): p50=-7.2ms, p90=110.9ms, p99=472.3ms,
+p99.9=2.047s, max=307.07s (53.8% of rows negative -- ordinary bidirectional
+clock jitter, not a one-sided processing delay). The general population's
+skew is sub-second through p99.9, but the tail is NOT bounded tightly
+enough to treat as etime-exact at a specific outage boundary -- see the
+per-boundary 303.7s measurement above, which sits in that same heavy tail.
+`resync_warmup.seconds=60` (dq_thresholds.toml) should be read as "60
+CURATED-etime seconds after an approximately-located boundary", not
+"exactly 60 seconds after the real outage ended" -- Phase 4 feature code
+consuming `*_etime_approx` must not assume tighter precision than this.
+
+All day-boundary and duration arithmetic below is done in pure int64
+nanosecond space (never a float division of the raw ~1.79e18 rtime/etime
+value itself, which would lose sub-nanosecond precision at that
+magnitude) -- only small, already-bounded DIFFERENCES (outage durations,
+at most a few days' worth of ns) are ever divided down to a float seconds
+value, and only for reporting.
 
 GUARDRAIL NOTE: `NS_PER_SECOND` is defined as a bare top-level assignment,
 never as a `* 1_000_000_000` / `/ 1_000_000_000` literal BinOp inline --
@@ -272,8 +333,8 @@ def check_gap_coverage(
 def resync_windows_for_date(
     ledger_df: pl.DataFrame, date: str, warmup_seconds: int
 ) -> pl.DataFrame:
-    """Outage intervals whose `gap_end_rtime` falls on `date` (rtime-as-etime,
-    see module docstring), with a post-gap warm-up window appended.
+    """Outage intervals whose `gap_end_rtime` falls on `date`, with a
+    post-gap warm-up window appended.
 
     Attributed to the day where the warm-up ROWS actually occur -- the day
     capture resumed -- not the day the outage started: for a same-day
@@ -282,15 +343,28 @@ def resync_windows_for_date(
     day gets a `resync_windows` row, since that is the only curated
     partition whose rows need the `post_gap_warmup` tag.
 
-    Returns `(gap_start_rtime, gap_end_rtime, warmup_end_rtime)` -- Phase 4
-    joins curated etime against these RTIME-labeled bounds directly (the
-    rtime-as-etime approximation applies identically here); curated
-    partitions themselves are never rewritten to add this column (write-once).
+    Returns `(gap_start_rtime, gap_end_rtime, gap_end_etime_approx,
+    warmup_end_etime_approx)`:
+
+    - `gap_start_rtime`/`gap_end_rtime`: the ledger's own, honestly-labeled
+      rtime values -- audit trail only, never joined against curated etime.
+    - `gap_end_etime_approx`/`warmup_end_etime_approx`: the SAME numeric
+      values as `gap_end_rtime` (and `gap_end_rtime + warmup_seconds`),
+      under the name Phase 4 must actually join against curated `etime` --
+      the `_etime_approx` suffix makes the approximation unmissable at the
+      call site instead of hiding it behind an `_rtime`-suffixed column
+      that is secretly used as etime. See the module docstring's "NAMED,
+      BOUNDED EXCEPTION" section for why this is a documented
+      approximation rather than a fix, and its measured error bound.
+
+    Curated partitions themselves are never rewritten to add this column
+    (write-once) -- this sidecar is the only place the tag lives.
     """
     schema = {
         "gap_start_rtime": pl.Int64,
         "gap_end_rtime": pl.Int64,
-        "warmup_end_rtime": pl.Int64,
+        "gap_end_etime_approx": pl.Int64,
+        "warmup_end_etime_approx": pl.Int64,
     }
     intervals = collapse_outage_intervals(ledger_df)
     if intervals.height == 0:
@@ -302,7 +376,8 @@ def resync_windows_for_date(
         pl.col("_end_date") == date
     )
     return day_rows.drop("_end_date").with_columns(
-        (pl.col("gap_end_rtime") + warmup_ns).alias("warmup_end_rtime")
+        pl.col("gap_end_rtime").alias("gap_end_etime_approx"),
+        (pl.col("gap_end_rtime") + warmup_ns).alias("warmup_end_etime_approx"),
     )
 
 

@@ -112,4 +112,25 @@ write-once and are never rewritten to add this column -- 03-CONTEXT.md
 60s is a placeholder pending Phase 4's own measurement of how long
 feature state actually takes to re-stabilize after a real reconnect; not
 itself one of the six numbered DQ checks or a pause-triggering signal.
+
+NAMED, BOUNDED EXCEPTION to "etime is the only clock, rtime joins nothing"
+(03-VERIFICATION.md gap-closure finding 3): an outage boundary has no real
+etime by definition (no message arrived during it), so
+resync_windows_for_date's join columns (gap_end_etime_approx,
+warmup_end_etime_approx -- explicitly suffixed, never a bare _rtime name
+used silently as etime) are the outage's own rtime values, approximated as
+etime. A real per-message rtime->etime lookup was investigated and
+rejected: (1) archive-sourced curated trade rows (all 107 real trade days)
+carry a single per-day ingest-time rtime LITERAL, not a real per-message
+receive time (data/ingest/normalize.py:normalize_archive_frame) --
+measured 16-40 HOUR "errors" against real 09-14/09-15 outage boundaries,
+not a bounded approximation at all; (2) even capture-sourced bookTicker
+rows can resolve to the WRONG stream's resumption message for a merged
+outage -- measured 303.7s off (nearly the full 99-minute outage) in one of
+8 real 09-14/09-15 boundaries, versus <0.05s for the other 6. Measured
+whole-partition rtime-etime skew (BTCUSDT bookTicker 2026-09-14, 38.6M
+rows): p50=-7.2ms, p90=110.9ms, p99=472.3ms, p99.9=2.047s, max=307.07s.
+Read seconds=60 as "60 curated-etime seconds after an APPROXIMATELY
+located boundary", not etime-exact. Full transcript:
+03-07-GAPS-SUMMARY.md.
 """

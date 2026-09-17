@@ -19,6 +19,7 @@ from data.dq.checks import (
     check_reconciliation,
     collapse_outage_intervals,
     load_dq_thresholds,
+    resync_windows_for_date,
     split_at_day_boundaries,
 )
 
@@ -282,3 +283,48 @@ def test_l1_sparsity_is_na_not_ok_on_single_row_partition():
     assert result["dq_status"] == "n/a"
     assert result["value_seconds"] is None
     assert "reason" in result
+
+
+# --- resync_windows_for_date: etime_approx naming (03-VERIFICATION.md ---
+# --- gap-closure finding 3) ----------------------------------------------
+
+
+def test_resync_windows_schema_names_the_join_columns_etime_approx():
+    """The columns Phase 4 actually joins against curated etime must carry
+    the `_etime_approx` suffix -- never a bare `_rtime` name secretly used
+    as etime. gap_start_rtime/gap_end_rtime stay as the ledger's own,
+    honestly-labeled audit values."""
+    # 2026-09-14T01:00:00Z -- same verified-midnight constant as the
+    # UTC-boundary test above, offset well clear of the day edge.
+    day1_midnight_ns = 1_789_344_000_000_000_000
+    t0 = day1_midnight_ns + 3600 * NS_PER_SECOND
+    rows = [
+        _ledger_row(
+            "__connection__",
+            "merged",
+            t0,
+            t0 + 120 * NS_PER_SECOND,
+            "merged-silent: no message for 120.0s",
+        )
+    ]
+    result = resync_windows_for_date(_ledger_df(rows), "2026-09-14", warmup_seconds=60)
+    assert set(result.columns) == {
+        "gap_start_rtime",
+        "gap_end_rtime",
+        "gap_end_etime_approx",
+        "warmup_end_etime_approx",
+    }
+    assert result.height == 1
+    assert result["gap_end_etime_approx"][0] == t0 + 120 * NS_PER_SECOND
+    assert result["warmup_end_etime_approx"][0] == t0 + 180 * NS_PER_SECOND
+
+
+def test_resync_windows_empty_ledger_has_the_same_etime_approx_schema():
+    empty = resync_windows_for_date(_ledger_df([]), "2026-09-14", warmup_seconds=60)
+    assert empty.height == 0
+    assert set(empty.columns) == {
+        "gap_start_rtime",
+        "gap_end_rtime",
+        "gap_end_etime_approx",
+        "warmup_end_etime_approx",
+    }

@@ -253,11 +253,15 @@ def render_report_markdown(
         f"## resync_windows ({resync_windows.height} outage(s) resumed this day)"
     )
     if resync_windows.height:
-        lines.append("| gap_start_rtime | gap_end_rtime | warmup_end_rtime |")
-        lines.append("| --- | --- | --- |")
+        lines.append(
+            "| gap_start_rtime | gap_end_rtime | gap_end_etime_approx | "
+            "warmup_end_etime_approx |"
+        )
+        lines.append("| --- | --- | --- | --- |")
         for row in resync_windows.iter_rows(named=True):
             lines.append(
-                f"| {row['gap_start_rtime']} | {row['gap_end_rtime']} | {row['warmup_end_rtime']} |"
+                f"| {row['gap_start_rtime']} | {row['gap_end_rtime']} | "
+                f"{row['gap_end_etime_approx']} | {row['warmup_end_etime_approx']} |"
             )
     lines.append("")
     return "\n".join(lines)
