@@ -23,22 +23,46 @@ RULES (all resolved against real git objects, every subprocess through
    never a SKIP, which would be exactly the always-green path 03-VERIFICATION
    flagged and 03-07 closed.
 2. No manifest (anything under `manifests/` outside `by-date/` pointer
-   directories) may ever have been DELETED or MODIFIED in the history of
-   `HEAD` (`git log --diff-filter=DM --no-renames`; a rename counts as a
-   delete). Manifests are write-once: a rebuild issues a NEW manifest and
-   new partition files, and the old manifest keeps resolving.
+   directories) may ever have been DELETED, MODIFIED or TYPE-CHANGED
+   (e.g. replaced by a symlink) in the history of `HEAD`. Two independent
+   views, because a merge commit hides changes from a plain `git log`
+   (03-REVIEW-ITER2.md CR-08):
+   a. every commit reachable from `HEAD`, each diffed against EVERY parent
+      (`--diff-merges=separate`), with NO pathspec on the walk: a pathspec
+      turns on history simplification, which drops a merge whose manifest
+      tree equals one parent's (`git checkout --theirs manifests` during a
+      merge) -- exactly the resolution that deletes the other side's
+      manifests. Paths are filtered afterwards, in Python;
+   b. a TREE comparison of the manifests directory between a base and
+      `HEAD`: the merge-base with `develop` (then `origin/develop`); when
+      that IS `HEAD` (running on develop itself, e.g. the post-merge CI
+      push), `HEAD`'s FIRST parent -- so a merge commit is compared with the
+      mainline it landed on; for a root commit, the empty tree, stated in
+      the output (every manifest is then an addition, and rule 5 still
+      refuses zero manifests).
+   A rename counts as a delete (`--no-renames`). Manifests are write-once:
+   a rebuild issues a NEW manifest and new partition files, and the old
+   manifest keeps resolving.
 3. Every manifest tracked in `HEAD` must exist in the working tree with
-   bytes identical to the committed blob (catches the uncommitted delete /
-   edit before it is ever committed; in a pre-commit run the working tree is
-   the content being committed).
+   bytes identical to the committed blob and the same file type (catches
+   the uncommitted delete / edit / typechange before it is ever committed;
+   in a pre-commit run the working tree is the content being committed).
 4. No two manifests in the working tree may name the same
    `partitions[].path` with different `sha256` -- the in-place rewrite plus
    a reissued manifest, even when the old manifest is kept.
 5. `HEAD` must track at least one manifest: a path bug that matched nothing
    must not read as "nothing was rewritten".
+6. Nothing under `manifests/` may be a symlink or any other non-regular
+   file, neither in `HEAD`'s tree (mode 120000 / gitlink) nor in the
+   working tree: a symlink makes rule 4 read some other manifest's bytes.
 
-`by-date/` index files are mutable pointers by design (a rebuild repoints
-them) and are excluded from rules 2-4.
+Only a directory named exactly `by-date` holds mutable pointers (a rebuild
+repoints them); it is excluded from rules 2-4 (03-REVIEW-ITER2.md IN-13: a
+`by-date-*` prefix match used to exempt real manifests too).
+
+OUT OF REACH (needs branch protection, not this tool): a force-push that
+rewrites `develop`/`main` themselves, and a manifest committed and then
+amended/rebased away before it is ever merged.
 
 Needs no mounted lake -- manifest JSON is git-committed -- so it runs
 identically in pre-commit and on every CI runner.
@@ -48,6 +72,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import stat
 import subprocess
 from pathlib import Path
 
@@ -56,7 +82,12 @@ from tools.git_env import scrubbed_git_env
 
 PKG_ROOT = Path(__file__).resolve().parents[1]
 
-POINTER_DIR_PREFIX = "by-date"
+POINTER_DIR_NAME = "by-date"
+
+#: Refs whose merge-base with HEAD is rule 2b's base, in order.
+BASE_BRANCH_REFS: tuple[str, ...] = ("develop", "origin/develop")
+
+_CHANGE_WORDS = {"D": "deleted", "M": "modified", "T": "type-changed"}
 
 
 class GitHistoryUnavailable(RuntimeError):
@@ -80,11 +111,20 @@ def _git(args: list[str], cwd: Path) -> str:
     return result.stdout
 
 
-def _is_pointer(rel_to_manifests: str) -> bool:
-    return any(
-        part == POINTER_DIR_PREFIX or part.startswith(POINTER_DIR_PREFIX + "-")
-        for part in rel_to_manifests.split("/")[:-1]
+def _git_try(args: list[str], cwd: Path) -> str | None:
+    """Like `_git`, but `None` instead of raising (for refs that may not exist)."""
+    result = subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        env=scrubbed_git_env(),
     )
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def _is_pointer(rel_to_manifests: str) -> bool:
+    return POINTER_DIR_NAME in rel_to_manifests.split("/")[:-1]
 
 
 def _is_manifest_path(repo_rel: str, manifests_rel: str) -> bool:
@@ -93,17 +133,54 @@ def _is_manifest_path(repo_rel: str, manifests_rel: str) -> bool:
     return not _is_pointer(repo_rel[len(manifests_rel) + 1 :])
 
 
+def resolve_base(toplevel: Path) -> tuple[str, str]:
+    """Rule 2b's base: `(tree-ish, human description)`. Never `HEAD` itself
+    (a self-comparison would pass vacuously)."""
+    head = _git(["rev-parse", "HEAD"], toplevel).strip()
+    for ref in BASE_BRANCH_REFS:
+        merge_base = _git_try(["merge-base", "HEAD", ref], toplevel)
+        if merge_base and merge_base != head:
+            return merge_base, f"merge-base with {ref} ({merge_base[:12]})"
+    parents = _git(["rev-list", "--parents", "-n", "1", "HEAD"], toplevel).split()[1:]
+    if parents:
+        return parents[0], f"first parent of HEAD ({parents[0][:12]})"
+    empty_tree = _git(["hash-object", "-t", "tree", os.devnull], toplevel).strip()
+    return empty_tree, "root commit: empty tree (every manifest is an addition)"
+
+
+def _toplevel_for(registry_root: Path) -> Path:
+    probe_dir = Path(registry_root).absolute()
+    while not probe_dir.exists():
+        probe_dir = probe_dir.parent
+    return Path(_git(["rev-parse", "--show-toplevel"], probe_dir).strip()).resolve()
+
+
+def _non_regular_entries(manifests_dir: Path, manifests_rel: str) -> list[str]:
+    """Rule 6, working-tree side: every symlink / non-regular entry under
+    `manifests_dir` (never followed)."""
+    errors: list[str] = []
+    if manifests_dir.is_symlink():
+        return [f"{manifests_rel}: the manifests directory itself is a symlink"]
+    if not manifests_dir.exists():
+        return errors
+    for dirpath, dirnames, filenames in os.walk(manifests_dir, followlinks=False):
+        for name in sorted([*dirnames, *filenames]):
+            entry = Path(dirpath) / name
+            mode = entry.lstat().st_mode
+            rel = f"{manifests_rel}/{entry.relative_to(manifests_dir).as_posix()}"
+            if stat.S_ISLNK(mode):
+                errors.append(f"{rel}: is a symlink -- manifests must be regular files")
+            elif not (stat.S_ISDIR(mode) or stat.S_ISREG(mode)):
+                errors.append(f"{rel}: is not a regular file or directory")
+    return errors
+
+
 def check_append_only(registry_root: Path) -> tuple[list[str], int]:
     """Return `(violations, n_manifests_tracked_in_HEAD)`; an empty violation
     list means append-only holds. Raises `GitHistoryUnavailable` if history
     cannot be consulted."""
-    manifests_dir = Path(registry_root).resolve() / "manifests"
-    probe_dir = (
-        manifests_dir if manifests_dir.exists() else Path(registry_root).resolve()
-    )
-    while not probe_dir.exists():
-        probe_dir = probe_dir.parent
-    toplevel = Path(_git(["rev-parse", "--show-toplevel"], probe_dir).strip()).resolve()
+    registry_abs = Path(registry_root).absolute()
+    toplevel = _toplevel_for(registry_abs)
 
     if _git(["rev-parse", "--is-shallow-repository"], toplevel).strip() == "true":
         raise GitHistoryUnavailable(
@@ -112,34 +189,44 @@ def check_append_only(registry_root: Path) -> tuple[list[str], int]:
             "`fetch-depth: 0`, or `git fetch --unshallow`)."
         )
 
+    # Resolve the registry root but NOT the manifests directory: a symlinked
+    # manifests/ must be seen as a symlink (rule 6), not silently followed.
+    manifests_dir = registry_abs.resolve() / "manifests"
     manifests_rel = manifests_dir.relative_to(toplevel).as_posix()
     errors: list[str] = []
 
-    # Rule 5 + input to rule 3: manifests tracked in HEAD.
-    tracked = [
-        line
-        for line in _git(
-            ["ls-tree", "-r", "--name-only", "HEAD", "--", manifests_rel], toplevel
-        ).splitlines()
-        if _is_manifest_path(line, manifests_rel)
-    ]
+    # Rule 6 (HEAD side) + rule 5 + input to rule 3: manifests tracked in HEAD.
+    tracked: list[str] = []
+    for line in _git(
+        ["ls-tree", "-r", "HEAD", "--", manifests_rel], toplevel
+    ).splitlines():
+        meta, _, path = line.partition("\t")
+        mode = meta.split()[0]
+        if not path.startswith(manifests_rel + "/"):
+            continue
+        if mode not in {"100644", "100755"}:
+            kind = "a symlink" if mode == "120000" else f"mode {mode}"
+            errors.append(
+                f"{path}: is {kind} in HEAD -- manifests must be regular files"
+            )
+        if _is_manifest_path(path, manifests_rel):
+            tracked.append(path)
     if not tracked:
         errors.append(
             f"HEAD tracks 0 manifests under {manifests_rel}/ -- refusing a vacuous pass"
         )
         return errors, 0
 
-    # Rule 2: never deleted or modified anywhere in HEAD's history.
+    # Rule 2a: every commit, every parent, whole-tree walk (no pathspec).
     history = _git(
         [
             "log",
             "--no-renames",
-            "--diff-filter=DM",
+            "--diff-merges=separate",
+            "--diff-filter=DMT",
             "--format=commit %H",
             "--name-status",
             "HEAD",
-            "--",
-            manifests_rel,
         ],
         toplevel,
     )
@@ -150,10 +237,32 @@ def check_append_only(registry_root: Path) -> tuple[list[str], int]:
             continue
         fields = line.split("\t")
         if len(fields) == 2 and _is_manifest_path(fields[1], manifests_rel):
-            action = "deleted" if fields[0] == "D" else "modified"
             errors.append(
-                f"{fields[1]}: committed manifest {action} in commit {commit} "
-                "(manifests are write-once; issue a new manifest instead)"
+                f"{fields[1]}: committed manifest {_CHANGE_WORDS[fields[0][0]]} "
+                f"in commit {commit} (manifests are write-once; issue a new "
+                "manifest instead)"
+            )
+
+    # Rule 2b: tree comparison base -> HEAD.
+    base, base_desc = resolve_base(toplevel)
+    for line in _git(
+        [
+            "diff",
+            "--no-renames",
+            "--diff-filter=DMT",
+            "--name-status",
+            base,
+            "HEAD",
+            "--",
+            manifests_rel,
+        ],
+        toplevel,
+    ).splitlines():
+        fields = line.split("\t")
+        if len(fields) == 2 and _is_manifest_path(fields[1], manifests_rel):
+            errors.append(
+                f"{fields[1]}: committed manifest {_CHANGE_WORDS[fields[0][0]]} "
+                f"between {base_desc} and HEAD"
             )
 
     # Rule 3: working tree still has every HEAD manifest, byte-identical.
@@ -165,14 +274,15 @@ def check_append_only(registry_root: Path) -> tuple[list[str], int]:
         fields = line.split("\t")
         if len(fields) != 2 or not _is_manifest_path(fields[1], manifests_rel):
             continue
-        if fields[0] == "D":
-            errors.append(
-                f"{fields[1]}: committed manifest deleted in the working tree"
-            )
-        elif fields[0] == "M":
-            errors.append(
-                f"{fields[1]}: committed manifest modified in the working tree"
-            )
+        word = _CHANGE_WORDS.get(fields[0][0])
+        if word is not None:
+            errors.append(f"{fields[1]}: committed manifest {word} in the working tree")
+
+    # Rule 6 (working-tree side), before rule 4 reads any file.
+    non_regular = _non_regular_entries(registry_abs / "manifests", manifests_rel)
+    errors.extend(non_regular)
+    if non_regular:
+        return errors, len(tracked)
 
     # Rule 4: one sha256 per partition path across all manifests.
     seen: dict[str, tuple[str, str]] = {}
@@ -193,7 +303,9 @@ def check_append_only(registry_root: Path) -> tuple[list[str], int]:
                     "-- a partition was rewritten in place and re-manifested"
                 )
 
-    return errors, len(tracked)
+    # A merge diffed against two parents that both held the manifest reports
+    # the same change twice; say it once.
+    return list(dict.fromkeys(errors)), len(tracked)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -220,7 +332,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {err}")
         return 1
 
-    print(f"PASS: {n_tracked} committed manifest(s) append-only against HEAD history")
+    _base, base_desc = resolve_base(_toplevel_for(registry_root))
+    print(
+        f"PASS: {n_tracked} committed manifest(s) append-only against HEAD history "
+        f"(every commit vs every parent; tree base: {base_desc})"
+    )
     return 0
 
 

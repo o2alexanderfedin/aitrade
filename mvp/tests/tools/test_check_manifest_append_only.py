@@ -224,3 +224,168 @@ def test_real_committed_registry_is_append_only():
     )
     assert errors == []
     assert tracked >= 111
+
+
+# --- 03-REVIEW-ITER2.md CR-08: merges, typechanges, bases ------------------
+
+
+def _branch_repo(tmp_path: Path):
+    """develop commits m0 + m1; returns (repo, registry, lake, m0, m1)."""
+    repo, registry, lake, m0 = _repo(tmp_path)
+    _git(["checkout", "-q", "-b", "develop"], repo)
+    m1 = _issue(
+        registry, _write_partition(lake, "curated/date=2026-01-02/part-2.parquet", 2.0)
+    )
+    _commit_all(repo, "manifest m1 on develop")
+    return repo, registry, lake, m0, m1
+
+
+def _feature_adds_m2_and_develop_moves(repo: Path, registry: Path, lake: Path) -> dict:
+    _git(["checkout", "-q", "-b", "feat"], repo)
+    m2 = _issue(
+        registry, _write_partition(lake, "curated/date=2026-01-03/part-3.parquet", 3.0)
+    )
+    _commit_all(repo, "feat: manifest m2")
+    _git(["checkout", "-q", "develop"], repo)
+    (repo / "unrelated.txt").write_text("develop moved\n")
+    _commit_all(repo, "develop: unrelated change")
+    return m2
+
+
+def test_evil_merge_that_deletes_a_committed_manifest_fails(tmp_path: Path):
+    repo, registry, lake, _m0, m1 = _branch_repo(tmp_path)
+    _feature_adds_m2_and_develop_moves(repo, registry, lake)
+    _git(["merge", "-q", "--no-ff", "--no-commit", "feat"], repo)
+    _git(["rm", "-q", str(_manifest_file(registry, m1["manifest_id"]))], repo)
+    _git(["commit", "-q", "-m", "evil merge"], repo)
+    assert "Merge" not in _git(["log", "-1", "--format=%s"], repo)  # own message
+    assert len(_git(["log", "-1", "--format=%P"], repo).split()) == 2  # a merge
+
+    errors, _ = check_append_only(registry)
+    assert any(m1["manifest_id"] in e and "deleted" in e for e in errors), errors
+    assert main(["--registry-root", str(registry)]) == 1
+
+
+def test_evil_merge_that_rewrites_a_committed_manifest_fails(tmp_path: Path):
+    repo, registry, lake, _m0, m1 = _branch_repo(tmp_path)
+    _feature_adds_m2_and_develop_moves(repo, registry, lake)
+    _git(["merge", "-q", "--no-ff", "--no-commit", "feat"], repo)
+    m1_file = _manifest_file(registry, m1["manifest_id"])
+    m1_file.write_text(m1_file.read_text().replace('"deadbeef"', '"rewritten"'))
+    _git(["add", "-A"], repo)
+    _git(["commit", "-q", "-m", "evil merge 2"], repo)
+
+    errors, _ = check_append_only(registry)
+    assert any(m1["manifest_id"] in e and "modified" in e for e in errors), errors
+
+
+def test_merge_resolved_to_the_feature_side_drops_a_develop_manifest_fails(
+    tmp_path: Path,
+):
+    """`git checkout feat -- manifests` during the merge makes the merge's
+    manifest tree identical to the feature parent's, so a path-limited
+    `git log` simplifies the merge away entirely (TREESAME to one parent)."""
+    repo, registry, lake, _m0, _m1 = _branch_repo(tmp_path)
+    _git(["checkout", "-q", "-b", "feat"], repo)
+    _issue(
+        registry, _write_partition(lake, "curated/date=2026-01-03/part-3.parquet", 3.0)
+    )
+    _commit_all(repo, "feat: manifest m2")
+    _git(["checkout", "-q", "develop"], repo)
+    m_dev = _issue(
+        registry, _write_partition(lake, "curated/date=2026-01-04/part-4.parquet", 4.0)
+    )
+    _commit_all(repo, "develop: manifest m_dev")
+    # Both sides repointed the same by-date pointer: the merge conflicts, the
+    # realistic path to a merge resolution touching the manifest tree.
+    subprocess.run(
+        ["git", "merge", "-q", "--no-ff", "--no-commit", "feat"],
+        cwd=repo,
+        capture_output=True,
+        env=scrubbed_git_env(isolate_config=True),
+    )
+    manifests_rel = "mvp/data/lake_registry/manifests"
+    _git(["rm", "-q", "-r", "--cached", manifests_rel], repo)
+    _git(["checkout", "feat", "--", manifests_rel], repo)
+    _manifest_file(registry, m_dev["manifest_id"]).unlink()
+    _git(["add", "-A"], repo)
+    _git(["commit", "-q", "-m", "merge, taking theirs for manifests"], repo)
+    assert _git(["diff", "--stat", "feat", "HEAD", "--", manifests_rel], repo) == ""
+
+    errors, _ = check_append_only(registry)
+    assert any(m_dev["manifest_id"] in e and "deleted" in e for e in errors), errors
+
+
+def test_legitimate_append_via_merge_passes(tmp_path: Path, capsys):
+    repo, registry, lake, _m0, _m1 = _branch_repo(tmp_path)
+    _feature_adds_m2_and_develop_moves(repo, registry, lake)
+    _git(["merge", "-q", "--no-ff", "-m", "merge feat", "feat"], repo)
+    assert check_append_only(registry) == ([], 3)
+    assert main(["--registry-root", str(registry)]) == 0
+    assert "3 committed manifest(s)" in capsys.readouterr().out
+
+
+def test_committed_symlink_replacing_a_manifest_fails(tmp_path: Path):
+    repo, registry, lake, m0, m1 = _branch_repo(tmp_path)
+    m1_file = _manifest_file(registry, m1["manifest_id"])
+    m1_file.unlink()
+    m1_file.symlink_to(_manifest_file(registry, m0["manifest_id"]).name)
+    _commit_all(repo, "typechange m1 to a symlink")
+    assert "T\t" in _git(["log", "-1", "--name-status", "--format="], repo)
+
+    errors, _ = check_append_only(registry)
+    assert any(m1["manifest_id"] in e and "symlink" in e for e in errors), errors
+    assert main(["--registry-root", str(registry)]) == 1
+
+
+def test_uncommitted_symlink_manifest_fails(tmp_path: Path):
+    repo, registry, lake, m0 = _repo(tmp_path)
+    link = registry / "manifests" / "BTCUSDT.trade" / ("f" * 64 + ".json")
+    link.symlink_to(_manifest_file(registry, m0["manifest_id"]).name)
+    errors, _ = check_append_only(registry)
+    assert any("symlink" in e for e in errors), errors
+
+
+def test_symlinked_dataset_directory_fails(tmp_path: Path):
+    repo, registry, lake, _m0 = _repo(tmp_path)
+    (registry / "manifests" / "BTCUSDT.alias").symlink_to("BTCUSDT.trade")
+    errors, _ = check_append_only(registry)
+    assert any("BTCUSDT.alias" in e and "symlink" in e for e in errors), errors
+
+
+def test_head_is_the_merge_base_still_compares_against_first_parent(tmp_path: Path):
+    """On develop itself (merge-base(HEAD, develop) == HEAD, the post-merge CI
+    run), the base comparison must not diff HEAD against itself."""
+    repo, registry, lake, _m0, m1 = _branch_repo(tmp_path)
+    _manifest_file(registry, m1["manifest_id"]).unlink()
+    _commit_all(repo, "delete m1 directly on develop")
+    errors, _ = check_append_only(registry)
+    assert any(m1["manifest_id"] in e and "deleted" in e for e in errors), errors
+
+
+def test_single_commit_repo_is_checked_not_vacuous(tmp_path: Path, capsys):
+    repo, registry, lake, m0 = _repo(tmp_path)
+    assert len(_git(["rev-list", "HEAD"], repo).split()) == 1
+    assert check_append_only(registry) == ([], 1)
+    assert main(["--registry-root", str(registry)]) == 0
+    assert "root commit" in capsys.readouterr().out
+    _git(
+        ["rm", "-q", "--cached", str(_manifest_file(registry, m0["manifest_id"]))], repo
+    )
+    errors, _ = check_append_only(registry)
+    assert any("deleted" in e for e in errors), errors
+
+
+def test_pointer_exemption_is_exactly_by_date(tmp_path: Path):
+    """03-REVIEW-ITER2.md IN-13: a `by-date-archive/` directory is not a
+    pointer directory, so a manifest inside it is protected."""
+    repo, registry, lake, m0 = _repo(tmp_path)
+    archive = registry / "manifests" / "BTCUSDT.trade" / "by-date-archive"
+    archive.mkdir()
+    hidden = archive / _manifest_file(registry, m0["manifest_id"]).name
+    hidden.write_text(_manifest_file(registry, m0["manifest_id"]).read_text())
+    _commit_all(repo, "copy into by-date-archive")
+    hidden.unlink()
+    _commit_all(repo, "delete it")
+    errors, _ = check_append_only(registry)
+    assert any("by-date-archive" in e and "deleted" in e for e in errors), errors
