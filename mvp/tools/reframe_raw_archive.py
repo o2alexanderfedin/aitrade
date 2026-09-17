@@ -39,14 +39,32 @@ TODAY's UTC `date=...` directory, or any file modified in the last
 `ACTIVE_FILE_MIN_AGE_SECONDS` -- both a defense against ever racing a live
 writer's in-flight appends, and a safety net if this tool is ever run
 directly against a real, currently-capturing tree.
+
+CRASHED SEGMENTS (03-REVIEW-ITER2.md WR-14): since CR-01 every capture run
+writes its own segment, so a run killed without `close()` (SIGKILL, OOM,
+battery at 0 %) leaves a segment whose last frame is unterminated, possibly
+cut mid-block -- a normal post-crash state, not a rare corruption. zstd's
+streaming reader reports such a file as a clean EOF. `iter_lines` therefore
+walks the zstd frame/block headers itself and fills an `ArchiveReadReport`:
+`truncated`, the number of complete lines recovered, and the byte offset
+where the last complete frame ends. A half-written final line is dropped,
+never passed off as a line. `reframe_file` leaves a truncated segment
+untouched unless `accept_truncated=True` (`--accept-truncated`), in which
+case the recovered lines are reframed into place and the original is kept
+beside it as `<name>.crashed`; `main` reports every truncated file, keeps
+going, and exits 1 if any was left untouched. A 0-byte segment (a run that
+died between opening its segment and the first append) is benign and
+skipped.
 """
 
 from __future__ import annotations
 
 import argparse
 import glob
+import mmap
 import os
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import zstandard
@@ -86,7 +104,92 @@ def is_active_file(path: Path, *, now: float | None = None) -> bool:
     return age < ACTIVE_FILE_MIN_AGE_SECONDS
 
 
-def iter_lines(path: Path, *, chunk_size: int = READ_CHUNK_BYTES):
+@dataclass
+class ArchiveReadReport:
+    """Filled in by `iter_lines` once the generator is exhausted."""
+
+    truncated: bool = False
+    complete_lines: int = 0
+    #: Offset just past the last COMPLETE zstd frame (== file size when clean).
+    complete_frame_bytes: int = 0
+    file_bytes: int = 0
+    #: Bytes of a half-written final line that was dropped (truncated only).
+    dropped_partial_line_bytes: int = 0
+
+
+_ZSTD_FRAME_MAGIC = 0xFD2FB528
+_SKIPPABLE_MAGIC_MIN = 0x184D2A50
+_SKIPPABLE_MAGIC_MAX = 0x184D2A5F
+_MAX_FRAME_HEADER_BYTES = 18
+
+
+def complete_frames_end(path: Path) -> int:
+    """Offset just past the last complete zstd frame in `path`, found by
+    walking frame and block headers (no decompression). Equal to the file
+    size exactly when the file ends on a frame boundary; smaller when the
+    last frame is unterminated or cut off. Raises `zstandard.ZstdError` on
+    bytes that are not a zstd frame at all."""
+    size = path.stat().st_size
+    if size == 0:
+        return 0
+    with (
+        open(path, "rb") as fh,
+        mmap.mmap(fh.fileno(), 0, access=mmap.ACCESS_READ) as mm,
+    ):
+        pos = 0
+        while pos < size:
+            if size - pos < 4:
+                return pos
+            magic = int.from_bytes(mm[pos : pos + 4], "little")
+            if _SKIPPABLE_MAGIC_MIN <= magic <= _SKIPPABLE_MAGIC_MAX:
+                if size - pos < 8:
+                    return pos
+                end = pos + 8 + int.from_bytes(mm[pos + 4 : pos + 8], "little")
+                if end > size:
+                    return pos
+                pos = end
+                continue
+            if magic != _ZSTD_FRAME_MAGIC:
+                raise zstandard.ZstdError(
+                    f"{path}: no zstd frame magic at byte {pos} -- corrupt, not truncated"
+                )
+            head = bytes(mm[pos : pos + _MAX_FRAME_HEADER_BYTES])
+            try:
+                header_bytes = zstandard.frame_header_size(head)
+                has_checksum = zstandard.get_frame_parameters(head).has_checksum
+            except zstandard.ZstdError:
+                if size - pos < _MAX_FRAME_HEADER_BYTES:
+                    return pos  # header itself cut off
+                raise
+            q = pos + header_bytes
+            while True:
+                if size - q < 3:
+                    return pos
+                block_header = int.from_bytes(mm[q : q + 3], "little")
+                block_type = (block_header >> 1) & 3
+                if block_type == 3:
+                    raise zstandard.ZstdError(
+                        f"{path}: reserved zstd block type at byte {q} -- corrupt"
+                    )
+                q += 3 + (1 if block_type == 1 else block_header >> 3)
+                if q > size:
+                    return pos
+                if block_header & 1:  # last block of the frame
+                    break
+            if has_checksum:
+                q += 4
+                if q > size:
+                    return pos
+            pos = q
+        return pos
+
+
+def iter_lines(
+    path: Path,
+    *,
+    chunk_size: int = READ_CHUNK_BYTES,
+    report: ArchiveReadReport | None = None,
+):
     """Yield raw NDJSON lines (bytes, no trailing newline) decompressed from
     `path`, streaming in `chunk_size`-byte reads.
 
@@ -97,8 +200,15 @@ def iter_lines(path: Path, *, chunk_size: int = READ_CHUNK_BYTES):
     output against the original without needing format-specific branches.
     Never loads the full decompressed content into memory: a partial
     trailing line is buffered across `read()` calls, not the whole file.
+
+    The stream reader returns a clean EOF on a truncated file, so after the
+    last read the frame structure is walked (`complete_frames_end`, WR-14).
+    On a truncated file the unterminated final line is dropped. `report`,
+    if given, is filled in when the generator is exhausted.
     """
+    report = report if report is not None else ArchiveReadReport()
     dctx = zstandard.ZstdDecompressor()
+    count = 0
     with open(path, "rb") as fh:
         reader = dctx.stream_reader(fh, read_across_frames=True)
         buf = b""
@@ -111,9 +221,17 @@ def iter_lines(path: Path, *, chunk_size: int = READ_CHUNK_BYTES):
             buf = parts.pop()  # last element may be an incomplete line
             for line in parts:
                 if line:
+                    count += 1
                     yield line
-        if buf:
-            yield buf
+    report.file_bytes = path.stat().st_size
+    report.complete_frame_bytes = complete_frames_end(path)
+    report.truncated = report.complete_frame_bytes < report.file_bytes
+    if buf and report.truncated:
+        report.dropped_partial_line_bytes = len(buf)
+    elif buf:
+        count += 1
+        yield buf
+    report.complete_lines = count
 
 
 def _fsync_fd(fd: int) -> None:
@@ -214,6 +332,7 @@ def reframe_file(
     *,
     flush_frame_every_messages: int = DEFAULT_FLUSH_FRAME_EVERY_MESSAGES,
     flush_frame_every_seconds: float = DEFAULT_FLUSH_FRAME_EVERY_SECONDS,
+    accept_truncated: bool = False,
 ) -> dict:
     """Re-frame `path` in place: decompress-then-recompress through the NEW
     framing into a `.tmp`-suffixed sibling, assert the decompressed line
@@ -221,17 +340,51 @@ def reframe_file(
     into memory), then atomically replace the original. Raises `ValueError`
     (original left completely untouched) if the identity assertion fails.
 
-    Returns `{"path", "lines", "original_bytes", "reframed_bytes"}`.
+    A 0-byte file returns `status="empty"` untouched. A truncated/crashed
+    segment (WR-14) returns `status="truncated"` untouched, with the number
+    of complete lines it holds, unless `accept_truncated=True`: then the
+    recovered complete lines are reframed into place and the original bytes
+    are kept as `<name>.crashed` (hard-linked BEFORE the swap, so a copy of
+    the original exists at every instant), `status="reframed_truncated"`.
+
+    Returns `{"path", "status", "lines", "original_bytes", "reframed_bytes",
+    "complete_frame_bytes", "dropped_partial_line_bytes"}`.
     """
     original_size = path.stat().st_size
+    result = {
+        "path": str(path),
+        "status": "reframed",
+        "lines": 0,
+        "original_bytes": original_size,
+        "reframed_bytes": None,
+        "complete_frame_bytes": original_size,
+        "dropped_partial_line_bytes": 0,
+    }
+    if original_size == 0:
+        return {**result, "status": "empty", "reframed_bytes": 0}
+
+    if complete_frames_end(path) < original_size and not accept_truncated:
+        report = ArchiveReadReport()
+        for _line in iter_lines(path, report=report):
+            pass
+        return {
+            **result,
+            "status": "truncated",
+            "lines": report.complete_lines,
+            "complete_frame_bytes": report.complete_frame_bytes,
+            "dropped_partial_line_bytes": report.dropped_partial_line_bytes,
+        }
+
     tmp_path = path.with_name(path.name + ".reframe.tmp")
+    crashed_path = path.with_name(path.name + ".crashed")
+    report = ArchiveReadReport()
 
     # Any failure before the swap (a corrupt source raising mid-decode, the
     # identity assertion, a full disk, Ctrl-C) removes the possibly multi-GB
     # tmp file and leaves the original untouched (03-REVIEW.md WR-09).
     try:
         line_count = write_reframed(
-            iter_lines(path),
+            iter_lines(path, report=report),
             tmp_path,
             flush_frame_every_messages=flush_frame_every_messages,
             flush_frame_every_seconds=flush_frame_every_seconds,
@@ -247,6 +400,10 @@ def reframe_file(
             )
 
         new_size = tmp_path.stat().st_size
+        if report.truncated:
+            if not accept_truncated:  # the file changed since the pre-check
+                raise ValueError(f"{path}: became truncated during the reframe")
+            os.link(path, crashed_path)  # FileExistsError: never overwrite one
     except BaseException:
         tmp_path.unlink(missing_ok=True)
         raise
@@ -257,10 +414,12 @@ def reframe_file(
     _fsync_dir(path.parent)
 
     return {
-        "path": str(path),
+        **result,
+        "status": "reframed_truncated" if report.truncated else "reframed",
         "lines": line_count,
-        "original_bytes": original_size,
         "reframed_bytes": new_size,
+        "complete_frame_bytes": report.complete_frame_bytes,
+        "dropped_partial_line_bytes": report.dropped_partial_line_bytes,
     }
 
 
@@ -284,6 +443,15 @@ def main(argv: list[str] | None = None) -> int:
         help="do NOT exclude any file by recency -- dangerous, testing "
         "only; never use against a live capture tree",
     )
+    parser.add_argument(
+        "--accept-truncated",
+        dest="accept_truncated",
+        action="store_true",
+        default=False,
+        help="reframe a truncated/crashed segment's complete lines into place, "
+        "keeping the original as <name>.crashed (default: report it, leave it "
+        "untouched, exit 1)",
+    )
     args = parser.parse_args(argv)
 
     candidates = sorted(Path(p) for p in glob.glob(args.path_glob))
@@ -295,19 +463,44 @@ def main(argv: list[str] | None = None) -> int:
     total_after = 0
     processed = 0
     skipped = 0
+    empty = 0
+    truncated_untouched = 0
     for path in candidates:
         if args.skip_active and is_active_file(path):
             skipped += 1
             print(f"SKIP (active): {path} mtime={path.stat().st_mtime}")
             continue
-        stats = reframe_file(path)
+        stats = reframe_file(path, accept_truncated=args.accept_truncated)
+        if stats["status"] == "empty":
+            empty += 1
+            print(f"SKIP (empty segment): {path} is 0 bytes (benign)")
+            continue
+        tail = (
+            f"truncated tail: last complete frame ends at byte "
+            f"{stats['complete_frame_bytes']} of {stats['original_bytes']}, "
+            f"{stats['lines']} complete lines recovered, "
+            f"{stats['dropped_partial_line_bytes']} bytes of a partial final line dropped"
+        )
+        if stats["status"] == "truncated":
+            truncated_untouched += 1
+            print(
+                f"TRUNCATED: {path} {tail}; left untouched "
+                "(re-run with --accept-truncated to reframe the recovered lines "
+                "and keep the original as <name>.crashed)"
+            )
+            continue
         before = stats["original_bytes"]
         after = stats["reframed_bytes"]
         total_before += before
         total_after += after
         ratio = before / after if after else float("inf")
+        label = (
+            f"REFRAMED ({tail}; original kept as {path.name}.crashed)"
+            if stats["status"] == "reframed_truncated"
+            else "REFRAMED"
+        )
         print(
-            f"REFRAMED: {path} lines={stats['lines']} before={before} "
+            f"{label}: {path} lines={stats['lines']} before={before} "
             f"after={after} ratio={ratio:.2f}x"
         )
         processed += 1
@@ -315,10 +508,11 @@ def main(argv: list[str] | None = None) -> int:
     overall_ratio = (total_before / total_after) if total_after else float("inf")
     print(
         f"done: {processed} file(s) reframed, {skipped} skipped (active), "
+        f"{empty} empty, {truncated_untouched} truncated and left untouched, "
         f"total_before={total_before} total_after={total_after} "
         f"overall_ratio={overall_ratio:.2f}x"
     )
-    return 0
+    return 1 if truncated_untouched else 0
 
 
 if __name__ == "__main__":

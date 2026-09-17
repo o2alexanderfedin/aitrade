@@ -222,3 +222,154 @@ def test_reframed_file_is_fsynced_before_replace_and_directory_after(
 
     assert events == ["fsync_file", "replace", "fsync_dir"]
     assert list(iter_lines(path)) == lines
+
+
+# --- WR-14 (03-REVIEW-ITER2.md): a crashed segment is not a clean EOF -------
+
+
+def _crashed_segment(tmp_path: Path, n: int, truncate_bytes: int) -> Path:
+    """Run the REAL `RawArchiveWriter` in a child process: `n` appends, then
+    `os._exit(0)` (no close, so no final FLUSH_FRAME), then cut
+    `truncate_bytes` off the end -- the post-crash state CR-01 makes normal.
+    Aged past the active-file window."""
+    import os
+    import subprocess
+    import sys
+
+    archive = tmp_path / "archive"
+    code = (
+        "import os, sys\n"
+        "from pathlib import Path\n"
+        "from data.capture.ws_client import RawArchiveWriter\n"
+        "w = RawArchiveWriter(Path(sys.argv[1]), 'A', flush_frame_every_messages=100,"
+        " flush_frame_every_seconds=1e9)\n"
+        "for i in range(int(sys.argv[2])):\n"
+        '    w.append(\'{"u": %d, "pad": "%s"}\' % (i, \'x\' * 40), 1_000 + i)\n'
+        "os._exit(0)\n"
+    )
+    subprocess.run(
+        [sys.executable, "-c", code, str(archive), str(n)],
+        check=True,
+        cwd=Path(__file__).resolve().parents[2],
+    )
+    (segment,) = list(archive.glob("date=*/conn_A.*.ndjson.zst"))
+    size = segment.stat().st_size
+    with open(segment, "r+b") as fh:
+        fh.truncate(size - truncate_bytes)
+    old = time.time() - (ACTIVE_FILE_MIN_AGE_SECONDS + 3600)
+    os.utime(segment, (old, old))
+    # Move out of today's date= directory so is_active_file does not skip it.
+    aged = tmp_path / "date=2020-01-01" / segment.name
+    aged.parent.mkdir(parents=True, exist_ok=True)
+    segment.rename(aged)
+    os.utime(aged, (old, old))
+    return aged
+
+
+def _zstd_cli_says_truncated(path: Path) -> bool | None:
+    import shutil
+    import subprocess
+
+    if shutil.which("zstd") is None:
+        return None
+    return subprocess.run(["zstd", "-t", "-q", str(path)]).returncode != 0
+
+
+def test_iter_lines_reports_a_truncated_segment_and_drops_the_partial_line(
+    tmp_path: Path,
+):
+    from tools.reframe_raw_archive import ArchiveReadReport
+
+    segment = _crashed_segment(tmp_path, n=1050, truncate_bytes=7)
+    assert _zstd_cli_says_truncated(segment) in (True, None)
+
+    report = ArchiveReadReport()
+    lines = list(iter_lines(segment, report=report))
+
+    assert report.truncated is True
+    assert report.complete_lines == len(lines)
+    assert 1000 <= len(lines) < 1050
+    for line in lines:  # nothing half-written was passed off as a line
+        orjson.loads(line)
+    assert report.complete_frame_bytes < segment.stat().st_size
+
+
+def test_iter_lines_reports_a_clean_file_as_not_truncated(tmp_path: Path):
+    from tools.reframe_raw_archive import ArchiveReadReport
+
+    path = tmp_path / "fixture.ndjson.zst"
+    lines = [_archive_line(i) for i in range(40)]
+    _write_old_format_fixture(path, lines)
+    report = ArchiveReadReport()
+    assert list(iter_lines(path, report=report)) == lines
+    assert report.truncated is False
+    assert report.complete_lines == 40
+
+
+def test_unterminated_segment_without_truncation_is_still_reported(tmp_path: Path):
+    """A crash with no byte lost still leaves the last frame unterminated."""
+    from tools.reframe_raw_archive import ArchiveReadReport
+
+    segment = _crashed_segment(tmp_path, n=250, truncate_bytes=0)
+    report = ArchiveReadReport()
+    lines = list(iter_lines(segment, report=report))
+    assert report.truncated is True
+    assert len(lines) == 250
+
+
+def test_reframe_file_leaves_a_truncated_segment_untouched_by_default(tmp_path: Path):
+    segment = _crashed_segment(tmp_path, n=1050, truncate_bytes=7)
+    before = segment.read_bytes()
+
+    stats = reframe_file(segment)
+
+    assert stats["status"] == "truncated"
+    assert 1000 <= stats["lines"] < 1050
+    assert segment.read_bytes() == before
+    assert list(segment.parent.iterdir()) == [segment]  # no tmp, no .crashed
+
+
+def test_main_surfaces_truncation_keeps_going_and_exits_nonzero(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+):
+    import os
+
+    from tools.reframe_raw_archive import main
+
+    segment = _crashed_segment(tmp_path, n=1050, truncate_bytes=7)
+    clean = segment.parent / "conn_B.ndjson.zst"
+    _write_old_format_fixture(clean, [_archive_line(i) for i in range(20)])
+    old = time.time() - (ACTIVE_FILE_MIN_AGE_SECONDS + 3600)
+    os.utime(clean, (old, old))
+    empty = segment.parent / "conn_C.1.ndjson.zst"
+    empty.write_bytes(b"")
+    os.utime(empty, (old, old))
+    before = segment.read_bytes()
+
+    exit_code = main([str(segment.parent / "conn_*.ndjson.zst")])
+
+    out = capsys.readouterr().out
+    assert exit_code == 1
+    assert "TRUNCATED" in out and "complete lines recovered" in out
+    assert "REFRAMED" in out  # the clean file was still processed
+    assert "SKIP (empty segment)" in out
+    assert segment.read_bytes() == before
+
+
+def test_accept_truncated_reframes_recovered_lines_and_keeps_the_original(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+):
+    from tools.reframe_raw_archive import main
+
+    segment = _crashed_segment(tmp_path, n=1050, truncate_bytes=7)
+    before = segment.read_bytes()
+    recovered = list(iter_lines(segment))
+
+    exit_code = main([str(segment), "--accept-truncated"])
+
+    assert exit_code == 0
+    crashed = segment.with_name(segment.name + ".crashed")
+    assert crashed.read_bytes() == before
+    assert list(iter_lines(segment)) == recovered
+    assert _zstd_cli_says_truncated(segment) in (False, None)
+    assert "truncated tail" in capsys.readouterr().out
