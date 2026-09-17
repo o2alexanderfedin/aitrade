@@ -365,4 +365,4 @@ about; an **active** run whose tags MLflow refuses still propagates out of
 ---
 
 _Fixed: 2026-09-17_
-_Branch: `feature/phase-03-followups` (7 commits on top of `29072dd`)_
+_Branch: `feature/phase-03-followups` (8 commits on top of `29072dd`)_

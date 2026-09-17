@@ -969,9 +969,10 @@ def _log_provenance(manifest: dict, acks: list[tuple[str, str]]) -> None:
     An environment with no `mlflow` installed has no run to record onto, so
     there is nothing to fail about: the import is guarded and the loader
     reads data exactly as it did before provenance logging existed. The guard
-    is narrow on purpose -- it re-raises anything that is not mlflow's own
-    absence, so a typo'd import inside `tracking.mlflow_utils` stays a loud
-    bug rather than becoming a silent skip.
+    is narrow on purpose -- `exc.name != "mlflow"` re-raises everything that
+    is not mlflow's own absence, so a typo'd import inside
+    `tracking.mlflow_utils`, or that module going missing outright, stays a
+    loud bug rather than becoming a silent skip.
 
     Everything past the import is NOT swallowed. With no active run nothing
     is logged and nothing raises, but if a run IS active and MLflow refuses
@@ -982,7 +983,7 @@ def _log_provenance(manifest: dict, acks: list[tuple[str, str]]) -> None:
     try:
         from tracking.mlflow_utils import log_data_provenance
     except ImportError as exc:
-        if exc.name not in {"mlflow", "tracking.mlflow_utils"}:
+        if exc.name != "mlflow":
             raise
         return  # no tracking installed: no run to record onto, nothing to fail
 
