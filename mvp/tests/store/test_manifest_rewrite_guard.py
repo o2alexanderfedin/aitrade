@@ -469,3 +469,60 @@ def test_rewrite_check_fails_a_manifest_with_no_partitions(tmp_path: Path, capsy
         == 1
     )
     assert "no partitions" in capsys.readouterr().out
+
+
+# --- IN-19 (03-REVIEW-ITER3.md): issuance refuses malformed partition paths --
+
+
+def _issue_kwargs(registry_root: Path) -> dict:
+    return dict(
+        dataset="BTCUSDT.trade",
+        symbol="BTCUSDT",
+        stream="trade",
+        tier="curated",
+        schema_version=1,
+        inputs=[],
+        code_hash="deadbeef",
+        registry_root=registry_root,
+    )
+
+
+@pytest.mark.parametrize(
+    ("spelling", "why"),
+    [
+        ("curated/./a/part-1.parquet", "not canonical"),
+        ("curated//a/part-1.parquet", "not canonical"),
+        ("curated/a/part-1.parquet/", "not canonical"),
+        ("curated/x/../a/part-1.parquet", "not canonical"),
+        ("../curated/a/part-1.parquet", "escapes the lake root"),
+        ("..", "escapes the lake root"),
+        ("/abs/curated/a/part-1.parquet", "absolute"),
+    ],
+)
+def test_issue_manifest_refuses_a_malformed_partition_path(
+    tmp_path: Path, spelling: str, why: str
+):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    part = _write_partition(lake_root, "curated/a/part-1.parquet", _sample_df())
+    with pytest.raises(ValueError, match=why):
+        issue_manifest(
+            partitions=[{**part, "path": spelling}], **_issue_kwargs(registry_root)
+        )
+    assert not (registry_root / "manifests").exists()
+
+
+@pytest.mark.parametrize(
+    "second", ["curated/a/part-1.parquet", "CURATED/a/part-1.parquet"]
+)
+def test_issue_manifest_refuses_one_partition_named_twice_in_a_manifest(
+    tmp_path: Path, second: str
+):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    first = _write_partition(lake_root, "curated/a/part-1.parquet", _sample_df())
+    other = _write_partition(lake_root, "curated/b/part-2.parquet", _sample_df(7))
+    with pytest.raises(ValueError, match="more than once"):
+        issue_manifest(
+            partitions=[first, {**other, "path": second}],
+            **_issue_kwargs(registry_root),
+        )
+    assert not (registry_root / "manifests").exists()

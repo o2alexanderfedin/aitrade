@@ -78,6 +78,8 @@ def _partition(lake_root: Path, rel: str, *, on_disk: Path | None = None) -> dic
 
 
 def _issue(registry_root: Path, part: dict, tier: str) -> dict:
+    if store.partition_path_problem(part["path"]) is not None:
+        return _hand_write(registry_root, part, tier)
     return issue_manifest(
         dataset="BTCUSDT.trade",
         symbol="BTCUSDT",
@@ -89,6 +91,30 @@ def _issue(registry_root: Path, part: dict, tier: str) -> dict:
         code_hash="deadbeef",
         registry_root=registry_root,
     )
+
+
+def _hand_write(registry_root: Path, part: dict, tier: str) -> dict:
+    """`issue_manifest` refuses an escaping, absolute or non-canonical path
+    (03-REVIEW-ITER3.md IN-19), so the manifest is written by hand, as an
+    attacker would: the loader must refuse it on its own."""
+    body = {
+        "dataset": "BTCUSDT.trade",
+        "symbol": "BTCUSDT",
+        "stream": "trade",
+        "tier": tier,
+        "schema_version": 1,
+        "built_at": 0,
+        "code_hash": "deadbeef",
+        "inputs": [],
+        "partitions": [part],
+        "row_count": part["rows"],
+        "etime_range": [part["etime_min"], part["etime_max"]],
+    }
+    manifest = {"manifest_id": store.compute_manifest_id(body), **body}
+    path = store.manifest_path(registry_root, "BTCUSDT.trade", manifest["manifest_id"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, sort_keys=True, indent=2))
+    return manifest
 
 
 def _spy_reads(monkeypatch) -> list:

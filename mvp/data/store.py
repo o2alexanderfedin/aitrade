@@ -67,6 +67,7 @@ __all__ = [
     "manifest_path",
     "by_date_index_path",
     "partition_path_key",
+    "partition_path_problem",
 ]
 
 
@@ -177,6 +178,24 @@ def partition_path_key(path: str) -> str:
     return unicodedata.normalize("NFC", posixpath.normpath(path)).casefold()
 
 
+def partition_path_problem(path: object) -> str | None:
+    """`None` if `path` is a well-formed lake-relative partition path, else
+    why not (03-REVIEW-ITER3.md IN-19). Well-formed: a non-empty string, not
+    absolute, whose first normalised segment is not `..` (`normpath` leaves
+    `../curated/x` unchanged, so a canonical-spelling test alone passed it),
+    and spelled canonically (`normpath(path) == path`)."""
+    if not isinstance(path, str) or not path:
+        return f"partition path {path!r} is not a non-empty string"
+    if path.startswith("/"):
+        return f"partition path {path!r} is absolute (must be lake-root-relative)"
+    normalised = posixpath.normpath(path)
+    if normalised == ".." or normalised.startswith("../"):
+        return f"partition path {path!r} escapes the lake root ({normalised!r})"
+    if normalised != path:
+        return f"partition path {path!r} is not canonical (expected {normalised!r})"
+    return None
+
+
 def _atomic_write_json(path: Path, body: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(path.suffix + ".tmp")
@@ -214,6 +233,10 @@ def issue_manifest(
     rewritten in place. A rebuild writes a NEW `part-<ns>` file. Paths are
     compared by `partition_path_key`, never as raw strings (WR-13).
 
+    Also refuses (IN-19) a malformed path (`partition_path_problem`: absolute,
+    escaping the lake root, or non-canonical) and one partition named twice
+    within the new manifest under any spelling.
+
     Returns the full manifest dict (including the computed `manifest_id`).
     """
     if not partitions:
@@ -221,7 +244,19 @@ def issue_manifest(
             "issue_manifest: no partitions -- a manifest that names nothing "
             "verifies nothing (03-REVIEW-ITER2.md IN-15)"
         )
-    new_paths = {partition_path_key(p["path"]): p["path"] for p in partitions}
+    new_paths: dict[str, str] = {}
+    for part in partitions:
+        if not isinstance(part.get("path"), str) or not part["path"]:
+            raise ValueError(
+                f"issue_manifest: {partition_path_problem(part.get('path'))}"
+            )
+        key = partition_path_key(part["path"])
+        if key in new_paths:
+            raise ValueError(
+                f"issue_manifest: partition {part['path']!r} is named more than "
+                f"once in this manifest (also as {new_paths[key]!r})"
+            )
+        new_paths[key] = part["path"]
     dataset_dir = Path(registry_root) / "manifests" / dataset
     if new_paths and dataset_dir.exists():
         for existing_file in dataset_dir.glob("*.json"):
@@ -236,6 +271,12 @@ def issue_manifest(
                     f"named by manifest {existing_file.stem} -- partitions are "
                     "write-once; write a new part file instead of reusing a path"
                 )
+    # After the reuse refusal, so a reuse under another spelling is still
+    # reported as the reuse it is (WR-13).
+    for part in partitions:
+        problem = partition_path_problem(part["path"])
+        if problem is not None:
+            raise ValueError(f"issue_manifest: {problem}")
 
     body = {
         "dataset": dataset,

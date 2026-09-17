@@ -88,13 +88,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import posixpath
 import stat
 import subprocess
 from pathlib import Path
 
 from data.lake_paths import LAKE_REGISTRY_ROOT
-from data.store import partition_path_key
+from data.store import partition_path_key, partition_path_problem
 from tools.git_env import scrubbed_git_env
 
 PKG_ROOT = Path(__file__).resolve().parents[1]
@@ -393,14 +392,11 @@ def check_append_only(registry_root: Path) -> tuple[list[str], int]:
         manifest = json.loads(manifest_file.read_text())
         for part in manifest.get("partitions", []):
             path, sha = part.get("path"), part.get("sha256")
+            problem = partition_path_problem(path)
+            if problem is not None:
+                errors.append(f"{rel}: {problem}")
             if not isinstance(path, str) or not path:
-                errors.append(f"{rel}: partition path {path!r} is not a string")
                 continue
-            if path.startswith("/") or posixpath.normpath(path) != path:
-                errors.append(
-                    f"{rel}: partition path {path!r} is not canonical "
-                    f"(expected {posixpath.normpath(path)!r}, lake-relative)"
-                )
             key = partition_path_key(path)
             prior = seen.get(key)
             if prior is None:

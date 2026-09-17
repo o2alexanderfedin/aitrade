@@ -582,3 +582,20 @@ def test_non_ascii_manifest_deleted_in_the_working_tree_is_caught(tmp_path: Path
     assert any(
         "BTCUSDT.tradé/" in e and "deleted in the working tree" in e for e in errors
     ), errors
+
+
+# --- 03-REVIEW-ITER3.md IN-19: `..` passes normpath unchanged ---------------
+
+
+@pytest.mark.parametrize(
+    "spelling", ["../curated/date=2026-01-02/part-2.parquet", "curated/../../x.parquet"]
+)
+def test_partition_path_escaping_the_lake_root_is_a_violation(
+    tmp_path: Path, spelling: str
+):
+    repo, registry, lake, old = _repo(tmp_path)
+    part = _write_partition(lake, "curated/date=2026-01-02/part-2.parquet", 1.0)
+    _hand_reissue(registry, old, {**part, "path": spelling})
+    _commit_all(repo, "escaping spelling")
+    errors, _ = check_append_only(registry)
+    assert any("escapes the lake root" in e for e in errors), errors
