@@ -88,6 +88,15 @@ def check_manifest_file(manifest_file: Path) -> str | None:
 def main(argv: list[str] | None = None) -> int:
     del argv  # no flags -- this check has no mode/mount dependency at all
     manifest_files = _iter_manifest_files(LAKE_REGISTRY_ROOT)
+    if not manifest_files:
+        # 03-REVIEW.md WR-07: the committed registry is known to be non-empty;
+        # a missing/empty manifests/ directory (or a path bug) must not read
+        # as "every manifest self-verified".
+        print(
+            f"FAIL: found 0 manifest(s) under {Path(LAKE_REGISTRY_ROOT) / 'manifests'} "
+            "-- a scan that checked nothing must not pass"
+        )
+        return 1
 
     errors = [
         err

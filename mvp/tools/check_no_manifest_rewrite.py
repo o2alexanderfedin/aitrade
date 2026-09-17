@@ -155,7 +155,20 @@ def main(argv: list[str] | None = None) -> int:
     registry_root_path = (
         Path(args.registry_root) if args.registry_root else LAKE_REGISTRY_ROOT
     )
+    # 03-REVIEW.md WR-07: a typo'd or empty registry root used to print
+    # "checked 0 manifest(s)" and exit 0 -- the fixture leg silently inert.
+    # Every registry this tool is pointed at is known to be non-empty, so a
+    # missing root or zero manifests is a FAIL, never a pass or a SKIP.
+    if not registry_root_path.exists():
+        print(f"FAIL: registry root {registry_root_path} does not exist")
+        return 1
     manifest_files = _iter_manifest_files(registry_root_path)
+    if not manifest_files:
+        print(
+            f"FAIL: found 0 manifest(s) under {registry_root_path / 'manifests'} "
+            "-- a scan that checked nothing must not pass"
+        )
+        return 1
 
     if args.lake_root is not None:
         lake_root_path = Path(args.lake_root)

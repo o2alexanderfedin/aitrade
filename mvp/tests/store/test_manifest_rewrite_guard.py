@@ -234,17 +234,33 @@ def test_main_skips_honestly_when_lake_root_unmounted(tmp_path, monkeypatch, cap
     SKIP and exits 0 -- an honest, disposition=accept blind spot -- rather
     than crashing or silently passing without saying why."""
     fake_lake_root = tmp_path / "nonexistent_lake"
+    registry_root = tmp_path / "registry"
+    # A non-empty registry (WR-07: zero manifests is a FAIL, not a SKIP) --
+    # the SKIP under test is about the unmounted LAKE, nothing else.
+    partition = _write_partition(
+        tmp_path / "elsewhere", "curated/p.parquet", _sample_df()
+    )
+    issue_manifest(
+        dataset="BTCUSDT.trade",
+        symbol="BTCUSDT",
+        stream="trade",
+        tier="curated",
+        schema_version=1,
+        inputs=[],
+        partitions=[partition],
+        code_hash="deadbeef",
+        registry_root=registry_root,
+    )
     monkeypatch.setattr(
         check_no_manifest_rewrite, "DEFAULT_LAKE_ROOT", str(fake_lake_root)
     )
-    monkeypatch.setattr(
-        check_no_manifest_rewrite, "LAKE_REGISTRY_ROOT", tmp_path / "registry"
-    )
+    monkeypatch.setattr(check_no_manifest_rewrite, "LAKE_REGISTRY_ROOT", registry_root)
 
     exit_code = main([])
     out = capsys.readouterr().out
     assert exit_code == 0
     assert "SKIP" in out
+    assert "1 manifest(s) unverified" in out
     assert str(fake_lake_root) in out
 
 
@@ -333,3 +349,46 @@ def test_explicit_missing_lake_root_is_a_hard_fail_never_a_skip(tmp_path: Path):
 
     exit_code = main(["--full", "--lake-root", str(missing_lake_root)])
     assert exit_code == 1
+
+
+# --- WR-07 (03-REVIEW.md): zero manifests checked is never a pass ---------
+
+
+def test_typod_registry_root_is_a_hard_fail(tmp_path: Path, capsys):
+    """Reproduction from 03-REVIEW.md WR-07: a valid --lake-root with a
+    misspelled --registry-root used to print `checked 0 manifest(s)` and
+    exit 0 -- the CI fixture leg silently inert."""
+    lake_root = tmp_path / "fixture_lake"
+    registry_root = tmp_path / "fixture_registry"
+    partition = _write_partition(lake_root, "curated/part-1.parquet", _sample_df())
+    issue_manifest(
+        dataset="BTCUSDT.trade",
+        symbol="BTCUSDT",
+        stream="trade",
+        tier="curated",
+        schema_version=1,
+        inputs=[],
+        partitions=[partition],
+        code_hash="deadbeef",
+        registry_root=registry_root,
+    )
+    typo = tmp_path / "fixture_regsitry"
+    argv = ["--full", "--lake-root", str(lake_root), "--registry-root", str(typo)]
+    assert main(argv) == 1
+    assert "FAIL" in capsys.readouterr().out
+
+
+def test_existing_but_empty_registry_root_is_a_hard_fail(tmp_path: Path, capsys):
+    lake_root = tmp_path / "lake"
+    lake_root.mkdir()
+    registry_root = tmp_path / "registry"
+    (registry_root / "manifests").mkdir(parents=True)
+    argv = [
+        "--full",
+        "--lake-root",
+        str(lake_root),
+        "--registry-root",
+        str(registry_root),
+    ]
+    assert main(argv) == 1
+    assert "0 manifest" in capsys.readouterr().out

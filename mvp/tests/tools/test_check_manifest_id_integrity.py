@@ -130,3 +130,18 @@ def test_main_against_the_real_committed_111_manifests():
     mvp/data/lake_registry/manifests/ tree. Every one of the 111 real
     manifests must self-verify."""
     assert main([]) == 0
+
+
+def test_main_fails_when_no_manifests_are_found(tmp_path: Path, monkeypatch, capsys):
+    """03-REVIEW.md WR-07: a missing or empty `manifests/` directory used to
+    print `checked 0 manifest(s)` and exit 0. The committed registry is known
+    to be non-empty, so checking nothing is a failure."""
+    monkeypatch.setattr(
+        "tools.check_manifest_id_integrity.LAKE_REGISTRY_ROOT", tmp_path / "missing"
+    )
+    assert main([]) == 1
+    empty = tmp_path / "empty"
+    (empty / "manifests").mkdir(parents=True)
+    monkeypatch.setattr("tools.check_manifest_id_integrity.LAKE_REGISTRY_ROOT", empty)
+    assert main([]) == 1
+    assert "FAIL" in capsys.readouterr().out
