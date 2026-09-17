@@ -489,3 +489,104 @@ Pre-fix copies of the reports and `curated_meta` were kept in the session scratc
 _Fixed: 2026-09-17T02:56:00Z_
 _Fixer: Claude (gsd-code-fixer)_
 _Iteration: 1_
+
+---
+
+## Follow-up (2026-09-17): `probable_loss` re-measured and made informational
+
+**Supersedes:** the "Six trade days are now paused" banner at the top of this report, the probable_loss row in *Worst-status changes after regeneration*, the "Newly paused, deliberately not acknowledged" bullet, and the `max_na_run_ids` bullet under *Accepted gaps* (WR-04). Those passages describe the first version and were left unedited.
+
+**User decision.** The six pauses (2026-06-07, 07-06, 07-10, 08-19, 08-22, 08-25) were false positives. Re-measure the threshold over all 107 archive days, add an etime-span discriminator, and make the check informational so it never pauses. This matches CONTEXT's locked wording "flagged `probable-loss` in the DQ report and never hard-fail". On archive data, trade ids alone cannot tell an X="NA" placeholder burst from a genuine loss.
+
+**Commit:** `66acc2e` fix(03): WR-04 probable_loss is informational, flagged on run size AND etime span.
+
+### Measurement
+
+The measurement was read-only over all 107 curated archive trade days, `lake/curated/symbol=BTCUSDT/stream=trade/date=2026-06-01..2026-09-15`, 857,144 skip runs. Method: sort by `trade_id`; run = `diff(trade_id) - 1 > 0`; span = the etime step across the skip. There were 0 non-monotone etime steps.
+
+| run size (ids) | runs | max etime span |
+|---|---|---|
+| 1 | 837,907 | 10.886 s |
+| 2–5 | 19,137 | 10.049 s |
+| 6–20 | 100 | **0.021 s** |
+| 21–100 | 0 | – |
+| > 100 | 0 | – |
+
+- **Run-size ceiling:** 16 ids (2026-08-19).
+- **Span ceiling of runs above 5 ids:** 0.021 s, over 100 runs.
+- **The "0.00–0.02 s" premise is right for the flagged bursts but does not generalise.** 87,733 skip runs span more than 1 s. All of them are 1–5 ids, reaching 10.886 s: a lone placeholder in a quiet market. Consecutive trades with no skip at all are up to 15.378 s apart. Span alone would create tens of thousands of false positives.
+- **Size alone was not chosen either.** Over three months no run exceeded 16 ids. Still, a >100-id placeholder storm inside a few ms cannot be ruled out, and it would look exactly like a size-only loss.
+
+### Discriminator and thresholds (`mvp/spec/dq_thresholds.toml` `[probable_loss]`, spec.md re-rendered)
+
+- A run is flagged only when **`run_ids > flag_run_ids_over = 100` AND `span > flag_span_seconds_over = 1` s**. Both comparisons are strict.
+- Margin: 100 ids is 6× the 16-id ceiling. 1 s is about 48× the 0.021 s span ceiling of runs above 5 ids.
+- Real runs meeting both conditions: **0 of 857,144**.
+- `max_na_run_ids` was removed.
+
+### Behaviour
+
+- `check_probable_loss(trades: DataFrame[trade_id, etime])` always returns `dq_status="ok"`, or `"n/a"` with fewer than 2 trades. It follows `check_crossed_locked_book`, so it never contributes `degraded` or `failed` to the pause decision.
+- `count` is the number of flagged runs.
+- The detail reports `skip_runs`, `max_run_ids`, `max_run_span_s` and the flagged-run count. When a run is flagged, it also reports the largest flagged run (ids, span, etime before the skip) and `ids_in_flagged_runs`.
+- `report.py` now reads `trade_id` + `etime` for pre-capture archive days. Days with a capture overlap still report `n/a`, because reconciliation is the loss detector there.
+- The change adds three seconds↔ns uses of `NS_PER_SECOND` in `data/dq/checks.py`, an allowlisted file: one threshold multiplication and two display divisions. `check_ms_to_ns_site` now counts 16 seconds→ns sites, up from 13. The single ms→ns site is still `data/capture/parse.py:36`.
+
+### Tests (448 passed, up from 441)
+
+**`tests/dq/test_checks.py`:**
+- Both thresholds are pinned (100, 1).
+- NA-shaped bursts (16/15/6 ids in ≤ 21 ms) and quiet-market skips (1 id over 10.886 s, 5 ids over 0.9 s) give 0 flags and `ok`.
+- A 5,000-id / 30 s loss gives count 1 and `ok`, with the reason carrying `run_ids=5000 span_s=30.000`.
+- **Pinned:** 500 ids in 5 ms is not flagged, and 2 ids over 10 s is not flagged.
+- Boundaries: 100 ids / exactly 1 s is not flagged; 101 ids / 1 s + 1 ns is flagged.
+- Unsorted input is handled, and fewer than 2 trades gives `n/a`.
+
+**`tests/dq/test_report.py`:** both tests go through the real pause path, `write_report` → `_dq_status_for_date` → `load_curated` with no acknowledgement directory.
+- An NA-shaped day has count 0, status `ok`, and loads.
+- A 5,000-id / 30 s loss day has count 1, the size and span in the detail, status `ok`, and loads.
+- The existing pre-capture test now expects `ok`.
+
+**Red-proof.** `"dq_status": "ok"` was temporarily changed to `"degraded" if flagged.height else "ok"`, then restored from a copy:
+
+```
+=== RED: never-pauses reverted ===
++        "dq_status": "degraded" if flagged.height else "ok",  # RED-PROOF
+E           data.store.DQPauseError: DQ pause: BTCUSDT.trade has unacknowledged day(s): 2026-09-12: degraded (no acknowledgement file). Add a valid git-committed acknowledgement JSON (date, symbol, stream, reason, who, when; e.g. .../registry/dq_acknowledgements/BTCUSDT__trade__2026-09-12.json) to proceed.
+data/store.py:479: DQPauseError
+FAILED tests/dq/test_report.py::test_genuine_loss_is_reported_but_never_pauses_the_day
+1 failed in 0.75s
+=== GREEN: restored ===
+0
+1 passed in 0.72s
+```
+
+### Regenerated DQ reports (derived; `lake/dq/` only)
+
+- Command: `.venv/bin/python3 -m data.dq.report --symbol BTCUSDT --range 2026-06-01 2026-09-15`, 27 s, 107 dates, 551 rows before and after.
+- Compared row by row against a pre-change copy, the only changes are in `probable_loss` rows:
+  - `dq_status` degraded → ok on the six days;
+  - detail text on 103 pre-capture days, which is the new format.
+- Every other check's status, value, count and detail is unchanged.
+- `probable_loss` after regeneration: 103 `ok`, 4 `n/a` (09-12..09-15, capture overlap), **0 flagged runs in total**.
+- New details for the six days (max run ids / max skip span): 06-07 7 / 4.160 s; 07-06 10 / 3.896 s; 07-10 15 / 4.827 s; 08-19 16 / 5.499 s; 08-22 12 / 7.520 s; 08-25 6 / 4.412 s. The large spans come from 1–5 id skips, not from the bursts.
+- Worst-status changes: only trade on those six days, degraded → ok.
+- Remaining non-ok days: trade 09-14/09-15 (degraded), bookTicker 09-12 (degraded), bookTicker 09-14/09-15 (failed). All are unchanged and acknowledged.
+- No Parquet partition, manifest body or `curated_meta` was touched. `check_no_manifest_rewrite --full` (real lake), `check_manifest_id_integrity` and `check_manifest_append_only` all pass on 111 manifests.
+
+### The six days load without acknowledgement (real lake, `load_curated`)
+
+| day | rows | ack file |
+|---|---|---|
+| 2026-06-07 | 5,625,457 | none |
+| 2026-07-06 | 5,073,937 | none |
+| 2026-07-10 | 2,973,359 | none |
+| 2026-08-19 | 5,388,815 | none |
+| 2026-08-22 | 3,803,207 | none |
+| 2026-08-25 | 5,743,532 | none |
+
+- **Pause state across all 111 curated day-manifests:** 0 paused.
+- **Acknowledgements relied on:** exactly the 5 committed ones (trade 09-14/09-15, bookTicker 09-12/09-14/09-15).
+- **`dq_acknowledgements/`:** no files added or removed; `git status` is clean.
+
+**Remaining gap:** the two-axis rule does not flag a large id skip packed into ≤ 1 s. That shape cannot be told apart from a placeholder storm on archive data. The report's `max_run_ids` still shows it. Re-measure both ceilings as capture history grows.
