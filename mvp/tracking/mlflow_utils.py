@@ -23,9 +23,11 @@ from __future__ import annotations
 
 import hashlib
 import pathlib
+import re
 import subprocess
 
 import mlflow
+from mlflow.utils.validation import MAX_TAG_VAL_LENGTH
 
 from data.capture.config import DEFAULT_MIN_FREE_GB, DataRootError, validate_data_root
 from tools.git_env import scrubbed_git_env
@@ -37,13 +39,16 @@ PKG_ROOT = pathlib.Path(__file__).resolve().parents[1]
 # re-raises it unmodified for a bad tracking root.
 __all__ = [
     "MANDATORY_TAG_KEYS",
+    "MAX_PROVENANCE_TAG_VALUE_CHARS",
     "PROVENANCE_TAG_KEYS",
     "MissingTagError",
+    "ProvenanceValueTooLong",
     "DataRootError",
     "build_tracking_uri",
     "compute_code_hash",
     "compute_env_hash",
     "log_data_provenance",
+    "read_provenance_tag",
     "start_tracked_run",
 ]
 
@@ -121,6 +126,75 @@ def compute_env_hash(lock_path: pathlib.Path) -> str:
     return hashlib.sha256(pathlib.Path(lock_path).read_bytes()).hexdigest()
 
 
+#: Tag keys `log_data_provenance` writes. Not part of `MANDATORY_TAG_KEYS`:
+#: they are recorded by the LOADER, at the moment data is actually read, and
+#: a run that reads no curated data legitimately has none of them.
+PROVENANCE_TAG_KEYS: tuple[str, ...] = (
+    "dq_ack_ids",
+    "dq_ack_sha256",
+    "data_manifest_ids",
+)
+
+#: MLflow's own cap on a tag VALUE, read from the installed package rather
+#: than hard-coded: exceeding it does not raise, it TRUNCATES and logs a
+#: WARNING (03-REVIEW-FOLLOWUPS.md WR-01).
+MAX_PROVENANCE_TAG_VALUE_CHARS = MAX_TAG_VAL_LENGTH
+
+
+class ProvenanceValueTooLong(ValueError):
+    """Raised when one provenance value is longer than a whole tag can hold.
+    Sharding cannot help, and truncating would write an id that looks real
+    and resolves to nothing -- so this refuses instead."""
+
+
+def _shard_key(key: str, index: int) -> str:
+    """`key`, `key_0002`, `key_0003`, ... The first shard keeps the bare key
+    so a run that fits in one tag reads exactly as it always did."""
+    return key if index == 0 else f"{key}_{index + 1:04d}"
+
+
+def _shard_key_pattern(key: str) -> re.Pattern[str]:
+    return re.compile(rf"^{re.escape(key)}(?:_\d{{4}})?$")
+
+
+def read_provenance_tag(tags: dict[str, str], key: str) -> list[str]:
+    """Every value recorded under `key`, reassembled from however many shards
+    it took. The inverse of what `log_data_provenance` writes, and the only
+    correct way to read a provenance tag back: reading the bare key alone
+    silently stops at the first 8000 characters' worth."""
+    pattern = _shard_key_pattern(key)
+    values: set[str] = set()
+    for tag_key, tag_value in tags.items():
+        if not pattern.match(tag_key) or not tag_value or tag_value == "none":
+            continue
+        values |= {part for part in tag_value.split(",") if part}
+    return sorted(values)
+
+
+def _shard_values(values: list[str], limit: int) -> list[str]:
+    """Pack `values` into comma-joined strings of at most `limit` characters,
+    splitting only ON a comma boundary -- an id is never cut in half."""
+    shards: list[str] = []
+    current: list[str] = []
+    length = 0
+    for value in values:
+        if len(value) > limit:
+            raise ProvenanceValueTooLong(
+                f"provenance value of {len(value)} characters exceeds the "
+                f"{limit}-character MLflow tag limit; refusing to write a "
+                "truncated id that would look real and resolve to nothing"
+            )
+        addition = len(value) + (1 if current else 0)
+        if current and length + addition > limit:
+            shards.append(",".join(current))
+            current, length = [], 0
+            addition = len(value)
+        current.append(value)
+        length += addition
+    shards.append(",".join(current))
+    return shards
+
+
 def start_tracked_run(
     tracking_root: str,
     tags: dict[str, str],
@@ -162,18 +236,13 @@ def start_tracked_run(
 
     run_tags = dict(tags)
     if dq_ack_ids is not None:
-        run_tags["dq_ack_ids"] = ",".join(sorted(set(dq_ack_ids))) or "none"
+        # Sharded like `log_data_provenance`'s tags, and for the same reason
+        # (WR-01): MLflow truncates an over-long tag value rather than
+        # raising. Read back with `read_provenance_tag`.
+        shards = _shard_values(sorted(set(dq_ack_ids)), MAX_PROVENANCE_TAG_VALUE_CHARS)
+        for index, shard in enumerate(shards):
+            run_tags[_shard_key("dq_ack_ids", index)] = shard or "none"
     return mlflow.start_run(experiment_id=experiment_id, tags=run_tags)
-
-
-#: Tag keys `log_data_provenance` writes. Not part of `MANDATORY_TAG_KEYS`:
-#: they are recorded by the LOADER, at the moment data is actually read, and
-#: a run that reads no curated data legitimately has none of them.
-PROVENANCE_TAG_KEYS: tuple[str, ...] = (
-    "dq_ack_ids",
-    "dq_ack_sha256",
-    "data_manifest_ids",
-)
 
 
 def log_data_provenance(
@@ -200,6 +269,22 @@ def log_data_provenance(
     loader may be called many times, for many manifests, during a run), they
     are additive, and each value accumulates across calls rather than
     replacing what an earlier read recorded.
+
+    SHARDED, BECAUSE MLFLOW TRUNCATES RATHER THAN RAISES (WR-01). A tag value
+    is capped at `MAX_TAG_VAL_LENGTH` (8000); exceeding it logs a WARNING and
+    silently cuts the value, so a run completed with a provenance record that
+    LOOKED complete and ended mid-id -- and the next call's merge read that
+    fragment back and re-committed it forever. A manifest id is 64 hex plus a
+    separator, so the ceiling was 123 ids; a walk-forward run over the current
+    111-day lake was already at 90 % of it.
+
+    Values are therefore packed into as many tags as they need -- `key`,
+    `key_0002`, `key_0003`, ... -- split only on comma boundaries, so no id is
+    ever cut. The first shard keeps the bare key, so a run that fits in one
+    tag reads exactly as it always did. `read_provenance_tag` is the inverse
+    and the only correct way to read one of these back. A single value too
+    long for any shard raises `ProvenanceValueTooLong` rather than being
+    trimmed into something that looks real.
     """
     run = mlflow.active_run()
     if run is None:
@@ -212,8 +297,8 @@ def log_data_provenance(
         ("data_manifest_ids", manifest_ids),
     ):
         merged = {v for v in values if v}
-        previous = existing.get(key)
-        if previous and previous != "none":
-            merged |= set(previous.split(","))
-        mlflow.set_tag(key, ",".join(sorted(merged)) or "none")
+        merged |= set(read_provenance_tag(existing, key))
+        shards = _shard_values(sorted(merged), MAX_PROVENANCE_TAG_VALUE_CHARS)
+        for index, shard in enumerate(shards):
+            mlflow.set_tag(_shard_key(key, index), shard or "none")
     return True
