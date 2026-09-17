@@ -1,5 +1,5 @@
-"""Daily data-quality report entrypoint (DATA-07): runs all six
-`data.dq.checks` functions against a single `(symbol, date)` (or a date
+"""Daily data-quality report entrypoint (DATA-07): runs every
+`data.dq.checks` function against a single `(symbol, date)` (or a date
 range) and writes `lake_root()/dq/date=.../report.parquet` + a
 `resync_windows.parquet` sidecar + a rendered `report.md`.
 
