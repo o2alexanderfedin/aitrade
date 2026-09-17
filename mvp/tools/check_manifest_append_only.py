@@ -44,10 +44,25 @@ RULES (all resolved against real git objects, every subprocess through
    move, editing one on the way, type-changing one, or moving them
    somewhere with no `manifests` component -- all still fail, because in
    each case some body no longer exists as a manifest. Survival is judged
-   WITHIN A REALM (`_realm`): a real manifest moved into
-   `tests/fixtures/lake_registry/manifests/` does not count as surviving,
-   and neither does the reverse. The test fixture registry is protected by
-   the same rule.
+   WITHIN A REALM (`_realm`, 03-REVIEW-FOLLOWUPS.md CR-02): bytes vouch for
+   a deleted manifest only if they reappear at a path that is still in the
+   same realm AND still looks like a real registry location. Three realms:
+   `fixture` (anything under a `tests` component), `production` (a real
+   registry anywhere else), and "not a registry at all" -- a manifest-shaped
+   path under one of `NON_REGISTRY_COMPONENTS` (`.planning`, `evidence`,
+   `docs`, `examples`, `scratch`, `backup`, ...), which neither vouches for
+   another realm's deletion nor is protected as a registry.
+
+   That is what separates the two moves that look identical to a diff. A
+   `git mv` of the registry to an ordinary location (`mvp/data/registry_v2/`)
+   passes with no table edit and no allowlist entry. Dropping a real
+   manifest into `.planning/phases/*/evidence/manifests/` -- a directory
+   shape this repository's own planning workflow fills, so an entirely
+   innocent-looking commit -- and then deleting it from the registry FAILS,
+   because the bytes did not survive in the production realm. The fixture
+   realm is keyed on `tests` alone, never on the fixture directory's own
+   name, so renaming `mvp/tests/fixtures/` is a rename and not an accusation
+   (WR-02).
 
    Two independent views, because a merge commit hides changes from a plain
    `git log` (03-REVIEW-ITER2.md CR-08):
@@ -111,6 +126,7 @@ import json
 import os
 import stat
 import subprocess
+from collections import defaultdict
 from pathlib import Path
 
 from data.lake_paths import LAKE_REGISTRY_ROOT
@@ -199,39 +215,93 @@ def _raw_z(output: str) -> list[tuple[str, str, str, str]]:
     return records
 
 
-#: Path components that mark a manifest as belonging to the TEST FIXTURE
-#: registry rather than the real one.
-_FIXTURE_MARKERS = ("tests", "fixtures")
+#: The path component that marks a manifest as belonging to the TEST FIXTURE
+#: registry rather than the real one. Keyed on `tests` ALONE, never on the
+#: fixture directory's own name (03-REVIEW-FOLLOWUPS.md WR-02: requiring both
+#: `tests` and `fixtures` meant a `git mv mvp/tests/fixtures mvp/tests/data`
+#: -- which carries every byte across -- changed the realm and failed the
+#: HISTORY rule, so CI stayed red on every later commit, accusing the author
+#: of destroying data they never touched).
+FIXTURE_COMPONENT = "tests"
+
+#: Path components that mean "this is not a registry". A manifest-shaped file
+#: below any of them is an artefact, an attachment or a copy -- never a
+#: location a registry legitimately lives at -- so its bytes may not vouch
+#: for a manifest deleted from a real registry, and it is not itself
+#: protected as one.
+#:
+#: Chosen deliberately, from the shapes this repository actually grows:
+#: `.planning` and `evidence` are the planning workflow's own artefact
+#: directories (CR-02's reproduction used
+#: `.planning/phases/*/evidence/manifests/`, an entirely innocent-looking
+#: commit); `docs`/`doc` and `examples`/`example` hold prose and samples;
+#: `scratch`, `tmp`, `temp`, `backup`/`backups` and `sample`/`samples` are
+#: the names people reach for when parking a copy. Matched as an exact path
+#: COMPONENT, so `by-date-archive` and `source=archive` are untouched, and
+#: matched on the REPOSITORY-RELATIVE path, so a checkout that happens to sit
+#: under `/tmp/` or `~/Documents/` is scanned like any other.
+NON_REGISTRY_COMPONENTS = frozenset(
+    {
+        ".planning",
+        "evidence",
+        "docs",
+        "doc",
+        "examples",
+        "example",
+        "scratch",
+        "tmp",
+        "temp",
+        "backup",
+        "backups",
+        "sample",
+        "samples",
+    }
+)
 
 
-def _realm(repo_rel: str) -> str:
+def _realm(repo_rel: str) -> str | None:
     """Which registry world a manifest path belongs to: `"fixture"` for the
-    committed test fixture registry, `"production"` for every other.
+    committed test fixture registry, `"production"` for a real registry
+    anywhere else, `None` for a path that is not a registry location at all.
 
     Content anchoring (rule 2, WR-17) asks "do these bytes still exist at a
     manifest path?". Asked repo-wide, the answer is yes when a REAL manifest
-    is `git mv`-ed into `tests/fixtures/lake_registry/manifests/` -- the
-    bytes survive, the count silently drops, and the day it addressed no
-    longer resolves (red-proved 2026-09-17: a laundered manifest passed with
-    "110 committed manifest(s)"). Surviving must therefore mean surviving in
-    the SAME realm, which still permits the relocation rule 2 exists to
-    allow -- just not one that launders production data into fixtures, or
-    fixture data into production."""
+    is `git mv`-ed anywhere manifest-shaped -- the bytes survive, the
+    registry's count silently drops, and the day it addressed no longer
+    resolves. The first fix split the repository into `fixture` (requiring
+    BOTH a `tests` and a `fixtures` component) and `production`; CR-02 showed
+    that left every other manifest-shaped path in the production pool, so
+    `.planning/phases/*/evidence/manifests/` was still a working laundering
+    destination, and `mvp/tests/data/lake_registry/` was both an unprotected
+    registry and a valid one.
+
+    Surviving now means surviving in the same realm AND at a path that still
+    looks like a real registry location. A relocation to an ordinary
+    location (`mvp/data/registry_v2/`) needs no table edit and no allowlist
+    entry -- that is what rule 2 exists to allow. A relocation into an
+    artefact directory does not, which is the point."""
     parts = repo_rel.split("/")
-    return "fixture" if all(m in parts for m in _FIXTURE_MARKERS) else "production"
+    if FIXTURE_COMPONENT in parts:
+        return "fixture"
+    if any(part in NON_REGISTRY_COMPONENTS for part in parts):
+        return None
+    return "production"
 
 
 def _head_manifest_blobs(toplevel: Path) -> dict[str, set[str]]:
     """Every blob id sitting at a manifest-shaped path in `HEAD`'s tree,
-    grouped by `_realm` -- rule 2's "did this content survive?" set."""
-    blobs: dict[str, set[str]] = {"production": set(), "fixture": set()}
+    grouped by `_realm` -- rule 2's "did this content survive?" set. A
+    `defaultdict`, never a pre-seeded pair of keys, so a realm added later
+    cannot `KeyError` at the first foreign path."""
+    blobs: dict[str, set[str]] = defaultdict(set)
     for record in _git(["ls-tree", "-r", "-z", "HEAD"], toplevel).split("\0"):
         if not record:
             continue
         meta, _, path = record.partition("\t")
         fields = meta.split()
-        if len(fields) >= 3 and _is_manifest_shaped(path):
-            blobs[_realm(path)].add(fields[2])
+        realm = _realm(path) if _is_manifest_shaped(path) else None
+        if len(fields) >= 3 and realm is not None:
+            blobs[realm].add(fields[2])
     return blobs
 
 
@@ -249,13 +319,14 @@ def _worktree_manifest_blobs(toplevel: Path) -> dict[str, set[str]]:
         if path and _is_manifest_shaped(path)
     ]
     present = [path for path in listed if (toplevel / path).is_file()]
-    blobs: dict[str, set[str]] = {"production": set(), "fixture": set()}
+    blobs: dict[str, set[str]] = defaultdict(set)
     if not present:
         return blobs
     hashed = _git(["hash-object", "--no-filters", "--", *present], toplevel)
     for path, line in zip(present, hashed.splitlines(), strict=True):
-        if line.strip():
-            blobs[_realm(path)].add(line.strip())
+        realm = _realm(path)
+        if line.strip() and realm is not None:
+            blobs[realm].add(line.strip())
     return blobs
 
 
@@ -438,8 +509,9 @@ def check_append_only(registry_root: Path) -> tuple[list[str], int]:
         toplevel,
     )
     for commit, status, blob, path in _raw_z(history):
-        if status in _CHANGE_WORDS and _is_manifest_shaped(path):
-            if blob in head_blobs[_realm(path)]:
+        realm = _realm(path) if _is_manifest_shaped(path) else None
+        if status in _CHANGE_WORDS and realm is not None:
+            if blob in head_blobs[realm]:
                 continue  # content still present under a manifest path in its realm
             errors.append(
                 f"{path}: committed manifest {_CHANGE_WORDS[status]} "
@@ -464,8 +536,9 @@ def check_append_only(registry_root: Path) -> tuple[list[str], int]:
         toplevel,
     )
     for _commit, status, blob, path in _raw_z(base_diff):
-        if status in _CHANGE_WORDS and _is_manifest_shaped(path):
-            if blob in head_blobs[_realm(path)]:
+        realm = _realm(path) if _is_manifest_shaped(path) else None
+        if status in _CHANGE_WORDS and realm is not None:
+            if blob in head_blobs[realm]:
                 continue
             errors.append(
                 f"{path}: committed manifest {_CHANGE_WORDS[status]} "
@@ -481,8 +554,9 @@ def check_append_only(registry_root: Path) -> tuple[list[str], int]:
     )
     for _commit, status, blob, path in _raw_z(changed):
         word = _CHANGE_WORDS.get(status)
-        if word is not None and _is_manifest_shaped(path):
-            if blob in worktree_blobs[_realm(path)]:
+        realm = _realm(path) if _is_manifest_shaped(path) else None
+        if word is not None and realm is not None:
+            if blob in worktree_blobs[realm]:
                 continue
             errors.append(
                 f"{path}: committed manifest {word} in the working tree and its "
