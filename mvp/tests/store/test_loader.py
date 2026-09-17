@@ -17,7 +17,9 @@ from data.store import (
 )
 
 
-def _write_ok_dq_report(lake_root: Path, symbol: str, stream: str, date: str) -> None:
+def _write_ok_dq_report(
+    lake_root: Path, symbol: str, stream: str, date: str, manifest_id: str
+) -> None:
     """Minimal report.parquet fixture giving (symbol, stream, date) an
     "ok" DQ status -- required since Plan 04 wired DQPauseError's
     fail-closed-on-missing-report check into load_curated (a date with no
@@ -30,6 +32,7 @@ def _write_ok_dq_report(lake_root: Path, symbol: str, stream: str, date: str) ->
             "date": [date],
             "symbol": [symbol],
             "stream": [stream],
+            "manifest_id": [manifest_id],
             "check": ["gap_coverage"],
             "dq_status": ["ok"],
             "value": [0.0],
@@ -40,6 +43,7 @@ def _write_ok_dq_report(lake_root: Path, symbol: str, stream: str, date: str) ->
             "date": pl.Utf8,
             "symbol": pl.Utf8,
             "stream": pl.Utf8,
+            "manifest_id": pl.Utf8,
             "check": pl.Utf8,
             "dq_status": pl.Utf8,
             "value": pl.Float64,
@@ -78,8 +82,6 @@ def test_load_curated_returns_concatenated_verified_rows(tmp_path: Path):
     )
     part1 = _write_partition(lake_root, "curated/part-1.parquet", df1)
     part2 = _write_partition(lake_root, "curated/part-2.parquet", df2)
-    _write_ok_dq_report(lake_root, "BTCUSDT", "trade", "2026-09-12")
-
     manifest = issue_manifest(
         dataset="BTCUSDT.trade",
         symbol="BTCUSDT",
@@ -90,6 +92,9 @@ def test_load_curated_returns_concatenated_verified_rows(tmp_path: Path):
         partitions=[part1, part2],
         code_hash="deadbeef",
         registry_root=registry_root,
+    )
+    _write_ok_dq_report(
+        lake_root, "BTCUSDT", "trade", "2026-09-12", manifest["manifest_id"]
     )
 
     loaded = load_curated(

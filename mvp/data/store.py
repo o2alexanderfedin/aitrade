@@ -337,28 +337,45 @@ def resolve_manifest(
     return manifest
 
 
+#: Every status a DQ check may emit. Anything else is treated as `failed`
+#: (03-REVIEW-ITER2.md IN-12: an unknown status next to an `ok` row used to
+#: unpause the day).
+DQ_STATUSES: frozenset[str] = frozenset({"ok", "degraded", "failed", "n/a"})
+
+
 def _dq_status_for_date(
-    lake_root: Path, symbol: str, stream: str, date: str
+    lake_root: Path,
+    symbol: str,
+    stream: str,
+    date: str,
+    *,
+    manifest: dict,
+    registry_root: Path,
 ) -> tuple[str, str | None]:
-    """Return `(status, detail)` for `(symbol, stream, date)`: the worst-of
-    status across every row of that date's `report.parquet` matching
-    `(symbol, stream)`.
+    """Return `(status, detail)` for `manifest` on `(symbol, stream, date)`:
+    the worst-of status across every row of that date's `report.parquet`
+    matching `(symbol, stream)` AND scoring THIS manifest.
 
-    `"missing"` covers TWO distinct absences, both treated identically as
-    a pause-requiring status (fail-closed -- nothing in this phase
-    schedules the report to run automatically, so any day nobody has
-    reported on yet must not silently pass):
-    - no `report.parquet` at all for this date, or no row in it matching
-      `(symbol, stream)` -- this `(symbol, stream, date)` was never
-      reported on.
-    - every matching row says `"n/a"` -- the report DID run, but no
-      substantive check actually produced a signal for this
-      `(symbol, stream, date)` (e.g. every check happened to be
-      inapplicable that day), which must not be silently treated as a
-      pass either.
+    BOUND TO THE MANIFEST (03-REVIEW-ITER2.md WR-15): a date can have more
+    than one resolvable manifest (a rebuild, WR-03's supersede), and the
+    report scores whichever one the by-date pointer named when it ran. The
+    verdict used to be looked up by date alone, so a superseded manifest --
+    possibly the partial day the rebuild replaced -- loaded under its
+    successor's `ok`. Rows now carry `manifest_id`; a manifest with no rows
+    of its own is `missing`.
 
-    `"ok"` only when at least one row is `"ok"` and none is
-    `"failed"`/`"degraded"`.
+    Legacy reports written before that column existed are accepted for a
+    manifest only when BOTH hold: the by-date pointer names this manifest,
+    and the report file is newer than the manifest's `built_at` (so it
+    cannot have scored an earlier build). Otherwise `missing`. A shim for
+    the reports already in the lake; regenerating them removes the need.
+
+    `"missing"` also covers: no `report.parquet` for this date, no row for
+    `(symbol, stream)`, and every matching row `"n/a"` (the report ran but
+    no substantive check produced a signal) -- all fail closed.
+
+    `"ok"` only when at least one row is `"ok"`, none is `"failed"` or
+    `"degraded"`, and none carries a status outside `DQ_STATUSES` (IN-12).
     """
     report_path = dq_report_path(lake_root, date)
     if not report_path.exists():
@@ -369,7 +386,43 @@ def _dq_status_for_date(
     if rows.height == 0:
         return "missing", "no DQ report generated for this date"
 
+    manifest_id = manifest["manifest_id"]
+    if "manifest_id" in rows.columns:
+        own = rows.filter(pl.col("manifest_id") == manifest_id)
+        if own.height == 0:
+            scored = sorted({str(m)[:12] for m in rows["manifest_id"].to_list()})
+            return (
+                "missing",
+                f"the DQ report for this date scored manifest(s) {scored}, not "
+                f"{manifest_id[:12]} -- this manifest was never reported on",
+            )
+        rows = own
+    else:
+        pointer = by_date_index_path(
+            Path(registry_root), manifest["dataset"], symbol, stream, date
+        )
+        pointer_id = (
+            json.loads(pointer.read_text()).get("manifest_id")
+            if pointer.exists()
+            else None
+        )
+        if pointer_id != manifest_id:
+            return (
+                "missing",
+                "legacy DQ report (no manifest_id column) scored the by-date "
+                f"pointer's manifest {str(pointer_id)[:12]}, not {manifest_id[:12]}",
+            )
+        if report_path.stat().st_mtime_ns < manifest["built_at"]:
+            return (
+                "missing",
+                "legacy DQ report (no manifest_id column) predates manifest "
+                f"{manifest_id[:12]}'s build -- it scored an earlier build",
+            )
+
     statuses = set(rows["dq_status"].to_list())
+    unknown = statuses - DQ_STATUSES
+    if unknown:
+        return "failed", f"unknown DQ status(es) {sorted(map(str, unknown))}"
     if "failed" in statuses:
         return "failed", None
     if "degraded" in statuses:
@@ -446,7 +499,14 @@ def _dq_pause_findings(
     unacknowledged: list[tuple[str, str, str | None]] = []
     ack_ids: list[str] = []
     for date in dates:
-        status, detail = _dq_status_for_date(Path(lake_root), symbol, stream, date)
+        status, detail = _dq_status_for_date(
+            Path(lake_root),
+            symbol,
+            stream,
+            date,
+            manifest=manifest,
+            registry_root=Path(registry_root),
+        )
         if status == "ok":
             continue
         ack_path = dq_acknowledgement_path(Path(registry_root), symbol, stream, date)

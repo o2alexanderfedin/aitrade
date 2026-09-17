@@ -24,7 +24,7 @@ from data.store import by_date_index_path, dq_report_path, issue_manifest, load_
 DATE = "2026-09-13"
 
 
-def _ok_report(lake_root: Path) -> None:
+def _ok_report(lake_root: Path, manifest_id: str = "unbound") -> None:
     path = dq_report_path(lake_root, DATE)
     path.parent.mkdir(parents=True, exist_ok=True)
     pl.DataFrame(
@@ -32,6 +32,7 @@ def _ok_report(lake_root: Path) -> None:
             "date": [DATE],
             "symbol": ["BTCUSDT"],
             "stream": ["trade"],
+            "manifest_id": [manifest_id],
             "check": ["gap_coverage"],
             "dq_status": ["ok"],
             "value": [0.0],
@@ -42,6 +43,7 @@ def _ok_report(lake_root: Path) -> None:
             "date": pl.Utf8,
             "symbol": pl.Utf8,
             "stream": pl.Utf8,
+            "manifest_id": pl.Utf8,
             "check": pl.Utf8,
             "dq_status": pl.Utf8,
             "value": pl.Float64,
@@ -206,11 +208,11 @@ def test_lockbox_manifest_never_repoints_the_curated_by_date_index(tmp_path: Pat
 
 def test_well_formed_curated_manifest_still_loads(tmp_path: Path):
     lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
-    _ok_report(lake_root)
     part = _partition(
         lake_root, "curated/symbol=BTCUSDT/stream=trade/date=2026-09-13/part-1.parquet"
     )
     manifest = _issue(registry_root, part, tier="curated")
+    _ok_report(lake_root, manifest["manifest_id"])
     df = load_curated(
         manifest["manifest_id"],
         "BTCUSDT.trade",

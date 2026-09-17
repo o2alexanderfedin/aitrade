@@ -55,6 +55,9 @@ REPORT_SCHEMA: dict[str, pl.DataType] = {
     "date": pl.Utf8,
     "symbol": pl.Utf8,
     "stream": pl.Utf8,
+    #: The manifest this row scored (03-REVIEW-ITER2.md WR-15): the pause
+    #: check in `data.store` judges a manifest only by its own rows.
+    "manifest_id": pl.Utf8,
     "check": pl.Utf8,
     "dq_status": pl.Utf8,
     "value": pl.Float64,
@@ -184,6 +187,7 @@ def build_report_rows_for_date(
         )
         if manifest is None:
             continue
+        stream_rows_start = len(rows)
 
         stats_path = build_stats_path(lake_root, symbol, stream, date)
         build_stats = (
@@ -255,6 +259,9 @@ def build_report_rows_for_date(
             sparsity = check_l1_sparsity(df, thresholds, date=date)
             rows.append({"date": date, "symbol": symbol, "stream": stream, **sparsity})
 
+        for row in rows[stream_rows_start:]:
+            row["manifest_id"] = manifest["manifest_id"]
+
     return rows
 
 
@@ -293,6 +300,7 @@ def normalize_row(row: dict) -> dict:
         "date": row["date"],
         "symbol": row["symbol"],
         "stream": row["stream"],
+        "manifest_id": row["manifest_id"],
         "check": row["check"],
         "dq_status": row["dq_status"],
         "value": value,

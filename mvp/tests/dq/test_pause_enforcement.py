@@ -61,23 +61,32 @@ def _write_partition(
 
 
 def _write_report(
-    lake_root: Path, symbol: str, stream: str, date: str, dq_status: str
+    lake_root: Path,
+    symbol: str,
+    stream: str,
+    date: str,
+    dq_status: str,
+    manifest_id: str | None = None,
 ) -> None:
+    """`manifest_id=None` writes the LEGACY (pre-WR-15) shape, with no
+    `manifest_id` column."""
     path = dq_report_path(lake_root, date)
     path.parent.mkdir(parents=True, exist_ok=True)
-    pl.DataFrame(
-        {
-            "date": [date],
-            "symbol": [symbol],
-            "stream": [stream],
-            "check": ["gap_coverage"],
-            "dq_status": [dq_status],
-            "value": [9999.0 if dq_status == "failed" else 0.0],
-            "count": [None],
-            "detail": [None],
-        },
-        schema=REPORT_SCHEMA,
-    ).write_parquet(path, compression="zstd")
+    columns = {
+        "date": [date],
+        "symbol": [symbol],
+        "stream": [stream],
+        "check": ["gap_coverage"],
+        "dq_status": [dq_status],
+        "value": [9999.0 if dq_status == "failed" else 0.0],
+        "count": [None],
+        "detail": [None],
+    }
+    schema = dict(REPORT_SCHEMA)
+    if manifest_id is not None:
+        columns["manifest_id"] = [manifest_id]
+        schema["manifest_id"] = pl.Utf8
+    pl.DataFrame(columns, schema=schema).write_parquet(path, compression="zstd")
 
 
 def _write_acknowledgement(
@@ -126,7 +135,9 @@ def test_case1_failed_day_pauses_then_acknowledgement_unpauses_then_revert_repau
     registry_root = tmp_path / "registry"
     date = "2026-09-12"
     manifest = _issue_manifest(lake_root, registry_root, date)
-    _write_report(lake_root, "BTCUSDT", "trade", date, "failed")
+    _write_report(
+        lake_root, "BTCUSDT", "trade", date, "failed", manifest["manifest_id"]
+    )
 
     # RED: no acknowledgement -- raises.
     with pytest.raises(DQPauseError):
@@ -201,7 +212,7 @@ def test_all_n_a_report_is_treated_as_missing_not_ok(tmp_path: Path):
     registry_root = tmp_path / "registry"
     date = "2026-09-14"
     manifest = _issue_manifest(lake_root, registry_root, date)
-    _write_report(lake_root, "BTCUSDT", "trade", date, "n/a")
+    _write_report(lake_root, "BTCUSDT", "trade", date, "n/a", manifest["manifest_id"])
 
     with pytest.raises(DQPauseError):
         load_curated(
@@ -217,7 +228,7 @@ def test_ok_status_needs_no_acknowledgement(tmp_path: Path):
     registry_root = tmp_path / "registry"
     date = "2026-09-15"
     manifest = _issue_manifest(lake_root, registry_root, date)
-    _write_report(lake_root, "BTCUSDT", "trade", date, "ok")
+    _write_report(lake_root, "BTCUSDT", "trade", date, "ok", manifest["manifest_id"])
 
     loaded = load_curated(
         manifest["manifest_id"],
@@ -323,7 +334,9 @@ def test_invalid_acknowledgement_does_not_unpause_a_failed_day(
     registry_root = tmp_path / "registry"
     date = "2026-09-12"
     manifest = _issue_manifest(lake_root, registry_root, date)
-    _write_report(lake_root, "BTCUSDT", "trade", date, "failed")
+    _write_report(
+        lake_root, "BTCUSDT", "trade", date, "failed", manifest["manifest_id"]
+    )
     ack = dq_acknowledgement_path(registry_root, "BTCUSDT", "trade", date)
     ack.parent.mkdir(parents=True, exist_ok=True)
     ack.write_text(content)
@@ -344,7 +357,9 @@ def test_acknowledgement_ids_are_reported_for_mlflow_tagging(tmp_path: Path):
     registry_root = tmp_path / "registry"
     date = "2026-09-12"
     manifest = _issue_manifest(lake_root, registry_root, date)
-    _write_report(lake_root, "BTCUSDT", "trade", date, "failed")
+    _write_report(
+        lake_root, "BTCUSDT", "trade", date, "failed", manifest["manifest_id"]
+    )
     _write_acknowledgement(registry_root, "BTCUSDT", "trade", date, "known outage")
 
     assert dq_acknowledgement_ids(
@@ -367,3 +382,139 @@ def test_every_committed_real_acknowledgement_is_valid():
             validate_dq_acknowledgement(f, symbol=symbol, stream=stream, date=date)
             is None
         ), f
+
+
+# --- WR-15 (03-REVIEW-ITER2.md): the verdict belongs to a manifest ---------
+
+
+def _issue_second_manifest(lake_root: Path, registry_root: Path, date: str) -> dict:
+    """A rebuild of `date` (e.g. WR-03's supersede): new part file, new
+    manifest, by-date pointer moves to it; the old manifest keeps resolving."""
+    df = pl.DataFrame(
+        {"trade_id": [1, 2], "etime": [1_000, 2_000], "price": [1.0, 2.0]}
+    )
+    part = _write_partition(lake_root, f"curated/part-{date}-rebuild.parquet", date, df)
+    return issue_manifest(
+        dataset="BTCUSDT.trade",
+        symbol="BTCUSDT",
+        stream="trade",
+        tier="curated",
+        schema_version=1,
+        inputs=[],
+        partitions=[part],
+        code_hash="rebuild",
+        registry_root=registry_root,
+    )
+
+
+def _write_bound_report(
+    lake_root: Path, date: str, rows: list[tuple[str, str, str]]
+) -> None:
+    """rows: (manifest_id, check, dq_status) -- the post-WR-15 report shape."""
+    path = dq_report_path(lake_root, date)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame(
+        {
+            "date": [date] * len(rows),
+            "symbol": ["BTCUSDT"] * len(rows),
+            "stream": ["trade"] * len(rows),
+            "manifest_id": [r[0] for r in rows],
+            "check": [r[1] for r in rows],
+            "dq_status": [r[2] for r in rows],
+            "value": [0.0] * len(rows),
+            "count": [None] * len(rows),
+            "detail": [None] * len(rows),
+        },
+        schema={**REPORT_SCHEMA, "manifest_id": pl.Utf8},
+    ).write_parquet(path)
+
+
+def _load(manifest: dict, lake_root: Path, registry_root: Path) -> pl.DataFrame:
+    return load_curated(
+        manifest["manifest_id"],
+        "BTCUSDT.trade",
+        registry_root=registry_root,
+        lake_root=lake_root,
+    )
+
+
+def test_superseded_manifest_does_not_load_under_its_successors_ok(tmp_path: Path):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    date = "2026-09-13"
+    old = _issue_manifest(lake_root, registry_root, date)
+    new = _issue_second_manifest(lake_root, registry_root, date)
+    _write_bound_report(lake_root, date, [(new["manifest_id"], "gap_coverage", "ok")])
+
+    assert _load(new, lake_root, registry_root).height == 2
+    with pytest.raises(DQPauseError, match="missing"):
+        _load(old, lake_root, registry_root)
+
+
+def test_each_manifest_is_judged_only_by_its_own_rows(tmp_path: Path):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    date = "2026-09-13"
+    old = _issue_manifest(lake_root, registry_root, date)
+    new = _issue_second_manifest(lake_root, registry_root, date)
+    _write_bound_report(
+        lake_root,
+        date,
+        [
+            (old["manifest_id"], "reconciliation", "failed"),
+            (new["manifest_id"], "reconciliation", "ok"),
+        ],
+    )
+    assert _load(new, lake_root, registry_root).height == 2
+    with pytest.raises(DQPauseError, match="failed"):
+        _load(old, lake_root, registry_root)
+
+
+def test_legacy_report_without_manifest_id_cannot_vouch_for_a_superseded_manifest(
+    tmp_path: Path,
+):
+    import os
+
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    date = "2026-09-13"
+    old = _issue_manifest(lake_root, registry_root, date)
+    new = _issue_second_manifest(lake_root, registry_root, date)
+    _write_report(lake_root, "BTCUSDT", "trade", date, "ok")  # no manifest_id column
+    report = dq_report_path(lake_root, date)
+    later = report.stat().st_mtime + 60  # deterministic "report newer than build"
+    os.utime(report, (later, later))
+
+    assert _load(new, lake_root, registry_root).height == 2  # pointer, report newer
+    with pytest.raises(DQPauseError, match="legacy"):
+        _load(old, lake_root, registry_root)
+
+
+def test_legacy_report_older_than_the_pointer_manifest_does_not_vouch_for_it(
+    tmp_path: Path,
+):
+    import os
+
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    date = "2026-09-13"
+    _write_report(lake_root, "BTCUSDT", "trade", date, "ok")  # scored an earlier build
+    report = dq_report_path(lake_root, date)
+    past = report.stat().st_mtime - 3600
+    os.utime(report, (past, past))
+    manifest = _issue_manifest(lake_root, registry_root, date)  # rebuilt afterwards
+    with pytest.raises(DQPauseError, match="legacy"):
+        _load(manifest, lake_root, registry_root)
+
+
+def test_unknown_status_next_to_ok_is_failed_not_ok(tmp_path: Path):
+    """03-REVIEW-ITER2.md IN-12."""
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    date = "2026-09-13"
+    manifest = _issue_manifest(lake_root, registry_root, date)
+    _write_bound_report(
+        lake_root,
+        date,
+        [
+            (manifest["manifest_id"], "gap_coverage", "ok"),
+            (manifest["manifest_id"], "etime_plausibility", "FAILED"),
+        ],
+    )
+    with pytest.raises(DQPauseError, match="unknown"):
+        _load(manifest, lake_root, registry_root)

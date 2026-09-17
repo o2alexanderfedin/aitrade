@@ -202,6 +202,7 @@ def test_normalize_row_maps_heterogeneous_fields_onto_fixed_schema():
         "date": DATE,
         "symbol": SYMBOL,
         "stream": "trade",
+        "manifest_id": "m" * 64,
         "check": "reconciliation",
         "dq_status": "degraded",
         "value_pct": 3.2,
@@ -249,6 +250,7 @@ def test_write_report_writes_parquet_sidecar_and_markdown(tmp_path: Path):
         "date",
         "symbol",
         "stream",
+        "manifest_id",
         "check",
         "dq_status",
         "value",
@@ -541,7 +543,14 @@ def _probable_loss_row_and_load(lake_root, registry_root, manifest):
     row = report.filter(
         (pl.col("stream") == "trade") & (pl.col("check") == "probable_loss")
     ).row(0, named=True)
-    status, _detail = _dq_status_for_date(lake_root, SYMBOL, "trade", DATE)
+    status, _detail = _dq_status_for_date(
+        lake_root,
+        SYMBOL,
+        "trade",
+        DATE,
+        manifest=manifest,
+        registry_root=registry_root,
+    )
     assert not (registry_root / "dq_acknowledgements").exists()
     df = load_curated(
         manifest["manifest_id"],
@@ -589,3 +598,23 @@ def test_pre_capture_archive_day_reports_probable_loss(tmp_path: Path):
         ledger_df=_empty_ledger(),
     )
     assert _statuses(rows, "trade").get("probable_loss") == "ok"
+
+
+def test_every_report_row_names_the_manifest_it_scored(tmp_path: Path):
+    """03-REVIEW-ITER2.md WR-15: the pause check binds a verdict to a manifest."""
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    trade_df = pl.DataFrame({"trade_id": [1], "etime": [1_000], "price": [1.0]})
+    manifest = _issue_and_write_build_stats(
+        lake_root, registry_root, SYMBOL, "trade", DATE, trade_df, build_stats=None
+    )
+    write_report(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_empty_ledger(),
+    )
+    report = pl.read_parquet(dq_report_path(lake_root, DATE))
+    assert report.height > 0
+    assert set(report["manifest_id"].to_list()) == {manifest["manifest_id"]}
