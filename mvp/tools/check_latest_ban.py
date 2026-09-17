@@ -35,7 +35,6 @@ PKG_ROOT = Path(__file__).resolve().parents[1]
 
 PRUNE_DIRNAMES = frozenset({".venv", "__pycache__", ".pytest_cache", ".ruff_cache"})
 
-EXCLUDE_MARKERS = (".venv", "__pycache__", ".pytest_cache", ".ruff_cache", "/tests/")
 
 #: Matches a "latest" path/name segment bounded by a path separator,
 #: underscore, dot, or hyphen (or string start/end) on both sides -- so
@@ -112,15 +111,21 @@ def scan_source(source: str, filename: str) -> list[Violation]:
     return violations
 
 
-def _excluded(path: Path) -> bool:
-    path_str = str(path)
-    return any(marker in path_str for marker in EXCLUDE_MARKERS)
+def _excluded(rel: Path) -> bool:
+    """Decide exclusion on the path RELATIVE to the scan root (03-REVIEW.md
+    WR-08): a `/tests/` substring of the ABSOLUTE path used to exempt an
+    entire checkout living under any `.../tests/...` directory. Only a
+    top-level `tests/` directory and cache/venv directories are excluded."""
+    parts = rel.parts
+    if parts and parts[0] == "tests":
+        return True
+    return any(part in PRUNE_DIRNAMES for part in parts)
 
 
 def _iter_py_files(root: Path) -> list[Path]:
     """os.walk with early pruning of .venv/__pycache__/etc so a full-repo
     recursive scan doesn't descend into thousands of venv files before the
-    substring filter drops them. Denylist over the whole package (matching
+    relative-path exclusion drops them. Denylist over the whole package (matching
     check_numba_globals's pattern) rather than an allowlist of specific
     subdirectory names, so a future source directory not yet on any allowlist
     is scanned automatically instead of silently skipped."""
@@ -130,11 +135,14 @@ def _iter_py_files(root: Path) -> list[Path]:
         for fname in filenames:
             if fname.endswith(".py"):
                 files.append(Path(dirpath) / fname)
-    return [p for p in files if not _excluded(p)]
+    return [p for p in files if not _excluded(p.relative_to(root))]
 
 
 def main() -> int:
     files = _iter_py_files(PKG_ROOT)
+    if not files:
+        print(f"FAIL: scanned 0 files under {PKG_ROOT} -- refusing a vacuous pass")
+        return 1
 
     all_violations: list[Violation] = []
     for path in files:
