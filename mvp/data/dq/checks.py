@@ -391,10 +391,24 @@ def check_l1_sparsity(bookticker_df: pl.DataFrame, thresholds: DQThresholds) -> 
     in `bookticker_df`. The caller (report.py) is responsible for emitting
     `"n/a"` instead of calling this at all on a day with no bookTicker
     curated partition (June-Aug, before L1's own first etime) -- a day
-    with no L1 by design is not a degraded day."""
+    with no L1 by design is not a degraded day.
+
+    A 0-or-1-row partition (e.g. a day capture ran for under a second
+    before crashing) cannot produce an inter-arrival gap at all -- there
+    is no pair of consecutive rows to diff. This is a DIFFERENT case from
+    "no bookTicker partition exists" above (that is the caller's `n/a`),
+    but it deserves the identical `"n/a"` verdict for the identical reason:
+    the statistic is structurally undefined on this input shape, so `"ok"`
+    would be a false green, not a passing measurement (03-VERIFICATION.md
+    finding, T-03 gap-closure)."""
     etimes = bookticker_df.sort("etime")["etime"]
     if etimes.len() < 2:
-        return {"check": "l1_sparsity", "dq_status": "ok", "value_seconds": 0.0}
+        return {
+            "check": "l1_sparsity",
+            "dq_status": "n/a",
+            "value_seconds": None,
+            "reason": f"fewer than 2 rows ({etimes.len()}) -- no inter-arrival gap computable",
+        }
     max_gap_ns = etimes.diff().drop_nulls().max()
     max_gap_seconds = max_gap_ns / NS_PER_SECOND
     status = (

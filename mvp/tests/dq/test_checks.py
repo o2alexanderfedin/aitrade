@@ -262,3 +262,23 @@ def test_l1_sparsity_ok_within_threshold():
     )
     result = check_l1_sparsity(df, THRESHOLDS)
     assert result["dq_status"] == "ok"
+
+
+def test_l1_sparsity_is_na_not_ok_on_zero_row_partition():
+    """03-VERIFICATION.md finding: a 0-row bookTicker partition cannot
+    produce an inter-arrival gap -- must be "n/a", never a false "ok"."""
+    df = pl.DataFrame({"etime": pl.Series([], dtype=pl.Int64)})
+    result = check_l1_sparsity(df, THRESHOLDS)
+    assert result["dq_status"] == "n/a"
+    assert result["value_seconds"] is None
+    assert "reason" in result
+
+
+def test_l1_sparsity_is_na_not_ok_on_single_row_partition():
+    """Same shape, one row: still no pair to diff, still "n/a"."""
+    base = 1_800_000_000_000_000_000
+    df = pl.DataFrame({"etime": [base]})
+    result = check_l1_sparsity(df, THRESHOLDS)
+    assert result["dq_status"] == "n/a"
+    assert result["value_seconds"] is None
+    assert "reason" in result

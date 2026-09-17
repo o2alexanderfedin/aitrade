@@ -209,6 +209,8 @@ def normalize_row(row: dict) -> dict:
         )
     if row.get("dropped") is not None:
         detail_parts.append(f"dropped={row['dropped']}")
+    if row.get("reason") is not None:
+        detail_parts.append(f"reason={row['reason']}")
     if "etime_min" in row:
         detail_parts.append(
             f"etime_min={row['etime_min']} etime_max={row['etime_max']}"
