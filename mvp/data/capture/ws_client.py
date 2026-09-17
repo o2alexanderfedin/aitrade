@@ -55,11 +55,34 @@ DEFAULT_FLUSH_FRAME_EVERY_MESSAGES = 500
 DEFAULT_FLUSH_FRAME_EVERY_SECONDS = 5.0
 
 
+#: Last stamp handed out by `_next_open_stamp`, so segment names from ONE
+#: process never go backwards even if the wall clock does (IN-11).
+_last_open_stamp = 0
+
+
+def _next_open_stamp() -> int:
+    """`time.time_ns()`, clamped to strictly greater than the last stamp this
+    process handed out. The clamp costs at most a nanosecond of drift from
+    wall time and is only ever used for naming and ordering."""
+    global _last_open_stamp
+    _last_open_stamp = max(time.time_ns(), _last_open_stamp + 1)
+    return _last_open_stamp
+
+
 def archive_segment_paths(day_dir: Path, conn_id: str) -> list[Path]:
-    """Every raw-archive file for `conn_id` in one `date=...` directory, in
-    write order: the legacy single-file name `conn_<id>.ndjson.zst` first
-    (written by pre-CR-01 runs, which appended across restarts), then the
-    per-open segments `conn_<id>.<open_ns>.ndjson.zst` in `open_ns` order.
+    """Every raw-archive file for `conn_id` in one `date=...` directory: the
+    legacy single-file name `conn_<id>.ndjson.zst` first (written by
+    pre-CR-01 runs, which appended across restarts), then the per-open
+    segments `conn_<id>.<open_ns>.ndjson.zst` in `open_ns` order.
+
+    That order is ADVISORY, not a guarantee (03-REVIEW-ITER2.md IN-11).
+    `open_ns` is the wall clock at open, and the wall clock can step
+    BACKWARDS -- an NTP correction on wake is the ordinary case on this
+    capture host, which sleeps on battery. `_open_for_today` clamps the
+    stamp to strictly increasing WITHIN one process, so a restart is the
+    only way names can go backwards; across restarts nothing here can
+    promise it. Nothing depends on this: replay orders rows by
+    `(etime, id)`, and `etime` is the only clock (spec.md).
 
     Each file is an independent zstd stream: decode them one after another,
     never by concatenating bytes (a crashed segment may end mid-frame)."""
@@ -140,8 +163,10 @@ class RawArchiveWriter:
         day_dir.mkdir(parents=True, exist_ok=True)
         # Exclusive create of a fresh per-open segment -- never "ab" (CR-01,
         # see class docstring). `time.time_ns()` is 19 digits until 2286, so
-        # lexicographic order of the names is write order.
-        path = day_dir / f"conn_{self._conn_id}.{time.time_ns()}.ndjson.zst"
+        # names sort lexicographically in stamp order; the stamp is clamped
+        # strictly increasing per process (IN-11) because the wall clock can
+        # step backwards after an NTP correction on wake.
+        path = day_dir / f"conn_{self._conn_id}.{_next_open_stamp()}.ndjson.zst"
         self._fh = open(path, "xb")
         self.current_path = path
         cctx = zstandard.ZstdCompressor()

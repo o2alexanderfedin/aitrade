@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import sqlite3
 import time
 from pathlib import Path
@@ -65,7 +66,7 @@ from mlflow.tracking import MlflowClient
 from data import lake_paths
 from data.capture.config import DEFAULT_MIN_FREE_GB
 from data.lake_paths import LAKE_REGISTRY_ROOT
-from data.store import resolve_manifest
+from data.store import read_verified_partitions, resolve_manifest
 from tracking.mlflow_utils import (
     build_tracking_uri,
     compute_code_hash,
@@ -304,24 +305,70 @@ def _mlflow_has_consumed(
     return len(runs) > 0
 
 
+#: Locks live in their own directory, NOT beside the token JSON
+#: (03-REVIEW-ITER2.md IN-14): `lockbox_tokens/` is git-tracked, so a lock
+#: left by a crash used to be picked up by `git add -A` and committed, after
+#: which every clone refused that token until someone deleted it by hand.
+#: This directory is gitignored.
+LOCK_DIR_NAME = ".locks"
+
+
+def lock_path_for(token_path_: Path) -> Path:
+    """Where `_acquire_open_lock` puts the lock for a token JSON."""
+    return token_path_.parent / LOCK_DIR_NAME / f"{token_path_.stem}.lock"
+
+
+def _holder_liveness(lock_path: Path) -> str:
+    """A human-readable hint about whether the recorded holder is still
+    alive. A lock is never removed automatically on its strength -- it only
+    tells the human which of the two situations they are in."""
+    try:
+        body = dict(
+            field.split("=", 1)
+            for field in lock_path.read_text().split()
+            if "=" in field
+        )
+    except OSError:
+        return "could not read the lock file"
+    pid, host = body.get("pid"), body.get("host")
+    if host != socket.gethostname():
+        return f"held by pid {pid} on host {host!r}, not this host"
+    try:
+        os.kill(int(pid), 0)
+    except (ValueError, TypeError):
+        return f"lock file records no usable pid ({pid!r})"
+    except ProcessLookupError:
+        return f"pid {pid} on this host is NOT running -- the lock is stale"
+    except PermissionError:
+        return f"pid {pid} on this host is running (owned by another user)"
+    return f"pid {pid} on this host IS still running -- do not remove the lock"
+
+
 def _acquire_open_lock(path: Path, token_id: str) -> Path:
-    """Exclusive-create `<token>.lock` beside the token JSON for the whole
+    """Exclusive-create the token's lock for the whole
     check-then-stamp-then-read sequence (03-REVIEW.md WR-06: two concurrent
     callers could both pass the consumed checks). A leftover lock after a
     crash fails CLOSED: the human confirms the token's MLflow record and
-    removes it."""
-    lock_path = path.with_suffix(".lock")
+    removes it.
+
+    The lock lives in the gitignored `lockbox_tokens/.locks/`, never beside
+    the git-tracked token JSON (IN-14), and records `pid`, `host` and the
+    open time so the refusal can say whether the holder is still alive
+    instead of leaving the human to guess.
+    """
+    lock_path = lock_path_for(path)
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
     except FileExistsError:
         raise LockboxTokenError(
             f"an open of token {token_id} is already in progress (lock file "
-            f"{lock_path} exists); if no other process holds it, confirm the "
-            "token's MLflow record before removing the stale lock"
+            f"{lock_path} exists; {_holder_liveness(lock_path)}); if no other "
+            "process holds it, confirm the token's MLflow record before "
+            "removing the stale lock"
         ) from None
     with os.fdopen(fd, "w") as fh:
-        fh.write(f"pid={os.getpid()} at={time.time_ns()}\n")
+        fh.write(f"pid={os.getpid()} host={socket.gethostname()} at={time.time_ns()}\n")
     return lock_path
 
 
@@ -476,10 +523,8 @@ def _open_locked(
             lake_root=resolved_lake_root,
             expected_tier=LOCKBOX_TIER,
         )
-        frames = [
-            pl.read_parquet(resolved_lake_root / part["path"])
-            for part in manifest["partitions"]
-        ]
+        # IN-10: hash and parse the SAME buffer, never two opens.
+        frames = read_verified_partitions(manifest, lake_root=resolved_lake_root)
         df = pl.concat(frames, how="vertical")
 
     return df

@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import socket
 from pathlib import Path
 
 import mlflow
@@ -21,7 +23,13 @@ import polars as pl
 import pytest
 from mlflow.tracking import MlflowClient
 
-from data.lockbox import LockboxTokenError, issue_token, open_lockbox, token_path
+from data.lockbox import (
+    LockboxTokenError,
+    issue_token,
+    lock_path_for,
+    open_lockbox,
+    token_path,
+)
 from data.store import issue_manifest
 from tracking.mlflow_utils import build_tracking_uri
 
@@ -388,7 +396,8 @@ def test_concurrent_open_is_refused_while_another_open_holds_the_lock(tmp_path: 
     registry_root, lake_root, tracking_root, _m, _t = _build_segment(
         tmp_path, token_id="lb-wr06-lock"
     )
-    lock = token_path("lb-wr06-lock", registry_root=registry_root).with_suffix(".lock")
+    lock = lock_path_for(token_path("lb-wr06-lock", registry_root=registry_root))
+    lock.parent.mkdir(parents=True, exist_ok=True)
     lock.write_text("held by another process\n")
 
     with pytest.raises(LockboxTokenError, match="in progress"):
@@ -546,3 +555,60 @@ def test_the_pin_compares_resolved_paths(tmp_path: Path):
         min_free_gb=0.0,
     )
     assert df.height == 3
+
+
+# --- 03-REVIEW-ITER2.md IN-14: the lock lives outside the git-tracked tree --
+
+
+def test_the_open_lock_is_not_written_beside_the_committed_token(tmp_path: Path):
+    """`lockbox_tokens/` is git-tracked, so a lock left by a crash used to be
+    swept up by `git add -A` and committed -- after which every clone refused
+    that token until a human deleted it. It belongs in the gitignored
+    `.locks/` subdirectory."""
+    import data.lockbox as lockbox_module
+
+    registry_root, lake_root, tracking_root, _m, _t = _build_segment(
+        tmp_path, token_id="lb-in14"
+    )
+    tp = token_path("lb-in14", registry_root=registry_root)
+    held = lockbox_module._acquire_open_lock(tp, "lb-in14")
+    try:
+        assert held.parent.name == ".locks"
+        assert held.parent == tp.parent / ".locks"
+        assert not tp.with_suffix(".lock").exists()
+        assert list(tp.parent.glob("*.lock")) == []
+        body = held.read_text()
+        assert f"pid={os.getpid()}" in body
+        assert f"host={socket.gethostname()}" in body
+    finally:
+        held.unlink()
+
+
+def test_a_held_lock_says_whether_the_holder_is_still_alive(tmp_path: Path):
+    registry_root, lake_root, tracking_root, _m, _t = _build_segment(
+        tmp_path, token_id="lb-in14-live"
+    )
+    tp = token_path("lb-in14-live", registry_root=registry_root)
+    held = lock_path_for(tp)
+    held.parent.mkdir(parents=True, exist_ok=True)
+
+    # A live holder: this very process.
+    held.write_text(f"pid={os.getpid()} host={socket.gethostname()} at=1\n")
+    with pytest.raises(LockboxTokenError, match="IS still running"):
+        _open("lb-in14-live", registry_root, lake_root, tracking_root)
+
+    # A dead holder: a pid that cannot exist.
+    held.write_text(f"pid=2147483646 host={socket.gethostname()} at=1\n")
+    with pytest.raises(LockboxTokenError, match="stale"):
+        _open("lb-in14-live", registry_root, lake_root, tracking_root)
+
+    # Another host: liveness cannot be judged from here, and is not claimed.
+    held.write_text("pid=1 host=some-other-host at=1\n")
+    with pytest.raises(LockboxTokenError, match="not this host"):
+        _open("lb-in14-live", registry_root, lake_root, tracking_root)
+
+    # A lock is never removed on the strength of a liveness guess.
+    assert held.exists()
+    assert json.loads(tp.read_text())["consumed_at"] is None, (
+        "a refused open must not have stamped the token"
+    )

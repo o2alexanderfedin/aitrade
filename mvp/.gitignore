@@ -5,3 +5,4 @@ __pycache__/
 .ruff_cache/
 .hypothesis/
 mlruns/
+data/lake_registry/lockbox_tokens/.locks/

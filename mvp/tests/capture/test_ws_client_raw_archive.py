@@ -344,3 +344,24 @@ def test_crash_truncate_then_same_day_restart_keeps_every_line_readable(
         {"run": 1, "n": i} for i in range(len(before_lines))
     ]
     assert runs[len(before_lines) :] == [{"run": 2, "n": i} for i in range(n_after)]
+
+
+# --- 03-REVIEW-ITER2.md IN-11: segment names never go backwards in a run ---
+
+
+def test_segment_names_stay_ordered_when_the_wall_clock_steps_back(
+    tmp_path: Path, monkeypatch
+):
+    """An NTP correction on wake steps the wall clock backwards -- ordinary on
+    a capture host that sleeps on battery. Two segments opened around such a
+    step must still sort in write order."""
+    from data.capture import ws_client as mod
+
+    clock = iter([2_000_000_000_000_000_000, 1_000_000_000_000_000_000])
+    monkeypatch.setattr(mod, "_last_open_stamp", 0, raising=False)
+    monkeypatch.setattr(mod.time, "time_ns", lambda: next(clock))
+
+    first = mod._next_open_stamp()
+    second = mod._next_open_stamp()
+    assert second > first
+    assert f"conn_A.{second}.ndjson.zst" > f"conn_A.{first}.ndjson.zst"

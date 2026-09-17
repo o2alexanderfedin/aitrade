@@ -246,3 +246,135 @@ def test_well_formed_curated_manifest_still_loads(tmp_path: Path):
         lake_root=lake_root,
     )
     assert df.height == 2
+
+
+# --- 03-REVIEW-ITER2.md IN-10: resolve() cannot see a hard link, and it
+# --- agrees with itself when the tier directory is itself a link -----------
+
+
+def _curated_part_and_manifest(lake_root: Path, registry_root: Path) -> dict:
+    part = _partition(
+        lake_root, "curated/symbol=BTCUSDT/stream=trade/date=2026-09-13/part-1.parquet"
+    )
+    manifest = _issue(registry_root, part, tier="curated")
+    _ok_report(lake_root, manifest["manifest_id"])
+    by_date_index_path(
+        registry_root, "BTCUSDT.trade", "BTCUSDT", "trade", DATE
+    ).parent.mkdir(parents=True, exist_ok=True)
+    return manifest
+
+
+def test_a_hard_link_into_curated_is_refused(tmp_path: Path, monkeypatch):
+    """A hard link in `curated/` to a lockbox partition IS a path under
+    `curated/` -- `resolve()` reports the link's own path, so the whitelist
+    test passes while the bytes behind it are quarantined."""
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    secret = lake_root / "lockbox/symbol=BTCUSDT/stream=trade/date=2026-09-13/s.parquet"
+    secret.parent.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame({"trade_id": [9], "etime": [9], "price": [9.0]}).write_parquet(secret)
+
+    rel = "curated/symbol=BTCUSDT/stream=trade/date=2026-09-13/part-1.parquet"
+    link = lake_root / rel
+    link.parent.mkdir(parents=True, exist_ok=True)
+    os.link(secret, link)
+    assert link.resolve().is_relative_to((lake_root / "curated").resolve())
+
+    part = {
+        "date": DATE,
+        "path": rel,
+        "sha256": hashlib.sha256(link.read_bytes()).hexdigest(),
+        "rows": 1,
+        "size_bytes": link.stat().st_size,
+        "mtime_ns": 0,
+        "etime_min": 9,
+        "etime_max": 9,
+    }
+    manifest = _issue(registry_root, part, tier="curated")
+    _ok_report(lake_root, manifest["manifest_id"])
+    reads = _spy_reads(monkeypatch)
+
+    with pytest.raises(store.ManifestTierError, match="hard link"):
+        load_curated(
+            manifest["manifest_id"],
+            "BTCUSDT.trade",
+            registry_root=registry_root,
+            lake_root=lake_root,
+        )
+    assert reads == []
+
+
+def test_a_symlinked_curated_tier_directory_is_refused(tmp_path: Path, monkeypatch):
+    """With `lake/curated -> lake/lockbox`, the tier root and every partition
+    resolve to the same place, so containment-by-resolved-path agrees with
+    itself and lets the read through."""
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    real = lake_root / "lockbox"
+    part_dir = real / "symbol=BTCUSDT/stream=trade/date=2026-09-13"
+    part_dir.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame({"trade_id": [9], "etime": [9], "price": [9.0]}).write_parquet(
+        part_dir / "part-1.parquet"
+    )
+    (lake_root / "curated").symlink_to(real, target_is_directory=True)
+
+    rel = "curated/symbol=BTCUSDT/stream=trade/date=2026-09-13/part-1.parquet"
+    data = (lake_root / rel).read_bytes()
+    part = {
+        "date": DATE,
+        "path": rel,
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "rows": 1,
+        "size_bytes": len(data),
+        "mtime_ns": 0,
+        "etime_min": 9,
+        "etime_max": 9,
+    }
+    manifest = _issue(registry_root, part, tier="curated")
+    _ok_report(lake_root, manifest["manifest_id"])
+    reads = _spy_reads(monkeypatch)
+
+    with pytest.raises(store.ManifestTierError, match="is a symlink"):
+        load_curated(
+            manifest["manifest_id"],
+            "BTCUSDT.trade",
+            registry_root=registry_root,
+            lake_root=lake_root,
+        )
+    assert reads == []
+
+
+def test_the_verified_bytes_are_the_returned_bytes(tmp_path: Path, monkeypatch):
+    """IN-10's third strand: the loader used to hash the file and then let
+    `pl.read_parquet` REOPEN it, so the bytes that were verified and the bytes
+    that were returned came from two different opens.
+
+    The swap here lands after the verifying read of the final pass. With one
+    open, the rows returned are the ones that were hashed; with two, the
+    caller silently gets the substituted file under a passing hash check.
+    """
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    manifest = _curated_part_and_manifest(lake_root, registry_root)
+    rel = manifest["partitions"][0]["path"]
+
+    real_read_bytes = Path.read_bytes
+    reads = {"n": 0}
+
+    def swapping_read_bytes(self):
+        data = real_read_bytes(self)
+        if self.name.endswith(".parquet"):
+            reads["n"] += 1
+            if reads["n"] == 2:  # the read inside read_verified_partitions
+                pl.DataFrame(
+                    {"trade_id": [7], "etime": [7], "price": [7.0]}
+                ).write_parquet(lake_root / rel)
+        return data
+
+    monkeypatch.setattr(Path, "read_bytes", swapping_read_bytes)
+    df = load_curated(
+        manifest["manifest_id"],
+        "BTCUSDT.trade",
+        registry_root=registry_root,
+        lake_root=lake_root,
+    )
+    assert sorted(df["trade_id"].to_list()) == [1, 2], (
+        "the returned rows came from a second open, not from the verified bytes"
+    )

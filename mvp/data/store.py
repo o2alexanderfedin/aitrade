@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import io
 import json
 import posixpath
 import subprocess
@@ -58,6 +59,7 @@ __all__ = [
     "canonicalize_manifest",
     "compute_manifest_id",
     "dq_acknowledgement_ids",
+    "read_verified_partitions",
     "dq_acknowledgement_path",
     "dq_report_path",
     "issue_manifest",
@@ -337,15 +339,34 @@ def _enforce_tier_containment(
     manifest: dict, manifest_file: Path, *, lake_root: Path, expected_tier: str
 ) -> None:
     """Refuse (`ManifestTierError`) a manifest of the wrong tier, or any
-    partition whose path resolves outside `lake_root/<expected_tier>/`.
-    Pure path arithmetic -- never opens a partition file."""
+    partition that is not genuinely contained in `lake_root/<expected_tier>/`.
+
+    Path arithmetic plus `lstat` -- never opens a partition file. Containment
+    by resolved path alone is not enough (03-REVIEW-ITER2.md IN-10), because
+    two same-uid actions defeat it without touching any manifest:
+
+    - **the tier directory itself being a symlink.** If `lake/curated` is a
+      link to `lake/lockbox`, `tier_root` and every partition resolve inside
+      the lockbox, so both sides of the containment test agree and the read
+      is allowed. The tier directory must be a real directory.
+    - **a hard link.** `resolve()` cannot see one: a hard link in `curated/`
+      to a lockbox partition IS a path under `curated/`, with the quarantined
+      bytes behind it. A partition file must have exactly one name
+      (`st_nlink == 1`).
+    """
     tier = manifest.get("tier")
     if tier != expected_tier:
         raise ManifestTierError(
             f"{manifest_file}: manifest tier {tier!r} is not {expected_tier!r} "
             "-- refusing to resolve it through this loader"
         )
-    tier_root = (Path(lake_root) / expected_tier).resolve()
+    tier_dir = Path(lake_root) / expected_tier
+    if tier_dir.is_symlink():
+        raise ManifestTierError(
+            f"{manifest_file}: {tier_dir} is a symlink, not a real directory -- "
+            "containment cannot be decided by resolving paths through it"
+        )
+    tier_root = tier_dir.resolve()
     for part in manifest["partitions"]:
         rel = Path(part["path"])
         on_disk = (Path(lake_root) / rel).resolve()
@@ -353,6 +374,14 @@ def _enforce_tier_containment(
             raise ManifestTierError(
                 f"{manifest_file}: partition path {part['path']!r} resolves to "
                 f"{on_disk}, outside {tier_root} -- refusing to read it"
+            )
+        lstat_path = Path(lake_root) / rel
+        if lstat_path.is_file() and lstat_path.lstat().st_nlink != 1:
+            raise ManifestTierError(
+                f"{manifest_file}: partition {part['path']!r} has "
+                f"{lstat_path.lstat().st_nlink} hard links -- the same bytes are "
+                "reachable under another name, so a path under "
+                f"{tier_root} does not prove containment"
             )
 
 
@@ -890,6 +919,31 @@ def _log_provenance(manifest: dict, acks: list[tuple[str, str]]) -> None:
     )
 
 
+def read_verified_partitions(manifest: dict, *, lake_root: Path) -> list[pl.DataFrame]:
+    """Read each of `manifest`'s partitions ONCE, verify the sha256 of THOSE
+    bytes, and parse the DataFrame out of the same buffer.
+
+    03-REVIEW-ITER2.md IN-10: `resolve_manifest` hashed the file with
+    `read_bytes()` and then `pl.read_parquet` reopened it, so the verified
+    bytes and the returned bytes came from two different opens -- anything
+    that changed the file in between was returned unverified. Hashing the
+    buffer that is then parsed removes the window entirely.
+
+    The cost is one extra read of each partition relative to
+    `resolve_manifest`'s own verification pass (largest real partition: 516
+    MiB), which is the price of the two hashes being over the same bytes.
+    """
+    frames: list[pl.DataFrame] = []
+    for part in manifest["partitions"]:
+        path = Path(lake_root) / part["path"]
+        buffer = path.read_bytes()
+        digest = hashlib.sha256(buffer).hexdigest()
+        if digest != part["sha256"]:
+            raise ManifestHashMismatch(str(path), part["sha256"], digest)
+        frames.append(pl.read_parquet(io.BytesIO(buffer)))
+    return frames
+
+
 def load_curated(
     manifest_id: str, dataset: str, *, registry_root: Path, lake_root: Path
 ) -> pl.DataFrame:
@@ -922,8 +976,5 @@ def load_curated(
     )
     acks = _enforce_dq_pause(manifest, registry_root=registry_root, lake_root=lake_root)
     _log_provenance(manifest, acks)
-    frames = [
-        pl.read_parquet(Path(lake_root) / part["path"])
-        for part in manifest["partitions"]
-    ]
+    frames = read_verified_partitions(manifest, lake_root=Path(lake_root))
     return pl.concat(frames, how="vertical")
