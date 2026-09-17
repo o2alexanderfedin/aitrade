@@ -441,11 +441,12 @@ def _dq_verdict_for_date(
     successor's `ok`. Rows now carry `manifest_id`; a manifest with no rows
     of its own is `missing`.
 
-    Legacy reports written before that column existed are accepted for a
-    manifest only when BOTH hold: the by-date pointer names this manifest,
-    and the report file is newer than the manifest's `built_at` (so it
-    cannot have scored an earlier build). Otherwise `missing`. A shim for
-    the reports already in the lake; regenerating them removes the need.
+    A report WITHOUT that column is `missing` for every manifest
+    (03-REVIEW-ITER3.md WR-18). The legacy shim that accepted one for the
+    by-date pointer's manifest when the file was newer than `built_at` is
+    gone: a `touch`, `cp -R`, restore or volume move made a report that
+    scored a superseded build vouch for its successor. The real lake's
+    legacy reports were regenerated in the per-manifest shape first.
 
     `"missing"` also covers: no `report.parquet` for this date, no row for
     `(symbol, stream)`, and every matching row `"n/a"` (the report ran but
@@ -472,40 +473,24 @@ def _dq_verdict_for_date(
         )
 
     manifest_id = manifest["manifest_id"]
-    if "manifest_id" in rows.columns:
-        own = rows.filter(pl.col("manifest_id") == manifest_id)
-        if own.height == 0:
-            scored = sorted({str(m)[:12] for m in rows["manifest_id"].to_list()})
-            return (
-                "missing",
-                f"the DQ report for this date scored manifest(s) {scored}, not "
-                f"{manifest_id[:12]} -- this manifest was never reported on",
-                frozenset({(MISSING_REPORT_CHECK, "missing")}),
-            )
-        rows = own
-    else:
-        pointer = by_date_index_path(
-            Path(registry_root), manifest["dataset"], symbol, stream, date
+    if "manifest_id" not in rows.columns:
+        return (
+            "missing",
+            "legacy DQ report (no manifest_id column) cannot say which manifest "
+            f"it scored, so it does not vouch for {manifest_id[:12]} -- "
+            "regenerate it with `python -m data.dq.report`",
+            frozenset({(MISSING_REPORT_CHECK, "missing")}),
         )
-        pointer_id = (
-            json.loads(pointer.read_text()).get("manifest_id")
-            if pointer.exists()
-            else None
+    own = rows.filter(pl.col("manifest_id") == manifest_id)
+    if own.height == 0:
+        scored = sorted({str(m)[:12] for m in rows["manifest_id"].to_list()})
+        return (
+            "missing",
+            f"the DQ report for this date scored manifest(s) {scored}, not "
+            f"{manifest_id[:12]} -- this manifest was never reported on",
+            frozenset({(MISSING_REPORT_CHECK, "missing")}),
         )
-        if pointer_id != manifest_id:
-            return (
-                "missing",
-                "legacy DQ report (no manifest_id column) scored the by-date "
-                f"pointer's manifest {str(pointer_id)[:12]}, not {manifest_id[:12]}",
-                frozenset({(MISSING_REPORT_CHECK, "missing")}),
-            )
-        if report_path.stat().st_mtime_ns < manifest["built_at"]:
-            return (
-                "missing",
-                "legacy DQ report (no manifest_id column) predates manifest "
-                f"{manifest_id[:12]}'s build -- it scored an earlier build",
-                frozenset({(MISSING_REPORT_CHECK, "missing")}),
-            )
+    rows = own
 
     statuses = set(rows["dq_status"].to_list())
     findings = frozenset(

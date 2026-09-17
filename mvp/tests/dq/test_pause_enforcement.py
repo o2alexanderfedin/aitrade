@@ -520,9 +520,12 @@ def test_each_manifest_is_judged_only_by_its_own_rows(tmp_path: Path):
         _load(old, lake_root, registry_root)
 
 
-def test_legacy_report_without_manifest_id_cannot_vouch_for_a_superseded_manifest(
+def test_legacy_report_without_manifest_id_never_vouches_even_when_newer(
     tmp_path: Path,
 ):
+    """03-REVIEW-ITER3.md WR-18: the legacy shim accepted a report with no
+    `manifest_id` column for the by-date pointer's manifest whenever the file
+    was newer than the build. Mtime is not evidence of what a report scored."""
     import os
 
     lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
@@ -531,28 +534,40 @@ def test_legacy_report_without_manifest_id_cannot_vouch_for_a_superseded_manifes
     new = _issue_second_manifest(lake_root, registry_root, date)
     _write_report(lake_root, "BTCUSDT", "trade", date, "ok")  # no manifest_id column
     report = dq_report_path(lake_root, date)
-    later = report.stat().st_mtime + 60  # deterministic "report newer than build"
+    later = report.stat().st_mtime + 60  # "report newer than build"
     os.utime(report, (later, later))
 
-    assert _load(new, lake_root, registry_root).height == 2  # pointer, report newer
-    with pytest.raises(DQPauseError, match="legacy"):
-        _load(old, lake_root, registry_root)
+    for manifest in (new, old):
+        with pytest.raises(DQPauseError, match="no manifest_id column"):
+            _load(manifest, lake_root, registry_root)
 
 
-def test_legacy_report_older_than_the_pointer_manifest_does_not_vouch_for_it(
+def test_touched_or_copied_stale_report_does_not_unpause_a_rebuilt_day(
     tmp_path: Path,
 ):
+    """The reviewer's reproduction: a report that scored M1 sits beside M2
+    after a supersede; `touch` (or `cp -R` without -p, rsync without -t, a
+    restore, a volume move) makes it newer than M2's build."""
     import os
+    import shutil
 
     lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
     date = "2026-09-13"
-    _write_report(lake_root, "BTCUSDT", "trade", date, "ok")  # scored an earlier build
+    m1 = _issue_manifest(lake_root, registry_root, date)
+    _write_report(lake_root, "BTCUSDT", "trade", date, "ok")  # scored M1, legacy
+    m2 = _issue_second_manifest(lake_root, registry_root, date)  # pointer -> M2
+    assert m2["manifest_id"] != m1["manifest_id"]
+
     report = dq_report_path(lake_root, date)
-    past = report.stat().st_mtime - 3600
-    os.utime(report, (past, past))
-    manifest = _issue_manifest(lake_root, registry_root, date)  # rebuilt afterwards
-    with pytest.raises(DQPauseError, match="legacy"):
-        _load(manifest, lake_root, registry_root)
+    future = m2["built_at"] / 1e9 + 3600
+    os.utime(report, (future, future))  # touch
+    with pytest.raises(DQPauseError, match="missing"):
+        _load(m2, lake_root, registry_root)
+
+    copied = tmp_path / "lake_copy"
+    shutil.copytree(lake_root, copied, copy_function=shutil.copyfile)  # no -p
+    with pytest.raises(DQPauseError, match="missing"):
+        _load(m2, copied, registry_root)
 
 
 def test_unknown_status_next_to_ok_is_failed_not_ok(tmp_path: Path):

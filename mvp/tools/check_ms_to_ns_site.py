@@ -84,11 +84,12 @@ UTC day of Binance ms timestamps (pinned by
   silently. The gate still fails it: a day spans 86.4e6 ms, i.e. 8.64e16 ns
   after the wrap, far wider than the 3-day window.
 A wrong scale on `etime` or `event_time` therefore cannot reach a training
-run without a human acknowledging that `failed` finding -- EXCEPT on a day
-still scored by a legacy report without a `manifest_id` column, which
-`data.store` accepts on file mtime (03-REVIEW-ITER3.md WR-18). Any OTHER ms
-field, or a future one, has no data gate until one is added. What this
-static check adds is early, readable feedback in the common accidental case.
+run without a human acknowledging that `failed` finding. That holds because
+a DQ report counts only for the manifest it scored (report rows carry
+`manifest_id`; the mtime-trusting legacy-report shim is gone,
+03-REVIEW-ITER3.md WR-18). Any OTHER ms field, or a future one, has no data
+gate until one is added. What this static check adds is early, readable
+feedback in the common accidental case.
 
 SECONDARY CHECK -- seconds-to-ns: legitimate sites convert *seconds* to
 nanoseconds (ttl/threshold/duration config and display, not Binance ms
