@@ -25,8 +25,8 @@ CR-04; see `resolve_manifest`).
 DQ pause enforcement (Plan 04, DATA-07): `load_curated` ALSO refuses to
 return rows for any requested day whose data-quality status is
 `"failed"`, `"degraded"`, or has no DQ report at all, unless an
-acknowledgement file naming every finding of that day is committed (tracked
-and unmodified against `HEAD`) under
+acknowledgement file naming every finding of that day is committed (a regular
+file byte-identical to its blob in `HEAD`, WR-19) under
 `LAKE_REGISTRY_ROOT / "dq_acknowledgements"`. This is checked AFTER
 `resolve_manifest`'s hash verification (a corrupted/mismatched manifest
 must never even get to a DQ conversation) and reads ONLY
@@ -529,6 +529,7 @@ def validate_dq_acknowledgement(
     stream: str,
     date: str,
     findings: frozenset[Finding] | None = None,
+    content: bytes | None = None,
 ) -> str | None:
     """Return `None` if `ack_path`'s CONTENT is a valid acknowledgement of
     `(symbol, stream, date)`, else a one-line reason it is not.
@@ -545,11 +546,14 @@ def validate_dq_acknowledgement(
     it on `build_stats`.
 
     Content only. The loader additionally requires the file to be committed
-    (`_dq_ack_git_problem`)."""
-    if not ack_path.exists():
-        return "no acknowledgement file"
+    (`_dq_ack_git_problem`), and passes the exact bytes it proved committed as
+    `content`, so the bytes validated are the bytes hashed (WR-19)."""
+    if content is None:
+        if not ack_path.exists():
+            return "no acknowledgement file"
+        content = ack_path.read_bytes()
     try:
-        body = json.loads(ack_path.read_text())
+        body = json.loads(content.decode("utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         return f"acknowledgement is not valid JSON ({exc.__class__.__name__})"
     if not isinstance(body, dict):
@@ -603,44 +607,130 @@ def validate_dq_acknowledgement(
     return None
 
 
-def _dq_ack_git_problem(ack_path: Path) -> str | None:
-    """`None` if `ack_path` is tracked by git and identical to `HEAD` (no
-    staged or unstaged edit), else why not (03-REVIEW-ITER2.md WR-16:
-    03-CONTEXT requires the acknowledgement to be git-committed; an
-    untracked or edited file used to unpause a day). Fails closed on any git
-    error."""
-    cwd = ack_path.parent
+#: Git index/tree modes of a regular file.
+_REGULAR_FILE_MODES = frozenset({"100644", "100755"})
 
-    def run(args: list[str]) -> subprocess.CompletedProcess:
+
+def _dq_ack_git_problem(ack_path: Path, content: bytes | None = None) -> str | None:
+    """`None` if `content` (default: `ack_path`'s bytes) is EXACTLY the
+    regular-file blob committed in `HEAD` at `ack_path`, else why not.
+    Fails closed on any git error.
+
+    03-REVIEW-ITER2.md WR-16: 03-CONTEXT requires the acknowledgement to be
+    git-committed; an untracked or edited file used to unpause a day.
+    03-REVIEW-ITER3.md WR-19: `git diff HEAD` is not proof of that. It trusts
+    `--assume-unchanged`/`--skip-worktree` index flags and compares a symlink
+    by its target string, so each let uncommitted bytes unpause a day. So:
+
+    1. neither the ack nor any directory between it and the repository root
+       is a symlink (`lstat`, never followed);
+    2. the index entry is a regular file with no index flag
+       (`git ls-files -v` tag exactly `H`);
+    3. `HEAD` holds a regular-file blob at that path;
+    4. `git hash-object --no-filters` of the bytes equals that blob."""
+
+    def run(args: list[str], cwd: Path, stdin: bytes | None = None):
         return subprocess.run(
             ["git", *args],
             cwd=cwd,
+            input=stdin,
             capture_output=True,
-            text=True,
             env=scrubbed_git_env(),
         )
 
+    not_committed = "acknowledgement is not committed"
     try:
-        tracked = run(["ls-files", "--error-unmatch", "--", ack_path.name])
-        if tracked.returncode != 0:
+        if ack_path.is_symlink():
+            return f"{not_committed}: it is a symlink, not a regular file"
+        if not ack_path.parent.is_dir():
+            return "no acknowledgement file"
+        top_run = run(["rev-parse", "--show-toplevel"], ack_path.parent)
+        if top_run.returncode != 0:
             return (
                 "acknowledgement is not committed to git (untracked, or not "
                 "inside a git repository)"
             )
-        diff = run(["diff", "--quiet", "HEAD", "--", ack_path.name])
+        toplevel = Path(top_run.stdout.decode().strip()).resolve()
+        lineage = [ack_path, *ack_path.parents]
+        top_index = next(
+            (
+                i
+                for i in range(len(lineage) - 1, 0, -1)
+                if lineage[i].resolve() == toplevel
+            ),
+            None,
+        )
+        if top_index is None:
+            return f"{not_committed}: it is not inside repository {toplevel}"
+        for component in lineage[1:top_index]:
+            if component.is_symlink():
+                return f"{not_committed}: its directory {component} is a symlink"
+        rel = ack_path.relative_to(lineage[top_index]).as_posix()
+        if content is None:
+            content = ack_path.read_bytes()
+
+        staged = run(["ls-files", "-s", "-z", "--", rel], toplevel)
+        tagged = run(["ls-files", "-v", "-z", "--", rel], toplevel)
+        committed = run(["ls-tree", "-z", "HEAD", "--", rel], toplevel)
+        hashed = run(["hash-object", "--no-filters", "--stdin"], toplevel, content)
     except OSError as exc:
-        return f"acknowledgement is not committed: git could not run ({exc})"
-    if diff.returncode == 1:
+        return f"{not_committed}: git could not run ({exc})"
+    for result in (staged, tagged, committed, hashed):
+        if result.returncode != 0:
+            return (
+                f"{not_committed}: git failed "
+                f"({result.stderr.decode(errors='replace').strip()})"
+            )
+
+    staged_entries = [e for e in staged.stdout.decode().split("\0") if e]
+    if not staged_entries:
         return (
-            "acknowledgement is not committed: it differs from HEAD (staged or "
-            "unstaged edits)"
+            "acknowledgement is not committed to git (untracked, or not "
+            "inside a git repository)"
         )
-    if diff.returncode != 0:
+    staged_meta = staged_entries[0].partition("\t")[0].split()
+    if len(staged_entries) != 1 or staged_meta[0] not in _REGULAR_FILE_MODES:
+        return f"{not_committed}: its index entry is not one regular file"
+    tag = tagged.stdout.decode().split(" ", 1)[0]
+    if tag != "H":
         return (
-            "acknowledgement is not committed: git diff against HEAD failed "
-            f"({diff.stderr.strip()})"
+            f"{not_committed}: its index entry carries a flag (git ls-files -v "
+            f"tag {tag!r}; --assume-unchanged/--skip-worktree hide edits)"
         )
+    tree_entries = [e for e in committed.stdout.decode().split("\0") if e]
+    if not tree_entries:
+        return f"{not_committed}: HEAD has no file at {rel} (staged only)"
+    mode, _type, blob = tree_entries[0].partition("\t")[0].split()
+    if mode not in _REGULAR_FILE_MODES:
+        return f"{not_committed}: HEAD holds mode {mode} at {rel}, not a regular file"
+    if hashed.stdout.decode().strip() != blob:
+        return f"{not_committed}: it differs from HEAD (staged or unstaged edits)"
     return None
+
+
+def _committed_ack_problem(
+    ack_path: Path,
+    *,
+    symbol: str,
+    stream: str,
+    date: str,
+    findings: frozenset[Finding],
+) -> str | None:
+    """Read the acknowledgement ONCE, then validate and prove committed those
+    same bytes (WR-19: no second read between the two checks)."""
+    if ack_path.is_symlink():
+        return "acknowledgement is not committed: it is a symlink, not a regular file"
+    if not ack_path.is_file():
+        return "no acknowledgement file"
+    content = ack_path.read_bytes()
+    return validate_dq_acknowledgement(
+        ack_path,
+        symbol=symbol,
+        stream=stream,
+        date=date,
+        findings=findings,
+        content=content,
+    ) or _dq_ack_git_problem(ack_path, content)
 
 
 def _dq_pause_findings(
@@ -669,9 +759,9 @@ def _dq_pause_findings(
         if status == "ok":
             continue
         ack_path = dq_acknowledgement_path(Path(registry_root), symbol, stream, date)
-        problem = validate_dq_acknowledgement(
+        problem = _committed_ack_problem(
             ack_path, symbol=symbol, stream=stream, date=date, findings=findings
-        ) or _dq_ack_git_problem(ack_path)
+        )
         if problem is None:
             ack_ids.append(ack_path.stem)
         else:

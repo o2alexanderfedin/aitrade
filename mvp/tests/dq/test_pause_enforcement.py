@@ -723,3 +723,81 @@ def test_acknowledgement_content_is_bound_and_plausible(
     _commit_registry(registry_root)
     with pytest.raises(DQPauseError, match="acknowledge"):
         _load(manifest, lake_root, registry_root)
+
+
+# --- WR-19 (03-REVIEW-ITER3.md): only the committed bytes count ------------
+
+
+def _committed_ack_then_edited_under_index_flag(tmp_path: Path, flag: str):
+    lake_root, registry_root, date, manifest = _failed_day(
+        tmp_path, [("build_stats", "failed")]
+    )
+    ack = _write_acknowledgement(
+        registry_root,
+        "BTCUSDT",
+        "trade",
+        date,
+        "known",
+        [{"check": "reconciliation", "dq_status": "degraded"}],
+    )
+    _git(["update-index", flag, str(ack)], registry_root)
+    body = json.loads(ack.read_text())
+    body["acknowledged"] = [{"check": "build_stats", "dq_status": "failed"}]
+    ack.write_text(json.dumps(body, indent=2))  # edited, never committed
+    # The bypass: git itself reports the edited ack as unchanged.
+    assert _git(["diff", "HEAD", "--", str(ack)], registry_root).stdout == ""
+    return lake_root, registry_root, manifest
+
+
+@pytest.mark.parametrize("flag", ["--assume-unchanged", "--skip-worktree"])
+def test_index_flag_hiding_an_edited_ack_does_not_unpause(tmp_path: Path, flag: str):
+    lake_root, registry_root, manifest = _committed_ack_then_edited_under_index_flag(
+        tmp_path, flag
+    )
+    with pytest.raises(DQPauseError, match="not committed"):
+        _load(manifest, lake_root, registry_root)
+
+
+def test_committed_symlink_ack_to_an_uncommitted_file_does_not_unpause(
+    tmp_path: Path,
+):
+    lake_root, registry_root, date, manifest = _failed_day(
+        tmp_path, [("gap_coverage", "failed")]
+    )
+    outside = tmp_path / "outside_ack.json"
+    outside.write_text(
+        json.dumps(_ack_body("BTCUSDT", "trade", date, "outage", GAP_FAILED), indent=2)
+    )
+    ack = dq_acknowledgement_path(registry_root, "BTCUSDT", "trade", date)
+    ack.parent.mkdir(parents=True, exist_ok=True)
+    ack.symlink_to(outside)
+    _commit_registry(registry_root, "a committed symlink ack")
+    assert "120000" in _git(["ls-files", "-s", "--", str(ack)], registry_root).stdout
+    assert _git(["diff", "HEAD", "--", str(ack)], registry_root).stdout == ""
+
+    with pytest.raises(DQPauseError, match="it is a symlink, not a regular file"):
+        _load(manifest, lake_root, registry_root)
+
+
+def test_symlinked_acknowledgement_directory_does_not_unpause(tmp_path: Path):
+    lake_root, registry_root, date, manifest = _failed_day(
+        tmp_path, [("gap_coverage", "failed")]
+    )
+    outside = tmp_path / "outside_acks"
+    outside.mkdir()
+    name = dq_acknowledgement_path(registry_root, "BTCUSDT", "trade", date).name
+    (outside / name).write_text(
+        json.dumps(_ack_body("BTCUSDT", "trade", date, "outage", GAP_FAILED), indent=2)
+    )
+    (registry_root / "dq_acknowledgements").symlink_to(outside)
+    _commit_registry(registry_root, "a committed symlinked ack directory")
+    with pytest.raises(DQPauseError, match="not committed"):
+        _load(manifest, lake_root, registry_root)
+
+
+def test_committed_regular_ack_still_unpauses_with_the_byte_check(tmp_path: Path):
+    lake_root, registry_root, date, manifest = _failed_day(
+        tmp_path, [("gap_coverage", "failed")]
+    )
+    _write_acknowledgement(registry_root, "BTCUSDT", "trade", date, "outage")
+    assert _load(manifest, lake_root, registry_root).height == 1
