@@ -32,12 +32,33 @@ True)`s the target and runs `validate_data_root`'s write-validation, which
 would raise on a machine where `/Volumes/ProjectsSSD` doesn't exist at all
 (e.g. a GitHub Actions runner) before this module ever reaches its own
 SKIP branch. Uses a bare `Path(DEFAULT_LAKE_ROOT).exists()` read-only check
-instead: if the root does not exist at all, prints `SKIP: ... unmounted --
-N manifests unverified` and exits 0 (T-03-09, an honest, disposition=accept
-blind spot for machines without the SSD mounted). If the root DOES exist
-but a specific manifest's partition is missing or mismatched, that is a
-real finding and exits 1 naming the path -- never silently skipped just
-because SOME manifests are unverifiable.
+instead: if the DEFAULT root does not exist and no explicit `--lake-root`
+was passed, prints `SKIP (lake root not mounted: ...) -- N manifest(s)
+unverified` and exits 0 (T-03-09, an honest, disposition=accept blind spot
+for machines without the SSD mounted). If the root DOES exist but a
+specific manifest's partition is missing or mismatched, that is a real
+finding and exits 1 naming the path -- never silently skipped just because
+SOME manifests are unverifiable.
+
+CI-NATIVE FIXTURE LEG (03-VERIFICATION.md gap-closure, finding 1): the
+above SKIP made this module's CI leg structurally unable to ever exercise
+`verify_manifest`'s real scan code on a GitHub Actions runner, forever, by
+construction -- a guardrail that can never fire in the one place that runs
+on every push. `--lake-root`/`--registry-root` (both optional, default to
+the real roots above) let a caller point the REAL scan path at a small,
+committed fixture lake instead: `mvp/tests/fixtures/lake` +
+`mvp/tests/fixtures/lake_registry` (see that directory's own generator
+script) -- a few KB, git-committed, present on every runner. Both CI
+callers now run `--full --lake-root tests/fixtures/lake --registry-root
+tests/fixtures/lake_registry` as an ADDITIONAL step alongside the existing
+real-lake `--full` step (which keeps SKIPping on GitHub Actions, honestly,
+as before) -- this is what makes `verify_manifest`'s actual byte-comparison
+code path execute on every CI run rather than short-circuiting. An
+EXPLICITLY passed `--lake-root` that does not exist is a hard FAIL, never a
+SKIP: only the UNSET default may SKIP, so a typo'd CI path cannot silently
+resurrect the exact inert-guardrail failure this fixture leg exists to fix.
+Git does not preserve `mtime`, so the fixture lake only ever green-lights
+`--full` (sha256) -- never wire `verify_manifest_fast` against it.
 """
 
 from __future__ import annotations
@@ -113,17 +134,42 @@ def main(argv: list[str] | None = None) -> int:
         help="run the real sha256 check (verify_manifest) instead of the "
         "cheap mtime+size check (verify_manifest_fast)",
     )
+    parser.add_argument(
+        "--lake-root",
+        default=None,
+        help="override the physical lake root scanned for partition files "
+        "(e.g. a small committed CI fixture lake). Unlike the unset "
+        "default, an EXPLICITLY passed --lake-root that does not exist is "
+        "a hard FAIL, never a SKIP -- a typo'd CI path must not silently "
+        "recreate T-03-09's inert guardrail.",
+    )
+    parser.add_argument(
+        "--registry-root",
+        default=None,
+        help="override LAKE_REGISTRY_ROOT (the committed manifest JSON "
+        "tree scanned for manifest files), e.g. a fixture registry paired "
+        "with --lake-root",
+    )
     args = parser.parse_args(argv)
 
-    lake_root_path = Path(DEFAULT_LAKE_ROOT)
-    manifest_files = _iter_manifest_files(LAKE_REGISTRY_ROOT)
+    registry_root_path = (
+        Path(args.registry_root) if args.registry_root else LAKE_REGISTRY_ROOT
+    )
+    manifest_files = _iter_manifest_files(registry_root_path)
 
-    if not lake_root_path.exists():
-        print(
-            f"SKIP: lake root {DEFAULT_LAKE_ROOT} not mounted -- "
-            f"{len(manifest_files)} manifest(s) unverified"
-        )
-        return 0
+    if args.lake_root is not None:
+        lake_root_path = Path(args.lake_root)
+        if not lake_root_path.exists():
+            print(f"FAIL: explicit --lake-root {args.lake_root} does not exist")
+            return 1
+    else:
+        lake_root_path = Path(DEFAULT_LAKE_ROOT)
+        if not lake_root_path.exists():
+            print(
+                f"SKIP (lake root not mounted: {DEFAULT_LAKE_ROOT}) -- "
+                f"{len(manifest_files)} manifest(s) unverified"
+            )
+            return 0
 
     check = verify_manifest if args.full else verify_manifest_fast
     mode = "full (sha256)" if args.full else "fast (mtime+size)"

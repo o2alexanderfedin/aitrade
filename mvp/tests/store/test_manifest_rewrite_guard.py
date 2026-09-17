@@ -278,3 +278,58 @@ def test_main_fails_on_a_real_finding_even_when_lake_root_exists(tmp_path, monke
 
     assert main([]) == 1
     assert main(["--full"]) == 1
+
+
+def test_explicit_lake_root_override_runs_the_full_scan_against_it(tmp_path: Path):
+    """--lake-root/--registry-root (finding 1's fixture-lake CI leg): an
+    explicit override runs the real verify_manifest code path against
+    whatever lake it names, independent of DEFAULT_LAKE_ROOT/
+    LAKE_REGISTRY_ROOT -- this is what lets CI exercise the real scan
+    against a small committed fixture lake instead of always SKIPping."""
+    lake_root = tmp_path / "fixture_lake"
+    registry_root = tmp_path / "fixture_registry"
+    df = _sample_df()
+    partition = _write_partition(lake_root, "curated/part-1.parquet", df)
+    issue_manifest(
+        dataset="BTCUSDT.trade",
+        symbol="BTCUSDT",
+        stream="trade",
+        tier="curated",
+        schema_version=1,
+        inputs=[],
+        partitions=[partition],
+        code_hash="deadbeef",
+        registry_root=registry_root,
+    )
+
+    argv = [
+        "--full",
+        "--lake-root",
+        str(lake_root),
+        "--registry-root",
+        str(registry_root),
+    ]
+    assert main(argv) == 0
+
+    # RED: mutate the fixture partition -> the override scan fails.
+    on_disk_path = lake_root / partition["path"]
+    original_bytes = on_disk_path.read_bytes()
+    with open(on_disk_path, "ab") as f:
+        f.write(b"\x00")
+    assert main(argv) == 1
+
+    # Restore -> green again.
+    on_disk_path.write_bytes(original_bytes)
+    assert main(argv) == 0
+
+
+def test_explicit_missing_lake_root_is_a_hard_fail_never_a_skip(tmp_path: Path):
+    """An explicitly-passed --lake-root that does not exist must exit 1,
+    not SKIP -- only the unset DEFAULT_LAKE_ROOT may SKIP. A typo'd CI path
+    must not silently recreate T-03-09's inert-guardrail failure mode."""
+    missing_lake_root = tmp_path / "does_not_exist"
+    registry_root = tmp_path / "registry"
+    registry_root.mkdir()
+
+    exit_code = main(["--full", "--lake-root", str(missing_lake_root)])
+    assert exit_code == 1

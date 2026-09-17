@@ -63,5 +63,11 @@ jobs:
       - name: check_no_manifest_rewrite --full
         run: uv run --locked --directory mvp python -m tools.check_no_manifest_rewrite --full
 
+      - name: check_no_manifest_rewrite --full (CI fixture lake)
+        run: uv run --locked --directory mvp python -m tools.check_no_manifest_rewrite --full --lake-root tests/fixtures/lake --registry-root tests/fixtures/lake_registry
+
+      - name: check_manifest_id_integrity
+        run: uv run --locked --directory mvp python -m tools.check_manifest_id_integrity
+
       - name: pytest (tests, via testpaths)
         run: uv run --locked --directory mvp pytest tests -x -q

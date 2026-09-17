@@ -101,6 +101,31 @@ repos:
         pass_filenames: false
         stages: [pre-push]
 
+      # 03-VERIFICATION.md gap-closure finding 1: the real-lake --full leg
+      # above unconditionally SKIPs on any machine without /Volumes/ProjectsSSD
+      # mounted (every GitHub Actions runner, forever, by construction) --
+      # structurally unable to ever exercise verify_manifest's real scan
+      # code in CI. This leg points the SAME --full scan at a small,
+      # committed fixture lake instead, so the real code path executes on
+      # every push regardless of what's mounted. Default `pre-commit` stage
+      # (fast -- a few KB, not the real multi-GB lake).
+      - id: check-no-manifest-rewrite-fixture
+        name: check_no_manifest_rewrite --full (CI fixture lake)
+        entry: uv run --locked --directory mvp python -m tools.check_no_manifest_rewrite --full --lake-root tests/fixtures/lake --registry-root tests/fixtures/lake_registry
+        language: system
+        pass_filenames: false
+
+      # 03-VERIFICATION.md gap-closure finding 1: needs no mounted lake at
+      # all (manifest JSON is git-committed) -- recomputes manifest_id from
+      # each committed manifest's own body and compares against both the
+      # manifest_id field and the filename, catching a hand-edited or
+      # corrupted manifest on every push, on every machine.
+      - id: check-manifest-id-integrity
+        name: check_manifest_id_integrity
+        entry: uv run --locked --directory mvp python -m tools.check_manifest_id_integrity
+        language: system
+        pass_filenames: false
+
       - id: pytest
         name: pytest (tests, via testpaths)
         entry: uv run --locked --directory mvp pytest tests -x -q
