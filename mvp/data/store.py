@@ -24,8 +24,9 @@ CR-04; see `resolve_manifest`).
 
 DQ pause enforcement (Plan 04, DATA-07): `load_curated` ALSO refuses to
 return rows for any requested day whose data-quality status is
-`"failed"`, `"degraded"`, or has no DQ report at all, unless a matching
-acknowledgement file is committed under
+`"failed"`, `"degraded"`, or has no DQ report at all, unless an
+acknowledgement file naming every finding of that day is committed (tracked
+and unmodified against `HEAD`) under
 `LAKE_REGISTRY_ROOT / "dq_acknowledgements"`. This is checked AFTER
 `resolve_manifest`'s hash verification (a corrupted/mismatched manifest
 must never even get to a DQ conversation) and reads ONLY
@@ -40,11 +41,14 @@ import datetime as dt
 import hashlib
 import json
 import posixpath
+import subprocess
 import time
 import unicodedata
 from pathlib import Path
 
 import polars as pl
+
+from tools.git_env import scrubbed_git_env
 
 __all__ = [
     "CURATED_TIER",
@@ -343,6 +347,13 @@ def resolve_manifest(
 DQ_STATUSES: frozenset[str] = frozenset({"ok", "degraded", "failed", "n/a"})
 
 
+#: The `check` name an acknowledgement uses for a `missing` verdict (no
+#: report, no row for this manifest, or every row n/a).
+MISSING_REPORT_CHECK = "dq_report"
+
+Finding = tuple[str, str]  # (check, dq_status)
+
+
 def _dq_status_for_date(
     lake_root: Path,
     symbol: str,
@@ -352,7 +363,27 @@ def _dq_status_for_date(
     manifest: dict,
     registry_root: Path,
 ) -> tuple[str, str | None]:
-    """Return `(status, detail)` for `manifest` on `(symbol, stream, date)`:
+    """`(status, detail)` of `_dq_verdict_for_date`."""
+    status, detail, _findings = _dq_verdict_for_date(
+        lake_root, symbol, stream, date, manifest=manifest, registry_root=registry_root
+    )
+    return status, detail
+
+
+def _dq_verdict_for_date(
+    lake_root: Path,
+    symbol: str,
+    stream: str,
+    date: str,
+    *,
+    manifest: dict,
+    registry_root: Path,
+) -> tuple[str, str | None, frozenset[Finding]]:
+    """Return `(status, detail, findings)` for `manifest` on
+    `(symbol, stream, date)`. `findings` is every non-ok, non-n/a
+    `(check, dq_status)` pair of this manifest's rows, or
+    `{(MISSING_REPORT_CHECK, "missing")}` for a `missing` verdict -- what an
+    acknowledgement must name to unpause the day (WR-16). The status is:
     the worst-of status across every row of that date's `report.parquet`
     matching `(symbol, stream)` AND scoring THIS manifest.
 
@@ -379,12 +410,20 @@ def _dq_status_for_date(
     """
     report_path = dq_report_path(lake_root, date)
     if not report_path.exists():
-        return "missing", "no DQ report generated for this date"
+        return (
+            "missing",
+            "no DQ report generated for this date",
+            frozenset({(MISSING_REPORT_CHECK, "missing")}),
+        )
 
     report = pl.read_parquet(report_path)
     rows = report.filter((pl.col("symbol") == symbol) & (pl.col("stream") == stream))
     if rows.height == 0:
-        return "missing", "no DQ report generated for this date"
+        return (
+            "missing",
+            "no DQ report generated for this date",
+            frozenset({(MISSING_REPORT_CHECK, "missing")}),
+        )
 
     manifest_id = manifest["manifest_id"]
     if "manifest_id" in rows.columns:
@@ -395,6 +434,7 @@ def _dq_status_for_date(
                 "missing",
                 f"the DQ report for this date scored manifest(s) {scored}, not "
                 f"{manifest_id[:12]} -- this manifest was never reported on",
+                frozenset({(MISSING_REPORT_CHECK, "missing")}),
             )
         rows = own
     else:
@@ -411,32 +451,44 @@ def _dq_status_for_date(
                 "missing",
                 "legacy DQ report (no manifest_id column) scored the by-date "
                 f"pointer's manifest {str(pointer_id)[:12]}, not {manifest_id[:12]}",
+                frozenset({(MISSING_REPORT_CHECK, "missing")}),
             )
         if report_path.stat().st_mtime_ns < manifest["built_at"]:
             return (
                 "missing",
                 "legacy DQ report (no manifest_id column) predates manifest "
                 f"{manifest_id[:12]}'s build -- it scored an earlier build",
+                frozenset({(MISSING_REPORT_CHECK, "missing")}),
             )
 
     statuses = set(rows["dq_status"].to_list())
+    findings = frozenset(
+        (str(check), str(status))
+        for check, status in rows.select("check", "dq_status").iter_rows()
+        if status not in {"ok", "n/a"}
+    )
     unknown = statuses - DQ_STATUSES
     if unknown:
-        return "failed", f"unknown DQ status(es) {sorted(map(str, unknown))}"
+        return (
+            "failed",
+            f"unknown DQ status(es) {sorted(map(str, unknown))}",
+            findings,
+        )
     if "failed" in statuses:
-        return "failed", None
+        return "failed", None, findings
     if "degraded" in statuses:
-        return "degraded", None
+        return "degraded", None, findings
     if "ok" in statuses:
-        return "ok", None
+        return "ok", None, findings
     return (
         "missing",
         "every DQ check reported n/a for this date -- no substantive signal",
+        frozenset({(MISSING_REPORT_CHECK, "missing")}),
     )
 
 
-#: Fields every DQ acknowledgement JSON must carry (03-CONTEXT.md: "reason +
-#: who + when, git-committed"), plus the (date, symbol, stream) it
+#: String fields every DQ acknowledgement JSON must carry (03-CONTEXT.md:
+#: "reason + who + when, git-committed"), plus the (date, symbol, stream) it
 #: acknowledges, which must match the file it lives in.
 DQ_ACK_REQUIRED_FIELDS: tuple[str, ...] = (
     "date",
@@ -447,18 +499,48 @@ DQ_ACK_REQUIRED_FIELDS: tuple[str, ...] = (
     "when",
 )
 
+#: The list field binding an acknowledgement to the findings it covers
+#: (03-REVIEW-ITER2.md WR-16): `[{"check": ..., "dq_status": ...}, ...]`.
+DQ_ACK_FINDINGS_FIELD = "acknowledged"
+
+#: Statuses a human may acknowledge. `ok`/`n/a` need no acknowledgement; an
+#: unknown status is a bug to fix, not a finding to wave through.
+DQ_ACKNOWLEDGEABLE_STATUSES: frozenset[str] = frozenset(
+    {"failed", "degraded", "missing"}
+)
+
+#: Clock-skew allowance for an acknowledgement's `when`.
+_ACK_FUTURE_TOLERANCE = dt.timedelta(minutes=10)
+
+
+def _format_findings(findings) -> str:
+    return ", ".join(f"{check}={status}" for check, status in sorted(findings))
+
 
 def validate_dq_acknowledgement(
-    ack_path: Path, *, symbol: str, stream: str, date: str
+    ack_path: Path,
+    *,
+    symbol: str,
+    stream: str,
+    date: str,
+    findings: frozenset[Finding] | None = None,
 ) -> str | None:
-    """Return `None` if `ack_path` is a valid acknowledgement of
+    """Return `None` if `ack_path`'s CONTENT is a valid acknowledgement of
     `(symbol, stream, date)`, else a one-line reason it is not.
 
     03-REVIEW.md WR-01: existence alone used to unpause a day, so a zero-byte
     file (or an ack copied from another date/stream) unpaused a `failed` day.
     Valid means: parses as a JSON object; every `DQ_ACK_REQUIRED_FIELDS` key
     is a non-blank string; `date`/`symbol`/`stream` equal the day being
-    loaded; `when` parses as an ISO 8601 timestamp."""
+    loaded; `when` parses as an ISO 8601 timestamp that is not in the future;
+    and (03-REVIEW-ITER2.md WR-16) `acknowledged` is a non-empty list of
+    `{"check", "dq_status"}` objects with an acknowledgeable status. When
+    `findings` is given, every finding must be in that list: an ack written
+    for "reconciliation degraded" does not cover the day once a rebuild fails
+    it on `build_stats`.
+
+    Content only. The loader additionally requires the file to be committed
+    (`_dq_ack_git_problem`)."""
     if not ack_path.exists():
         return "no acknowledgement file"
     try:
@@ -479,9 +561,80 @@ def validate_dq_acknowledgement(
                 f"acknowledged day's {key}={want!r}"
             )
     try:
-        dt.datetime.fromisoformat(body["when"].replace("Z", "+00:00"))
+        when = dt.datetime.fromisoformat(body["when"].replace("Z", "+00:00"))
     except ValueError:
         return f"acknowledgement when={body['when']!r} is not an ISO 8601 timestamp"
+    if when.tzinfo is None:
+        return f"acknowledgement when={body['when']!r} has no timezone"
+    if when > dt.datetime.now(dt.UTC) + _ACK_FUTURE_TOLERANCE:
+        return f"acknowledgement when={body['when']!r} is in the future"
+
+    listed = body.get(DQ_ACK_FINDINGS_FIELD)
+    if not isinstance(listed, list) or not listed:
+        return (
+            f"acknowledgement field {DQ_ACK_FINDINGS_FIELD!r} must be a non-empty "
+            'list of {"check", "dq_status"} objects naming what it acknowledges'
+        )
+    acknowledged: set[Finding] = set()
+    for item in listed:
+        check = item.get("check") if isinstance(item, dict) else None
+        status = item.get("dq_status") if isinstance(item, dict) else None
+        if not isinstance(check, str) or not check.strip():
+            return f"acknowledgement entry {item!r} has no check name"
+        if status not in DQ_ACKNOWLEDGEABLE_STATUSES:
+            return (
+                f"acknowledgement entry {item!r} has dq_status {status!r}; "
+                f"acknowledgeable: {sorted(DQ_ACKNOWLEDGEABLE_STATUSES)}"
+            )
+        acknowledged.add((check, status))
+    if findings is not None:
+        uncovered = set(findings) - acknowledged
+        if uncovered:
+            return (
+                "acknowledgement does not acknowledge finding(s) "
+                f"{_format_findings(uncovered)} (it acknowledges "
+                f"{_format_findings(acknowledged)})"
+            )
+    return None
+
+
+def _dq_ack_git_problem(ack_path: Path) -> str | None:
+    """`None` if `ack_path` is tracked by git and identical to `HEAD` (no
+    staged or unstaged edit), else why not (03-REVIEW-ITER2.md WR-16:
+    03-CONTEXT requires the acknowledgement to be git-committed; an
+    untracked or edited file used to unpause a day). Fails closed on any git
+    error."""
+    cwd = ack_path.parent
+
+    def run(args: list[str]) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            env=scrubbed_git_env(),
+        )
+
+    try:
+        tracked = run(["ls-files", "--error-unmatch", "--", ack_path.name])
+        if tracked.returncode != 0:
+            return (
+                "acknowledgement is not committed to git (untracked, or not "
+                "inside a git repository)"
+            )
+        diff = run(["diff", "--quiet", "HEAD", "--", ack_path.name])
+    except OSError as exc:
+        return f"acknowledgement is not committed: git could not run ({exc})"
+    if diff.returncode == 1:
+        return (
+            "acknowledgement is not committed: it differs from HEAD (staged or "
+            "unstaged edits)"
+        )
+    if diff.returncode != 0:
+        return (
+            "acknowledgement is not committed: git diff against HEAD failed "
+            f"({diff.stderr.strip()})"
+        )
     return None
 
 
@@ -490,8 +643,9 @@ def _dq_pause_findings(
 ) -> tuple[list[tuple[str, str, str | None]], list[str]]:
     """For every date the manifest covers: `(unacknowledged, ack_ids)` where
     `unacknowledged` lists `(date, status, detail)` for non-ok days without a
-    VALID acknowledgement and `ack_ids` lists the acknowledgement ids (file
-    stems) actually relied on to unpause a non-ok day."""
+    VALID, COMMITTED acknowledgement covering every finding, and `ack_ids`
+    lists the acknowledgement ids (file stems) actually relied on to unpause
+    a non-ok day."""
     symbol = manifest["symbol"]
     stream = manifest["stream"]
     dates = sorted({part["date"] for part in manifest["partitions"]})
@@ -499,7 +653,7 @@ def _dq_pause_findings(
     unacknowledged: list[tuple[str, str, str | None]] = []
     ack_ids: list[str] = []
     for date in dates:
-        status, detail = _dq_status_for_date(
+        status, detail, findings = _dq_verdict_for_date(
             Path(lake_root),
             symbol,
             stream,
@@ -511,11 +665,12 @@ def _dq_pause_findings(
             continue
         ack_path = dq_acknowledgement_path(Path(registry_root), symbol, stream, date)
         problem = validate_dq_acknowledgement(
-            ack_path, symbol=symbol, stream=stream, date=date
-        )
+            ack_path, symbol=symbol, stream=stream, date=date, findings=findings
+        ) or _dq_ack_git_problem(ack_path)
         if problem is None:
             ack_ids.append(ack_path.stem)
         else:
+            problem = f"findings {_format_findings(findings)}; {problem}"
             detail = f"{detail}; {problem}" if detail else problem
             unacknowledged.append((date, status, detail))
     return unacknowledged, ack_ids
@@ -556,8 +711,9 @@ def _enforce_dq_pause(manifest: dict, *, registry_root: Path, lake_root: Path) -
         )
         raise DQPauseError(
             f"DQ pause: {symbol}.{stream} has unacknowledged day(s): {summary}. "
-            "Add a valid git-committed acknowledgement JSON "
-            f"({', '.join(DQ_ACK_REQUIRED_FIELDS)}; e.g. {example_path}) to proceed."
+            "Add a valid, git-committed acknowledgement JSON "
+            f"({', '.join(DQ_ACK_REQUIRED_FIELDS)}, {DQ_ACK_FINDINGS_FIELD}; "
+            f"e.g. {example_path}) to proceed."
         )
 
 

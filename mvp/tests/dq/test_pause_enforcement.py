@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 
 import polars as pl
@@ -28,6 +29,7 @@ from data.store import (
     issue_manifest,
     load_curated,
 )
+from tools.git_env import scrubbed_git_env
 
 REPORT_SCHEMA = {
     "date": pl.Utf8,
@@ -89,23 +91,64 @@ def _write_report(
     pl.DataFrame(columns, schema=schema).write_parquet(path, compression="zstd")
 
 
+GAP_FAILED = [{"check": "gap_coverage", "dq_status": "failed"}]
+REPORT_MISSING = [{"check": "dq_report", "dq_status": "missing"}]
+
+
+def _git(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=scrubbed_git_env(isolate_config=True),
+    )
+
+
+def _commit_registry(registry_root: Path, message: str = "ack") -> None:
+    """The loader only honours a git-committed acknowledgement (WR-16), so
+    the tmp registry is a git repository and every ack is committed."""
+    registry_root.mkdir(parents=True, exist_ok=True)
+    if not (registry_root / ".git").exists():
+        _git(["init", "-q"], registry_root)
+        _git(["config", "user.email", "t@t"], registry_root)
+        _git(["config", "user.name", "t"], registry_root)
+    _git(["add", "-A"], registry_root)
+    _git(["commit", "-q", "--allow-empty", "-m", message], registry_root)
+
+
+def _ack_body(
+    symbol: str, stream: str, date: str, reason: str, acknowledged: list[dict]
+) -> dict:
+    return {
+        "date": date,
+        "symbol": symbol,
+        "stream": stream,
+        "reason": reason,
+        "who": "test",
+        "when": "2026-09-16T00:00:00Z",
+        "acknowledged": acknowledged,
+    }
+
+
 def _write_acknowledgement(
-    registry_root: Path, symbol: str, stream: str, date: str, reason: str
+    registry_root: Path,
+    symbol: str,
+    stream: str,
+    date: str,
+    reason: str,
+    acknowledged: list[dict] = GAP_FAILED,
+    *,
+    commit: bool = True,
 ) -> Path:
     path = dq_acknowledgement_path(registry_root, symbol, stream, date)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps(
-            {
-                "date": date,
-                "symbol": symbol,
-                "stream": stream,
-                "reason": reason,
-                "who": "test",
-                "when": "2026-09-16T00:00:00Z",
-            }
-        )
+        json.dumps(_ack_body(symbol, stream, date, reason, acknowledged), indent=2)
     )
+    if commit:
+        _commit_registry(registry_root)
     return path
 
 
@@ -194,7 +237,12 @@ def test_case2_missing_report_pauses_then_acknowledgement_citing_missing_report_
         )
 
     _write_acknowledgement(
-        registry_root, "BTCUSDT", "trade", date, "no DQ report generated for this date"
+        registry_root,
+        "BTCUSDT",
+        "trade",
+        date,
+        "no DQ report generated for this date",
+        REPORT_MISSING,
     )
     loaded = load_curated(
         manifest["manifest_id"],
@@ -340,6 +388,7 @@ def test_invalid_acknowledgement_does_not_unpause_a_failed_day(
     ack = dq_acknowledgement_path(registry_root, "BTCUSDT", "trade", date)
     ack.parent.mkdir(parents=True, exist_ok=True)
     ack.write_text(content)
+    _commit_registry(registry_root)  # committed: only the CONTENT is wrong
 
     with pytest.raises(DQPauseError, match="acknowledgement"):
         load_curated(
@@ -378,6 +427,9 @@ def test_every_committed_real_acknowledgement_is_valid():
     assert files
     for f in files:
         symbol, stream, date = f.stem.split("__")
+        # Content only: the git-committed requirement is enforced by the
+        # loader, and this test runs inside pre-commit while an edited ack
+        # is staged but not yet in HEAD.
         assert (
             validate_dq_acknowledgement(f, symbol=symbol, stream=stream, date=date)
             is None
@@ -517,4 +569,157 @@ def test_unknown_status_next_to_ok_is_failed_not_ok(tmp_path: Path):
         ],
     )
     with pytest.raises(DQPauseError, match="unknown"):
+        _load(manifest, lake_root, registry_root)
+
+
+# --- WR-16 (03-REVIEW-ITER2.md): bound to its findings, and committed ------
+
+
+def _failed_day(tmp_path: Path, rows: list[tuple[str, str]]):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    date = "2026-09-12"
+    manifest = _issue_manifest(lake_root, registry_root, date)
+    _write_bound_report(
+        lake_root, date, [(manifest["manifest_id"], c, st) for c, st in rows]
+    )
+    return lake_root, registry_root, date, manifest
+
+
+def test_ack_for_one_finding_does_not_unpause_a_different_finding(tmp_path: Path):
+    """The original WR-01 scenario: an ack written for a degraded
+    reconciliation must not cover the day after a rebuild fails it on
+    build_stats."""
+    lake_root, registry_root, date, manifest = _failed_day(
+        tmp_path, [("build_stats", "failed")]
+    )
+    _write_acknowledgement(
+        registry_root,
+        "BTCUSDT",
+        "trade",
+        date,
+        "reconciliation degraded 4.78 %",
+        [{"check": "reconciliation", "dq_status": "degraded"}],
+    )
+    with pytest.raises(DQPauseError, match="build_stats=failed"):
+        _load(manifest, lake_root, registry_root)
+
+
+def test_ack_for_the_same_check_at_a_milder_status_does_not_cover_a_worse_one(
+    tmp_path: Path,
+):
+    lake_root, registry_root, date, manifest = _failed_day(
+        tmp_path, [("reconciliation", "failed")]
+    )
+    _write_acknowledgement(
+        registry_root,
+        "BTCUSDT",
+        "trade",
+        date,
+        "known",
+        [{"check": "reconciliation", "dq_status": "degraded"}],
+    )
+    with pytest.raises(DQPauseError, match="does not acknowledge"):
+        _load(manifest, lake_root, registry_root)
+
+
+def test_ack_must_cover_every_finding_of_the_day(tmp_path: Path):
+    lake_root, registry_root, date, manifest = _failed_day(
+        tmp_path, [("gap_coverage", "failed"), ("l1_sparsity", "degraded")]
+    )
+    _write_acknowledgement(registry_root, "BTCUSDT", "trade", date, "outage")
+    with pytest.raises(DQPauseError, match="l1_sparsity=degraded"):
+        _load(manifest, lake_root, registry_root)
+
+    _write_acknowledgement(
+        registry_root,
+        "BTCUSDT",
+        "trade",
+        date,
+        "outage",
+        [*GAP_FAILED, {"check": "l1_sparsity", "dq_status": "degraded"}],
+    )
+    assert _load(manifest, lake_root, registry_root).height == 1
+
+
+def test_untracked_acknowledgement_does_not_unpause(tmp_path: Path):
+    lake_root, registry_root, date, manifest = _failed_day(
+        tmp_path, [("gap_coverage", "failed")]
+    )
+    _commit_registry(registry_root, "registry without the ack")
+    _write_acknowledgement(
+        registry_root, "BTCUSDT", "trade", date, "outage", commit=False
+    )
+    with pytest.raises(DQPauseError, match="not committed"):
+        _load(manifest, lake_root, registry_root)
+
+
+def test_staged_but_uncommitted_acknowledgement_does_not_unpause(tmp_path: Path):
+    lake_root, registry_root, date, manifest = _failed_day(
+        tmp_path, [("gap_coverage", "failed")]
+    )
+    _commit_registry(registry_root, "registry without the ack")
+    ack = _write_acknowledgement(
+        registry_root, "BTCUSDT", "trade", date, "outage", commit=False
+    )
+    _git(["add", str(ack)], registry_root)
+    with pytest.raises(DQPauseError, match="not committed"):
+        _load(manifest, lake_root, registry_root)
+
+
+def test_committed_ack_modified_in_the_working_tree_does_not_unpause(tmp_path: Path):
+    lake_root, registry_root, date, manifest = _failed_day(
+        tmp_path, [("build_stats", "failed")]
+    )
+    ack = _write_acknowledgement(
+        registry_root,
+        "BTCUSDT",
+        "trade",
+        date,
+        "known",
+        [{"check": "reconciliation", "dq_status": "degraded"}],
+    )
+    body = json.loads(ack.read_text())
+    body["acknowledged"] = [{"check": "build_stats", "dq_status": "failed"}]
+    ack.write_text(json.dumps(body, indent=2))  # edited, never committed
+    with pytest.raises(DQPauseError, match="not committed"):
+        _load(manifest, lake_root, registry_root)
+
+
+def test_acknowledgement_outside_any_git_repository_does_not_unpause(tmp_path: Path):
+    lake_root, registry_root, date, manifest = _failed_day(
+        tmp_path, [("gap_coverage", "failed")]
+    )
+    _write_acknowledgement(
+        registry_root, "BTCUSDT", "trade", date, "outage", commit=False
+    )
+    with pytest.raises(DQPauseError, match="not committed"):
+        _load(manifest, lake_root, registry_root)
+
+
+@pytest.mark.parametrize(
+    ("label", "mutate"),
+    [
+        ("no acknowledged field", lambda b: b.pop("acknowledged")),
+        ("acknowledged is empty", lambda b: b.update(acknowledged=[])),
+        ("acknowledged is a string", lambda b: b.update(acknowledged="failed")),
+        (
+            "acknowledges ok",
+            lambda b: b.update(acknowledged=[{"check": "x", "dq_status": "ok"}]),
+        ),
+        ("when in the future", lambda b: b.update(when="2999-01-01T00:00:00Z")),
+    ],
+)
+def test_acknowledgement_content_is_bound_and_plausible(
+    tmp_path: Path, label: str, mutate
+):
+    lake_root, registry_root, date, manifest = _failed_day(
+        tmp_path, [("gap_coverage", "failed")]
+    )
+    body = _ack_body("BTCUSDT", "trade", date, "outage", GAP_FAILED)
+    mutate(body)
+    ack = dq_acknowledgement_path(registry_root, "BTCUSDT", "trade", date)
+    ack.parent.mkdir(parents=True, exist_ok=True)
+    ack.write_text(json.dumps(body))
+    _commit_registry(registry_root)
+    with pytest.raises(DQPauseError, match="acknowledge"):
         _load(manifest, lake_root, registry_root)
