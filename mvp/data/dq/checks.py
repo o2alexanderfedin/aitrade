@@ -41,17 +41,28 @@ same text with a permanent link):
    in that day), and was measured to produce 16-40 HOUR "errors" against
    real 2026-09-14/09-15 outage boundaries -- meaningless, not bounded.
 2. Even for capture-sourced `bookTicker` rows, which DO carry a real
-   per-message `rtime`, a `"merged"`-connection outage's `gap_end_rtime` is
-   the `rtime` of whichever STREAM's message triggered reactive resumption
-   detection (`rotation.py:ingest`'s `last_seen_state["merged"]`) -- which
-   may be `trade`, not `bookTicker`. Measured against the real 2026-09-14
-   outage set: 6 of 8 boundaries resolved to a same-stream bookTicker row
-   within 0.05s, but one resolved 303.7s away -- essentially the ENTIRE
-   99-minute outage's duration -- because bookTicker's own first
-   post-outage message arrived long after the stream that actually
-   triggered resumption. A per-stream nearest-row lookup cannot bound this
-   error to within the 60s `resync_warmup` window it would be used to
-   compute; it can be worse than the window is wide.
+   per-message `rtime`, the nearest same-stream row at/after `gap_end_rtime`
+   is not reliably close to the boundary. Measured against the real
+   2026-09-14/09-15 outage set (8 collapsed outages): 5 of 8 boundaries
+   resolved within 0.05s and 1 more (outage 8) within 0.11s, but 2 (outages
+   1 and 4) resolved with an error nearly equal to the OUTAGE'S OWN
+   duration (303.7s of a 303.8s outage; 5.9s of a 5.8s outage). Root cause,
+   confirmed by inspecting the actual rows: this is NOT cross-stream
+   resumption ordering (both anomalies are same-STREAM, bookTicker-to-
+   bookTicker) -- it is a STALE BACKLOG FLUSH. The row at/after
+   `gap_end_rtime` (whose `rtime` exactly equals `gap_end_rtime`, i.e. it
+   IS the resumption-triggering message) carries an `etime` close to the
+   OUTAGE'S START, not its end, and is immediately followed by a dense
+   burst of more rows with etimes clustered in that same pre-outage window
+   (5,412 rows within 2 real seconds of `rtime` for outage 4 alone) --
+   consistent with buffered frames queued during the machine's own
+   battery-sleep outage (`data/capture/power.py`) being flushed in a burst
+   on wake, each still carrying its original, stale exchange timestamp. A
+   per-stream nearest-row lookup cannot bound this error to within the 60s
+   `resync_warmup` window it would be used to compute; it can be worse
+   than the window is wide, and there is no way to distinguish a stale
+   backlog row from a fresh one using only the single row nearest the
+   boundary.
 
 Given (1), a rewrite of `resync_windows_for_date` that "fixes" the join by
 looking up curated etime is not implementable for the trade stream at all
