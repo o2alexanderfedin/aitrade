@@ -197,3 +197,151 @@ def test_real_tree_seconds_to_ns_allowlist_is_preserved():
     assert sum(n for f, n in by_file.items() if f in original) == 8
     assert set(by_file) == original | {"data/dq/checks.py"}
     assert set(by_file) <= set(tool.ALLOWLISTED_SEC_TO_NS_SITES)
+
+
+# --- 03-FOLLOWUPS.md item 1: the CR-06 bypass class, closed ----------------
+
+CLOSED_BYPASSES = [
+    (
+        "pl.lit wrapper",
+        "import polars as pl\ndef f(c):\n    return c * pl.lit(1_000_000)\n",
+    ),
+    (
+        "mul(pl.lit())",
+        "import polars as pl\ndef f(c):\n    return c.mul(pl.lit(1_000_000))\n",
+    ),
+    (
+        "np.int64 wrapper",
+        "import numpy as np\ndef f(t):\n    return t * np.int64(10**6)\n",
+    ),
+    ("int() of a float literal", "def f(t):\n    return t * int(1e6)\n"),
+    (
+        "Decimal literal",
+        "from decimal import Decimal\ndef f(t):\n    return t * Decimal(1000000)\n",
+    ),
+    ("int of a digit string", "def f(t):\n    return t * int('1000000')\n"),
+    (
+        "tuple unpacking",
+        "MS, NS = 1_000_000, 1_000_000_000\ndef f(t):\n    return t * MS\n",
+    ),
+    (
+        "chain poisoned by an unrelated binding",
+        "def f(frame):\n    t = 0\n    if 'T' in frame:\n        t = frame['T']\n"
+        "    return t * 1000 * 1000\n",
+    ),
+    (
+        "chain with a parameter default of the same name",
+        "def g(t=5):\n    return t\ndef f(t):\n    return t * 1000 * 1000\n",
+    ),
+    (
+        "cross-module class attribute",
+        None,  # built by its own test below (needs two modules)
+    ),
+    ("walrus binding", "def f(t):\n    return t * (k := 1_000_000)\n"),
+    (
+        "IfExp binding",
+        "def f(t, flag):\n    k = 1_000_000 if flag else 1_000_000\n    return t * k\n",
+    ),
+    (
+        "dict lookup",
+        "SCALE = {'ms': 1_000_000}\ndef f(t):\n    return t * SCALE['ms']\n",
+    ),
+    (
+        "zero-argument function returning the constant",
+        "def scale():\n    return 1_000_000\ndef f(t):\n    return t * scale()\n",
+    ),
+    ("math.prod", "import math\ndef f(t):\n    return math.prod([t, 1000, 1000])\n"),
+    (
+        "functools.reduce(operator.mul)",
+        "import functools, operator\ndef f(t):\n"
+        "    return functools.reduce(operator.mul, [1000, 1000])\n",
+    ),
+    ("division by the reciprocal", "def f(t):\n    return t / 1e-6\n"),
+    ("astype M8[ms]", "def f(a):\n    return a.astype('M8[ms]')\n"),
+    ("timedelta m8[ms]", "def f(a):\n    return a.astype('m8[ms]')\n"),
+]
+
+
+@pytest.mark.parametrize(
+    ("label", "source"),
+    [(label, src) for label, src in CLOSED_BYPASSES if src is not None],
+    ids=[label for label, src in CLOSED_BYPASSES if src is not None],
+)
+def test_previously_evadable_spellings_are_now_sites(
+    tmp_path: Path, label: str, source: str
+):
+    root = _pkg(tmp_path, {"data/normaliser.py": source})
+    assert len(_ms_sites(root)) >= 1, f"{label}: bypass still passes"
+
+
+def test_cross_module_class_attribute_is_resolved(tmp_path: Path):
+    root = _pkg(
+        tmp_path,
+        {
+            "data/__init__.py": "",
+            "data/units.py": "class Units:\n    MS = 1_000_000\n",
+            "data/a.py": "from data.units import Units\ndef f(t):\n    return t * Units.MS\n",
+        },
+    )
+    assert _ms_sites(root) == [("data/a.py", 3)]
+
+
+def test_the_value_cap_no_longer_hides_a_later_binding(tmp_path: Path):
+    """Once 32 values were tracked for a name, later bindings were dropped and
+    the name silently stopped resolving. An overflowed binding is now opaque,
+    so it can never be folded into a product as if it were a known constant."""
+    fill = "".join(f"X = {i}\n" for i in range(40))
+    root = _pkg(
+        tmp_path,
+        {"data/x.py": fill + "X = 1_000_000\ndef f(t):\n    return t * X * 1\n"},
+    )
+    from tools import check_ms_to_ns_site as t
+
+    modules = t._load_modules(root)
+    assert "X" in modules["data.x"].opaque
+
+
+UNRESOLVABLE = [
+    (
+        "mul() by an unresolvable factor",
+        "def f(c, k):\n    return c.mul(k)\n",
+    ),
+    (
+        "math.prod over a non-literal sequence",
+        "import math\ndef f(factors, t):\n    return math.prod(factors)\n",
+    ),
+    (
+        "reduce(operator.mul) over a non-literal sequence",
+        "import functools, operator\ndef f(factors):\n"
+        "    return functools.reduce(operator.mul, factors)\n",
+    ),
+    (
+        "time unit built at runtime",
+        "import polars as pl\ndef f(c, u):\n    return c.cast(pl.Datetime('m' + 'so'[0]))\n",
+    ),
+    (
+        "time unit from an f-string",
+        "import polars as pl\ndef f(c, u):\n    return c.cast(pl.Datetime(f'{u}'))\n",
+    ),
+    (
+        "a name that claims to be an ms->ns factor but does not resolve",
+        "from somewhere import MS_TO_NS\ndef f(t):\n    return t * MS_TO_NS\n",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("label", "source"), UNRESOLVABLE, ids=[u[0] for u in UNRESOLVABLE]
+)
+def test_unreadable_conversion_shapes_fail_closed(
+    tmp_path: Path, label: str, source: str
+):
+    root = _pkg(tmp_path, {"data/normaliser.py": source})
+    found = tool.find_unresolvable_conversion_shapes(root)
+    assert found, f"{label}: passed silently instead of failing closed"
+
+
+def test_the_real_tree_has_no_unresolvable_conversion_shapes():
+    """The fail-closed rules must be narrow enough that ordinary code never
+    trips them -- otherwise they would just be turned off."""
+    assert tool.find_unresolvable_conversion_shapes(tool.PKG_ROOT) == []
