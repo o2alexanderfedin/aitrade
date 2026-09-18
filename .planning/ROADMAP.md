@@ -96,7 +96,16 @@ Plans:
   3. CI leakage suite passes: per-feature future-shuffle invariance and embargo ≥ label horizon
   4. Labels exist for 10s midprice return (primary) plus diagnostic horizons {1s, 1min, 10min}
   5. Rolling/expanding normalization is computed on training data only, verified by test
-**Plans**: TBD
+**Plans**: 7 plans, 5 waves
+
+Plans:
+- [ ] 04-01-PLAN.md — One ns-constant module + merged event stream and the decision-row rule (merge_sorted, source_rank pin, strict-total-order runtime gate)
+- [ ] 04-02-PLAN.md — Feature tier plumbing: schema, write-once partition, manifest + load_features, holdout/quarantine refusal (D and D+1), feature-tier DQ checks
+- [ ] 04-03-PLAN.md — The numba kernel (mid, imb_top, ofi, trade_flow) + pure-Python reference + leakage properties red-first + feature catalogue pinned
+- [ ] 04-04-PLAN.md — Labels: backward as-of, null-on-gap/past-end, build-D-only-after-D+1, label catalogue + measured quantization
+- [ ] 04-05-PLAN.md — The real end-to-end build of 2026-09-12..14, warm-up tagging, build stats, feature DQ rows + acknowledgements, load_features round trip
+- [ ] 04-06-PLAN.md — CI leakage suite (FEAT-03): per-feature/per-label invariance + anti-vacuity sensitivity, embargo assertion, catalogue cross-check, named CI gate
+- [ ] 04-07-PLAN.md — Single code path: three call sites byte-identical (batch/chunked/per-row) + train-only normalization artifact (FEAT-05)
 
 ### Phase 5: Fold Harness & Overfitting Controls
 **Goal**: A fold harness that owns time — every split, look, and failure is a tracked artifact before any model trains
