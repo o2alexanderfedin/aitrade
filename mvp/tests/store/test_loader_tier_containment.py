@@ -440,3 +440,36 @@ def test_a_quarantined_tier_manifest_still_gets_no_by_date_pointer(tmp_path: Pat
     )
     assert "lockbox" not in store.BY_DATE_INDEXED_TIERS
     assert store.BY_DATE_INDEXED_TIERS == frozenset({"curated", "features"})
+
+
+def test_the_features_loader_cannot_reach_the_quarantined_tier(
+    tmp_path: Path, monkeypatch
+):
+    """04-02 CR-04, the half `tests/store/test_features_tier_containment.py`
+    deliberately does not spell: `load_features` names ONE tier, so a
+    quarantined-tier manifest offered to it is refused before a byte is
+    read -- exactly as `load_curated` refuses the same manifest."""
+    from features.tier import load_features
+
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    part = _partition(
+        lake_root, "lockbox/symbol=BTCUSDT/date=2026-09-13/part-1.parquet"
+    )
+    manifest = _issue_for(
+        registry_root,
+        "BTCUSDT.features",
+        "features",
+        "lockbox",
+        "lockbox/symbol=BTCUSDT/date=2026-09-13/part-9.parquet",
+        lake_root,
+    )
+    assert part["path"] != manifest["partitions"][0]["path"]
+    reads = _spy_reads(monkeypatch)
+    with pytest.raises(store.ManifestTierError):
+        load_features(
+            manifest["manifest_id"],
+            "BTCUSDT.features",
+            registry_root=registry_root,
+            lake_root=lake_root,
+        )
+    assert reads == []

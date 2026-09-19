@@ -46,7 +46,9 @@ from pathlib import Path
 
 import polars as pl
 
+from data import store
 from data.capture.rotation import write_parquet_atomic
+from data.holdout import assert_not_quarantined
 from data.store import (
     FEATURES_TIER,
     issue_manifest,
@@ -65,6 +67,8 @@ __all__ = [
     "write_feature_partition",
     "curated_manifest_input",
     "issue_feature_manifest",
+    "assert_buildable",
+    "load_features",
 ]
 
 FEATURE_SCHEMA_VERSION = 1
@@ -184,16 +188,31 @@ def write_feature_partition(
     lake_root: Path,
     symbol: str,
     date: str,
+    registry_root: Path | None = None,
 ) -> dict:
     """Write one write-once feature partition and return the partition entry
     `issue_manifest` requires (`path` lake-root-RELATIVE, `sha256`,
     `size_bytes`, `mtime_ns`, `rows`, `etime_min`, `etime_max`, `date`).
+
+    REFUSES A HELD-OUT DATE BEFORE TOUCHING THE FILESYSTEM (D-04-11). The
+    refusal is not a cleanup: nothing is created, so there is nothing to
+    clean up. `assert_buildable` is the gate a build calls first and is
+    the one that also covers day D+1; this second check is here so a
+    caller that skipped the gate still cannot materialize the day.
+    `registry_root` names the holdout registry to consult (`None` = the
+    git-committed default).
 
     Refuses (`FileExistsError`) a `date=` directory that already holds a
     part file, mirroring `data/ingest/normalize.py:write_raw_partition`: a
     second write for an already-written day is an error, never a silent
     overwrite and never a silent duplicate.
     """
+    assert_not_quarantined(
+        [date],
+        symbol=symbol,
+        registry_root=registry_root,
+        context=f"feature partition write of {date}",
+    )
     _assert_schema(df)
     converted = _nan_to_null(df)
 
@@ -282,3 +301,88 @@ def issue_feature_manifest(
         registry_root=Path(registry_root),
         dates=[date],
     )
+
+
+def assert_buildable(
+    symbol: str, date: str, next_date: str, *, registry_root: Path | None = None
+) -> None:
+    """The build's FIRST gate, before it reads anything at all: neither
+    `date` nor `next_date` may be held out.
+
+    `next_date` is the half that is easy to leave out and expensive to get
+    wrong. Day D's `ret_10min_mid` is computed from the prevailing mids of
+    day D+1, so a partition for D built while D+1 is held out writes
+    held-out prices into a readable tier -- a near-lossless transform of
+    exactly the bytes the holdout withholds (D-04-11). Refusing D on D+1's
+    account is what stops the holdout being laundered through a
+    neighbouring day's label tail.
+    """
+    assert_not_quarantined(
+        [date],
+        symbol=symbol,
+        registry_root=registry_root,
+        context=f"feature build of {date}",
+    )
+    assert_not_quarantined(
+        [next_date],
+        symbol=symbol,
+        registry_root=registry_root,
+        context=(
+            f"feature build of {date}: its long-horizon label tail reads {next_date}"
+        ),
+    )
+
+
+def load_features(
+    manifest_id: str, dataset: str, *, registry_root: Path, lake_root: Path
+) -> pl.DataFrame:
+    """The features tier's own loader -- `data.store.load_curated` one tier
+    over, and the only reading path into `lake/features/`.
+
+    Four gates, in this order, and the ORDER IS THE POINT:
+
+    1. `resolve_manifest(expected_tier=FEATURES_TIER)` -- the body must
+       re-hash to its id, the tier must be this one, every partition path
+       must genuinely resolve inside `lake_root/features/` (symlink- and
+       hard-link-aware), and every partition's on-disk sha256 must match.
+       Integrity FIRST: a manifest that fails its own hash must never
+       reach a holdout or a DQ conversation.
+    2. the holdout refusal, over the dates the manifest's partitions
+       actually name. RUNTIME-FIRST, and read-time rather than build-time
+       only: the registry is the authority, not the build history, so a
+       partition written before its date was declared held out is still
+       refused now.
+    3. `store._enforce_dq_pause` -- a features manifest with no report row
+       of its own is `missing`, which pauses, so the feature-tier DQ rows
+       are not optional decoration.
+    4. `store._log_provenance`, then the verified read.
+
+    WHAT GATE 2 DOES NOT UNDO. Gate 1 has already hashed the partition
+    bytes by the time gate 2 runs -- that is the price of integrity-first
+    ordering, and it is why `load_features` returning no rows is the
+    guarantee, not "the file was never opened". The bytes on disk are the
+    residual T-04-09 accepts: a features partition built BEFORE its date
+    was held out stays readable to anything that bypasses this loader, and
+    moving or deleting it is part of Phase 5's declaration step, not
+    something a read-time refusal can do for it.
+    """
+    manifest = store.resolve_manifest(
+        manifest_id,
+        dataset,
+        registry_root=registry_root,
+        lake_root=lake_root,
+        expected_tier=FEATURES_TIER,
+    )
+    dates = sorted({part["date"] for part in manifest["partitions"]})
+    assert_not_quarantined(
+        dates,
+        symbol=manifest["symbol"],
+        registry_root=registry_root,
+        context=f"load_features of manifest {manifest_id[:12]}",
+    )
+    acks = store._enforce_dq_pause(
+        manifest, registry_root=registry_root, lake_root=lake_root
+    )
+    store._log_provenance(manifest, acks)
+    frames = store.read_verified_partitions(manifest, lake_root=Path(lake_root))
+    return pl.concat(frames, how="vertical")
