@@ -76,8 +76,8 @@ completed: 2026-09-19
 ## Performance
 
 - **Duration:** ~2 h
-- **Tasks:** 2 (one commit each) + one commit for the real artifact
-- **Tests:** **899 before → 930 after** (+31: 12 `test_normalize.py`, 13 `test_api_single_path.py`, 6 `test_check_single_feature_path.py`)
+- **Tasks:** 2 (one commit each) + one commit for the real artifact + one review fix
+- **Tests:** **899 before → 931 after** (+32: 12 `test_normalize.py`, 14 `test_api_single_path.py`, 6 `test_check_single_feature_path.py`)
 - **Pre-commit hooks:** 17 → 18
 - **Files:** 6 source/test files created, 2 config files modified, 1 manifest committed
 
@@ -88,6 +88,7 @@ completed: 2026-09-19
 | 1 | Train-only expanding normalization as a stored artifact | `1745b64` | `features/normalize.py`, `tests/features/test_normalize.py` |
 | 2 | One entry point, three call sites, and the import tripwire | `6a2b4eb` | `features/api.py`, `tools/check_single_feature_path.py`, `tests/features/test_api_single_path.py`, `tests/tools/test_check_single_feature_path.py`, `.pre-commit-config.yaml`, `.github/workflows/ci.yml` |
 | — | The first real normalization artifact | `084d94d` | `data/lake_registry/manifests/BTCUSDT.features_norm/d1d35fbf….json` |
+| — | Review fix: the emission rule actually observed, plus the empty path | `PENDING` | `features/api.py`, `tests/features/test_api_single_path.py` |
 
 ## The finding that makes the equality test worth having
 
@@ -217,6 +218,25 @@ exit=1
 ```
 Reverted; the scan is green at exit 0 over all 148 files.
 
+### Review fix — the test whose name was ahead of its assertions
+
+`test_simulation_emits_one_group_late_and_flushes_at_the_end` drove the generator to exhaustion with `list(stream)` and then checked the first and last rows. Both are true of a batch pass, so the test asserted nothing about WHEN a decision row appears — while the SUMMARY claimed the emission rule was pinned and Phase 6 was told to build against it. Replaced by `test_simulation_emits_a_group_only_once_a_larger_etime_arrives`, which counts what the simulator has pulled from its source:
+
+**(e) `for_simulation` consumes its source eagerly** (same rows, same bytes, same kernel-call count — only the laziness is gone):
+```
+FAILED test_simulation_emits_a_group_only_once_a_larger_etime_arrives
+E  AssertionError: the decision row for the first etime group appeared after 60
+   source rows; the rule says it appears on row 1 -- the first row with a larger etime
+E  assert 60 == (1 + 1)
+```
+Every other test, including all the byte-equality ones, stayed green. Restored.
+
+**(f) the empty-frame branch's dtype patches are dead code — the mutation SURVIVED.** Deleting `columns["warmup"] = np.empty(0, dtype=np.bool_)` changed nothing: `pl.Series(np.empty(0, float64), dtype=pl.Boolean)` casts an EMPTY series to any declared dtype without complaint. Rather than leave untested branching in place, the branch was simplified to one empty float array per column with the measurement recorded in a comment.
+
+**(f2) the mutation that does bite:** returning `pl.DataFrame()` from the empty path fails `test_an_empty_stream_is_an_empty_frame_not_a_crash` on the schema assertion — so the new empty-path test is not vacuous, it is just testing the frame's shape rather than per-column dtype patches that polars never needed.
+
+Also noted in `for_training`'s docstring: its `fit_normalization: bool` parameter SHADOWS the imported `features.normalize.fit_normalization` inside that scope. The fit routes through `fit_normalization_from_frame`, which reads the module global from its own scope; a future edit calling `fit_normalization(...)` directly inside `for_training` would call `True`.
+
 ## Real-Data Verification
 
 Run once from `mvp/` with `./.venv/bin/python3` and `NUMBA_CACHE_DIR` outside the repo, against Plan 05's real partitions. Full transcript below is quoted verbatim from the run.
@@ -312,7 +332,7 @@ One near-miss worth recording: an earlier mutation-diagnostic script was run WIT
 
 ```
 $ ./.venv/bin/pytest tests -q
-930 passed in ~155 s
+931 passed in 107.79s (0:01:47)
 
 $ pre-commit run --all-files          (via the commit hook, all 18 hooks)
 ruff check / ruff format --check / uv lock --check / check_pin_versions /

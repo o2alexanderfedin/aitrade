@@ -226,27 +226,72 @@ def test_the_three_call_sites_drive_the_kernel_differently(monkeypatch):
     assert set(calls) == {1}
 
 
-def test_simulation_emits_one_group_late_and_flushes_at_the_end():
-    """Per-row streaming cannot know a row is the last of its `etime` until
-    the next row arrives, so the simulator emits the decision row for
-    `etime = t` when it first sees `etime > t`. The equality tests align on
-    `etime`, never on emission index, because of this."""
+def test_simulation_emits_a_group_only_once_a_larger_etime_arrives():
+    """The emission rule, observed rather than assumed.
+
+    Per-row streaming cannot know a row is the last of its `etime` until
+    the next row arrives, so the decision row for `etime = t` is emitted
+    when the first row with `etime > t` is CONSUMED -- one group late, by
+    construction. Driving the generator to exhaustion and checking the
+    first and last rows would prove none of that (a batch pass satisfies
+    it too), so the source counts what the simulator has pulled and the
+    assertions are about WHEN each decision row appears.
+    """
     events = interleaved_stream(n=60, seed=3)
     rows = list(event_row_stream(events))
-    emitted_after = []
-    stream = for_simulation(iter(rows))
+    etime = events["etime"]
+    consumed: list[int] = []
 
-    # Drive the generator by hand: nothing may be emitted while the stream
-    # is still inside the first etime group.
-    produced = list(stream)
-    assert produced, "the simulator emitted nothing at all"
-    first_group_size = int((events["etime"] == events["etime"][0]).sum())
-    assert produced[0]["etime"] == int(events["etime"][0])
-    assert first_group_size >= 1
-    emitted_after.append(produced[-1]["etime"])
-    assert emitted_after[-1] == int(events["etime"][-1]), (
-        "the final etime group was never flushed at end-of-stream"
+    def counting_source():
+        for index, row in enumerate(rows):
+            consumed.append(index)
+            yield row
+
+    stream = for_simulation(counting_source())
+    first_group = int(etime[0])
+    opener = int(np.flatnonzero(etime > first_group)[0])
+
+    first = next(stream)
+    assert first["etime"] == first_group
+    assert len(consumed) == opener + 1, (
+        f"the decision row for the first etime group appeared after "
+        f"{len(consumed)} source rows; the rule says it appears on row "
+        f"{opener} -- the first row with a larger etime"
     )
+
+    seen = [first]
+    consumed_when_yielded = []
+    for row in stream:
+        consumed_when_yielded.append(len(consumed))
+        seen.append(row)
+
+    assert consumed_when_yielded[-1] == len(rows), (
+        "the final etime group was emitted before the source was exhausted "
+        "-- nothing can know it is final until then"
+    )
+    assert seen[-1]["etime"] == int(etime[-1])
+    assert len(seen) == int(np.unique(etime).size), (
+        "one decision row per distinct etime, no more and no fewer"
+    )
+
+
+def test_an_empty_stream_is_an_empty_frame_not_a_crash():
+    """A serving loop with nothing in its window, and a simulator that
+    yielded nothing -- both are ordinary, and both must produce the same
+    empty frame the non-empty path produces."""
+    empty, _state, _params = for_inference([])
+    assert empty.height == 0 and empty.schema == dict(FEATURE_PASS_SCHEMA)
+
+    events = interleaved_stream(n=20)
+    blank = {name: column[:0] for name, column in events.items()}
+    all_blank, _s, _p = for_inference([blank, blank])
+    assert all_blank.height == 0 and all_blank.schema == dict(FEATURE_PASS_SCHEMA)
+
+    assert decision_rows_to_frame([]).schema == dict(FEATURE_PASS_SCHEMA)
+    assert decision_rows_to_frame(for_simulation(iter([]))).height == 0
+
+    batch, _s2 = compute_decision_rows(blank)
+    _assert_frames_byte_identical(batch, all_blank, "empty batch vs empty chunks")
 
 
 # --------------------------------------------------------- normalization

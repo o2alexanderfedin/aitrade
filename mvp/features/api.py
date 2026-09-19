@@ -262,12 +262,12 @@ def _frame(
             for name in FEATURE_PASS_SCHEMA
         }
     else:
-        columns = {
-            name: np.empty(0, dtype=np.int64 if dtype == pl.Int64 else np.float64)
-            for name, dtype in FEATURE_PASS_SCHEMA.items()
-        }
-        columns["decision_source_rank"] = np.empty(0, dtype=np.int8)
-        columns["warmup"] = np.empty(0, dtype=np.bool_)
+        # One empty float array per column is enough: the explicit `schema=`
+        # below casts an EMPTY series to any declared dtype without
+        # complaint. Per-column dtypes here would be dead code -- measured,
+        # by deleting the bool patch this branch used to carry and watching
+        # every test stay green (mutation (f) in the summary).
+        columns = {name: np.empty(0, dtype=np.float64) for name in FEATURE_PASS_SCHEMA}
 
     frame = pl.DataFrame(
         {
@@ -332,6 +332,12 @@ def for_training(
 ) -> FeaturePass:
     """The trainer's call: ONE batch over a whole day, and the ONLY call
     site permitted to FIT normalization parameters.
+
+    NOTE the parameter `fit_normalization` SHADOWS the module-level
+    `features.normalize.fit_normalization` inside this function's scope.
+    The fit goes through `fit_normalization_from_frame`, which reads the
+    module global from its own scope; calling `fit_normalization(...)`
+    directly in here would call `True`.
 
     With `fit_normalization=True` the parameters are fitted on THIS pass's
     decision rows and the `_z` columns use the EXPANDING transform (row `t`
