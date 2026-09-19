@@ -1,7 +1,8 @@
 ---
 phase: 04-feature-label-engine
 verified: 2026-09-19T12:19:10Z
-status: human_needed
+status: passed
+human_verification_resolved: "2026-09-19 -- both entries closed by the review-fix pass: d4b97fd rewires features/build.py through features.api and narrows check_single_feature_path so a second in-package caller is named (the verifier's rogue.py now fails by name); 6d4f2b7 makes load_features refuse day D when D+1 is held out (orchestrator re-proved it on the real lake: 09-15 declared -> 09-14 REFUSED with QuarantinedDateError, 09-12/09-13 load 4,193,137 / 6,864,853 rows)."
 score: 5/5 must-haves verified (2 WARNINGs requiring a human disposition decision)
 overrides_applied: 0
 human_verification:

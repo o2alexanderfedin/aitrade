@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Capture Daemon & Repo Foundation** - Schedule-critical redundant L1+trades capture running day 1, repo skeleton under mvp/ (completed 2026-09-12)
 - [x] **Phase 2: Stage 0 — Living Spec, CI Guardrails & Tracking** - spec.md seeded with corrected policy math, catalogues wired into CI, MLflow foundation
 - [x] **Phase 3: Data Layer — Backfill, Ingest & Lockbox** - Trades backfill, side correction, manifest-addressed store, DQ reports, mechanical lockbox quarantine (completed 2026-09-17)
-- [ ] **Phase 4: Feature & Label Engine** - Single numba streaming code path, catalogued L1 features, leakage-proven labels
+- [x] **Phase 4: Feature & Label Engine** - Single numba streaming code path, catalogued L1 features, leakage-proven labels (completed 2026-09-19)
 - [ ] **Phase 5: Fold Harness & Overfitting Controls** - 5-segment walk-forward with embargo, OOF fallback, selection-bias budget, negative-result log
 - [ ] **Phase 6: Event-Driven Simulator** - Numba flip-only sim with integer-tick accounting and oracle tests
 - [ ] **Phase 7: Regression Track & Vertical Slice** - Cheapest model class wires Trainer protocol, frozen predictors, prediction tables end-to-end
@@ -200,7 +200,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. Capture Daemon & Repo Foundation | 4/4 | Complete | 2026-09-13 |
 | 2. Stage 0 — Living Spec, CI Guardrails & Tracking | 4/4 | Complete | 2026-09-14 |
 | 3. Data Layer — Backfill, Ingest & Lockbox | 7/6 | Complete    | 2026-09-17 |
-| 4. Feature & Label Engine | 6/7 | In Progress|  |
+| 4. Feature & Label Engine | 7/7 | Complete    | 2026-09-19 |
 | 5. Fold Harness & Overfitting Controls | 0/TBD | Not started | - |
 | 6. Event-Driven Simulator | 0/TBD | Not started | - |
 | 7. Regression Track & Vertical Slice | 0/TBD | Not started | - |
