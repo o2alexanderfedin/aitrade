@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Phase 4 Plan 02 complete (lake/features tier + holdout refusal covering D and D+1 + feature-tier DQ rows); 748 tests green; Plans 03-07 next"
-last_updated: "2026-09-19T08:04:54.340Z"
+stopped_at: "Phase 4 Plan 03 complete (one @njit(cache=True) streaming kernel for mid/imb_top/ofi/trade_flow + a pure-Python reference twin proven bit-identical + the first real tests/leakage contents + the feature catalogue's information_set/notes pinned to what the code computes); 817 tests green; verified on the real 2026-09-13 day (OFI cross-check 2.842e-14 over 17,167,289 rows, max ring occupancy 5,092, 0 tie-order-dependent decision rows, 206 M rows/s). Plans 04-07 next (labels, the build, normalization, the leakage suite's remainder). Work ONLY from /Volumes/ProjectsSSD/aihedgefund/repo. Capture daemon Run J (PID 72546) still live; lake/capture read-only to agents. Open user action: `sudo pmset -b disablesleep 1`."
+last_updated: "2026-09-19T08:55:04.704Z"
 last_activity: 2026-09-19
 progress:
   total_phases: 11
   completed_phases: 3
   total_plans: 21
-  completed_plans: 17
-  percent: 81
+  completed_plans: 18
+  percent: 86
 ---
 
 # Project State
@@ -26,13 +26,13 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 4 of 11 (feature & label engine)
-Plan: 2 of 07 complete
+Plan: 3 of 07 complete
 Status: Ready to execute
 Last activity: 2026-09-19
 
-Progress: [████████░░] 81%
+Progress: [█████████░] 86%
 
-> That 81% is `state.update-progress`'s definition -- plans WITH a SUMMARY over plans WRITTEN so far (17 of 21, phases 1-4). It is not milestone completion: phases 5-11 have no plans on disk yet, and only 3 of 11 phases are complete.
+> That 86% is `state.update-progress`'s definition -- plans WITH a SUMMARY over plans WRITTEN so far (18 of 21, phases 1-4). It is not milestone completion: phases 5-11 have no plans on disk yet, and only 3 of 11 phases are complete.
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Progress: [████████░░] 81%
 | Phase 02 P04 | 18min | 2 tasks | 4 files |
 | Phase 04 P01 | ~35min | 2 tasks | 11 files |
 | Phase 04 P02 | ~2h | 3 tasks | 14 files |
+| Phase 04 P03 | ~2h | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -141,8 +142,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-19
+Last session: 2026-09-19T08:55:04.694Z
 Stopped at: Phase 3 (Data Layer) complete — 6 plans + gap closure, verification 5/5 (T-03-09 resolved: CI now runs check_manifest_id_integrity + --full against a committed fixture lake), three review/fix iterations (ITER3: 0 critical; all 3 warnings + 5 info fixed in 03-REVIEW-FIX-ITER3.md), 548 tests, CI green; merged to develop with `git merge --no-ff`. Design lesson carried forward: static source-scanning guardrails (ms→ns single site, lockbox containment) do not converge against every spelling — they are defense-in-depth against accidents; the load-bearing guarantees are runtime/data controls (etime/event_time plausibility → `failed` → loader pause; chmod 0000 lockbox + loader containment + MLflow-first one-look token; sha256 on every manifest read; append-only history check over all parents). New guardrails should be designed runtime-first. Next: `/gsd-autonomous --from 4` (Feature & Label Engine). Work ONLY from /Volumes/ProjectsSSD/aihedgefund/repo. Capture daemon Run J (PID 72546, schema v2, per-run raw segment files). Open user action: `sudo pmset -b disablesleep 1`.
 Then: Phase 4 Plan 01 executed on branch feature/phase-04-feature-label-engine (commits 4ec7943, fd90e9e) -- `data/time_ns.py` is the single allowlisted seconds-to-ns site and `features/event_stream.py` owns the merged stream + decision-row rule; 702 tests green. Plan 03 owes the deferred NUMBA_CACHE_DIR mutation check (no @njit kernel exists yet).
 Then: Phase 4 Plan 02 executed on the same branch (commits 722352d, cd8b436, 19aea31) -- `lake/features/` is a manifest-addressed write-once tier with its own loader, `data/holdout.py` refuses a held-out date at both the write and the read (covering D+1's label tail), and `data/dq/feature_checks.py` puts six feature-tier rows into the same `report.parquet` as the curated streams; 748 tests green. No lake data written. Buildable feature days for Plan 05: 2026-09-12, 09-13, 09-14 (09-15 waits for 09-16's curated L1 manifest). HANDOFF: Plan 05 must write every key in `FEATURE_BUILD_STATS_KEYS` into `lake/features_meta/.../build_stats.json` (that path needs adding to its writable list); Phase 5 must MOVE OR DELETE any existing features partition when it declares a date held out -- the read-time refusal covers the code path, not the bytes on disk (T-04-09, accepted).
-Resume file: .planning/phases/04-feature-label-engine/04-02-SUMMARY.md
+Resume file: None

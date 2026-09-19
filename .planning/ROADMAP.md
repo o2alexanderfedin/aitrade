@@ -101,7 +101,7 @@ Plans:
 Plans:
 - [x] 04-01-PLAN.md — One ns-constant module + merged event stream and the decision-row rule (merge_sorted, source_rank pin, strict-total-order runtime gate)
 - [x] 04-02-PLAN.md — Feature tier plumbing: schema, write-once partition, manifest + load_features, holdout/quarantine refusal (D and D+1), feature-tier DQ checks
-- [ ] 04-03-PLAN.md — The numba kernel (mid, imb_top, ofi, trade_flow) + pure-Python reference + leakage properties red-first + feature catalogue pinned
+- [x] 04-03-PLAN.md — The numba kernel (mid, imb_top, ofi, trade_flow) + pure-Python reference + leakage properties red-first + feature catalogue pinned
 - [ ] 04-04-PLAN.md — Labels: backward as-of, null-on-gap/past-end, build-D-only-after-D+1, label catalogue + measured quantization
 - [ ] 04-05-PLAN.md — The real end-to-end build of 2026-09-12..14, warm-up tagging, build stats, feature DQ rows + acknowledgements, load_features round trip
 - [ ] 04-06-PLAN.md — CI leakage suite (FEAT-03): per-feature/per-label invariance + anti-vacuity sensitivity, embargo assertion, catalogue cross-check, named CI gate
@@ -200,7 +200,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. Capture Daemon & Repo Foundation | 4/4 | Complete | 2026-09-13 |
 | 2. Stage 0 — Living Spec, CI Guardrails & Tracking | 4/4 | Complete | 2026-09-14 |
 | 3. Data Layer — Backfill, Ingest & Lockbox | 7/6 | Complete    | 2026-09-17 |
-| 4. Feature & Label Engine | 2/7 | In Progress | - |
+| 4. Feature & Label Engine | 3/7 | In Progress|  |
 | 5. Fold Harness & Overfitting Controls | 0/TBD | Not started | - |
 | 6. Event-Driven Simulator | 0/TBD | Not started | - |
 | 7. Regression Track & Vertical Slice | 0/TBD | Not started | - |
