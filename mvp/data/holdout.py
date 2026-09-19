@@ -106,6 +106,18 @@ class QuarantinedDates(frozenset):
 def _registry_problem(body: object, *, symbol: str) -> str | None:
     if not isinstance(body, dict):
         return f"holdout registry is a {type(body).__name__}, not a JSON object"
+    # THE VERSION IS READ, NOT JUST DECLARED (04-REVIEW.md WR-07). A v2
+    # document with a different shape -- per-symbol maps, ranges instead of
+    # dates, an `exclusions` key -- parses cleanly enough under the rules
+    # below that any date this parser failed to interpret would silently
+    # un-hold. An ABSENT version is refused for the same reason: absence is
+    # not evidence of v1, and guessing is the direction that fails open.
+    if body.get("version") != HOLDOUT_REGISTRY_VERSION:
+        return (
+            f"holdout registry version {body.get('version')!r} is not "
+            f"{HOLDOUT_REGISTRY_VERSION} -- refusing to read a document this "
+            "parser was not written for"
+        )
     if "dates" not in body:
         return "holdout registry has no 'dates' key"
     dates = body["dates"]

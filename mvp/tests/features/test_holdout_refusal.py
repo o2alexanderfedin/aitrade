@@ -391,3 +391,52 @@ def test_the_recorded_label_tail_dates_are_refused_too(tmp_path: Path):
 
     assert far in refused_dates_for(forged)
     assert NEXT_DATE in refused_dates_for(manifest)
+
+
+# --------------------------------------------------------------------------
+# WR-07: the declared version is checked
+# --------------------------------------------------------------------------
+
+
+def test_a_registry_of_an_unknown_version_fails_closed(tmp_path: Path):
+    """`HOLDOUT_REGISTRY_VERSION` used to be declared and never read.
+
+    A v2 document with a different shape -- per-symbol maps, ranges
+    instead of dates, an `exclusions` key -- would have been parsed by the
+    v1 parser, and any date it failed to interpret would have silently
+    un-held. "Fail-closed is the only safe direction" is this module's
+    whole thesis; a version nobody checks is a version that cannot fail
+    closed.
+    """
+    from data.holdout import HOLDOUT_REGISTRY_VERSION
+
+    registry_root = tmp_path / "registry"
+    write_holdout_registry(
+        registry_root,
+        [],
+        body={
+            "version": 99,
+            "symbol": SYMBOL,
+            "dates": [DATE],
+            "locked_at": 1,
+            "reason": "a document this parser was not written for",
+        },
+    )
+    with pytest.raises(ValueError, match="99"):
+        quarantined_dates(registry_root=registry_root, symbol=SYMBOL)
+
+    # ...and a MISSING version is refused too: absence is not v1.
+    write_holdout_registry(
+        registry_root,
+        [],
+        body={"symbol": SYMBOL, "dates": [DATE], "locked_at": 1, "reason": "r"},
+    )
+    with pytest.raises(ValueError):
+        quarantined_dates(registry_root=registry_root, symbol=SYMBOL)
+
+    # Anti-vacuity: the version this parser WAS written for still reads.
+    write_holdout_registry(registry_root, [DATE])
+    assert quarantined_dates(registry_root=registry_root, symbol=SYMBOL) == frozenset(
+        {DATE}
+    )
+    assert HOLDOUT_REGISTRY_VERSION == 1
