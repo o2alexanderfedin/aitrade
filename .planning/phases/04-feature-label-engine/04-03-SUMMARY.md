@@ -91,7 +91,7 @@ completed: 2026-09-19
 | 3 | Pin the feature catalogue to what the code computes | `76b8104` | `spec/features.toml`, `spec.md` |
 | 1 | Leakage properties first, then the pure-Python reference | `9883f68` | `tests/leakage/test_feature_information_set.py`, `features/reference.py`, `tests/features/test_reference.py`, `tests/fixtures/event_streams.py` |
 | 2 | The @njit kernel, its state contract, and bit-identical equivalence | `36bddb2` | `features/kernel.py`, `features/reference.py`, `tests/features/test_kernel.py`, `tests/fixtures/event_streams.py` |
-| — | This summary | `<final>` | `.planning/phases/04-feature-label-engine/04-03-SUMMARY.md` |
+| — | This summary + STATE/ROADMAP | `1f0498e` | `.planning/phases/04-feature-label-engine/04-03-SUMMARY.md`, `.planning/STATE.md`, `.planning/ROADMAP.md` |
 
 ## Accomplishments
 
@@ -418,5 +418,5 @@ None blocking. The plan's task order had to be inverted (Deviation 1) and three 
 - `mvp/features/reference.py`, `mvp/features/kernel.py`, `mvp/tests/features/test_reference.py`, `mvp/tests/features/test_kernel.py`, `mvp/tests/leakage/test_feature_information_set.py`, `mvp/tests/fixtures/event_streams.py` — all present on disk.
 - `mvp/tests/features/__init__.py` — confirmed absent.
 - Commits `76b8104`, `9883f68`, `36bddb2` all present in `git log` on `feature/phase-04-feature-label-engine`.
-- `mvp/spec/features.toml`'s four `information_set` values are `t`, `t`, `[prev_l1_update, t]`, `[t-1s, t]`; every `definition` byte-unchanged against `git show HEAD~3:mvp/spec/features.toml`.
+- `mvp/spec/features.toml`'s four `information_set` values are `t`, `t`, `[prev_l1_update, t]`, `[t-1s, t]`; every `definition` byte-unchanged against `git show 6eeab5f:mvp/spec/features.toml` (the pre-plan ref).
 - `find mvp -name '*.nbc' -o -name '*.nbi'` returns nothing.
