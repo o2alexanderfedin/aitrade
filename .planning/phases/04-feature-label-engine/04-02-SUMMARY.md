@@ -101,6 +101,40 @@ completed: 2026-09-19
 - **`report.parquet` carries all three streams from one pass.** Not appended — recomputed, because `write_report` rebuilds the file wholesale and an appended row is a row the next curated regen deletes.
 - **`spec.md` re-rendered** with four new threshold tables carrying the measured 2026-09-13 numbers in their notes.
 
+## RP-4 Transcript
+
+Run as a `./.venv/bin/python3` script against a `tmp_path` lake, with a
+holdout registry declaring one date. The refusal happens **before the first
+`mkdir`**, so `lake/features/` is not merely empty afterwards — it was never
+created.
+
+```
+holdout.json declares: [2026-09-13]
+
+write_feature_partition -> QuarantinedDateError:
+  feature partition write of 2026-09-13: date(s) ['2026-09-13'] are held out
+  for BTCUSDT (declared in .../registry/holdout/holdout.json). The held-out
+  window is reachable only through the Phase 9/10 gate protocol, never
+  through this path.
+
+lake/features exists                       : False
+lake/features/symbol=.../date=2026-09-13/  : False
+```
+
+And the D+1 half, with D itself perfectly clean:
+
+```
+holdout.json now declares: [2026-09-14] only
+
+assert_buildable(2026-09-13, 2026-09-14) -> QuarantinedDateError:
+  feature build of 2026-09-13: its long-horizon label tail reads 2026-09-14:
+  date(s) ['2026-09-14'] are held out for BTCUSDT (declared in
+  .../registry/holdout/holdout.json). ...
+```
+
+The message names **which day was refused and why that day was being read at
+all** — `2026-09-13` is being built, `2026-09-14` is what stopped it.
+
 ## Mutation Check Results
 
 Each mutation was applied to the real source, the suite was run, the named test was observed failing, and the file was restored from a byte-identical backup (`git status` clean after each).
