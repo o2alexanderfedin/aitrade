@@ -850,3 +850,25 @@ def test_every_real_curated_manifest_still_has_a_known_source():
         "check_rtime_plausibility at a manifest with no rtime, and its "
         "fail-closed unknown-source branch would pause every features day"
     )
+
+
+def test_the_label_gap_threshold_converts_exactly_not_by_float_multiply():
+    """04-REVIEW.md IN-05: `int(2.3 * 1_000_000_000)` is `2299999999`.
+
+    The integral `30` in the TOML today is exact either way, which is
+    precisely why a float multiply here would have gone unnoticed until
+    the first fractional threshold -- in a project whose stated discipline
+    is that time arithmetic is integer nanoseconds.
+    """
+    from data.dq.checks import LabelGapThresholds
+
+    def ns(seconds):
+        return LabelGapThresholds(
+            max_quote_gap_seconds=seconds, notes=""
+        ).max_quote_gap_ns
+
+    assert ns(30) == 30_000_000_000
+    assert ns(2.3) == 2_300_000_000, "the float multiply gives 2299999999"
+    assert ns(0.5) == 500_000_000
+    assert ns(1.000000001) == 1_000_000_001
+    assert all(isinstance(ns(v), int) for v in (30, 2.3, 0.5))

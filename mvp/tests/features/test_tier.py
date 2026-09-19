@@ -210,3 +210,28 @@ def test_feature_partition_path_shape(tmp_path: Path):
         "a decision row is the merge of BOTH streams; a stream= level would "
         "invite a per-stream read that cannot exist"
     )
+
+
+def test_the_two_PRIMARY_LABEL_derivations_cannot_drift_apart():
+    """04-REVIEW.md IN-03: `PRIMARY_LABEL` is defined twice.
+
+    `features/labels.py` derives it as `get_label("ret_10s_mid").name` and
+    `features/tier.py` as `LABEL_COLUMNS[0]`. Both reach the catalogue, so
+    neither can drift toward an UNCATALOGUED name -- but they can drift
+    from EACH OTHER: reordering `LABEL_COLUMNS` moves one and not the
+    other, and `labels.py`'s docstring explicitly declines to import from
+    `tier.py`. The consequence would be silent: `build_stats.json` would
+    record `null_primary_label_rows` for one label while the feature-tier
+    DQ check judged coverage of another.
+
+    One assertion is cheaper than either module importing the other.
+    """
+    from features import labels as labels_module
+    from features import tier as tier_module
+
+    assert tier_module.PRIMARY_LABEL == labels_module.PRIMARY_LABEL
+    assert tier_module.PRIMARY_LABEL == "ret_10s_mid"
+    assert tier_module.LABEL_COLUMNS[0] == labels_module.PRIMARY_LABEL, (
+        "the tier's first label column IS the primary one; a reorder that "
+        "changed that would change which label the DQ report judges"
+    )

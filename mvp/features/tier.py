@@ -275,6 +275,20 @@ def write_feature_partition(
     FIRST, loudly. An unmanifested staging file is not data: nothing in
     the registry names it, no manifest hashes it, and leaving it would
     turn a crashed build into a permanently wedged date.
+
+    THE WRITE-ONCE GLOB IS A CHECK, NOT A LOCK (04-REVIEW.md IN-04, left
+    open deliberately). It is a time-of-check/time-of-use test: two
+    concurrent builds of the same date both glob an empty directory, both
+    write distinct `part-<ns>.parquet` files, both issue manifests, and
+    the second repoints the by-date pointer; a third build then sees two
+    files and refuses. Nothing is corrupted -- each manifest names its own
+    bytes and `resolve_manifest` still verifies them -- but a reader must
+    not mistake this refusal for an invariant. Making it one needs an
+    `O_EXCL` lock file in the `date=` directory, which is a real change to
+    the tier's failure modes (a crashed build would then leave a lock to
+    reap, on top of the staging file it already leaves). The daily build
+    is single-process, so this is not a live risk, and it is recorded here
+    rather than fixed.
     """
     assert_not_quarantined(
         [date],

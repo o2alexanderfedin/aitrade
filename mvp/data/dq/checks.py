@@ -117,6 +117,7 @@ import datetime as dt
 import time
 import tomllib
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 
 import polars as pl
@@ -231,8 +232,17 @@ class LabelGapThresholds:
         does not fit a value that comes from config: the TOML is the
         source of truth for the threshold and the constant would be a
         second one.
+
+        EXACT, VIA `Decimal` (04-REVIEW.md IN-05). `int(2.3 * 1e9)` is
+        `2299999999` -- a nanosecond short, because 2.3 has no float64
+        representation. The integral `30` in the TOML today is exact
+        either way, which is precisely why this would have gone unnoticed
+        until the first fractional threshold. `Decimal(str(seconds))`
+        parses the DECIMAL literal the TOML author wrote rather than the
+        binary approximation of it, and `round` on an exact product is a
+        no-op that only fires for a threshold finer than a nanosecond.
         """
-        return int(self.max_quote_gap_seconds * NS_PER_SECOND)
+        return int(round(Decimal(str(self.max_quote_gap_seconds)) * NS_PER_SECOND))
 
 
 @dataclass(frozen=True)
