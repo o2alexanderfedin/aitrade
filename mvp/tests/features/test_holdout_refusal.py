@@ -308,3 +308,86 @@ def test_load_features_refuses_a_curated_manifest(tmp_path: Path, monkeypatch):
             lake_root=lake_root,
         )
     assert reads == []
+
+
+# --------------------------------------------------------------------------
+# CR-01: the label tail, at the READ end
+# --------------------------------------------------------------------------
+
+
+def test_load_features_refuses_when_only_the_LABEL_TAIL_day_is_quarantined(
+    tmp_path: Path,
+):
+    """Day D's partition stores day D+1's price path.
+
+    `mid_t` is stored raw and every long-horizon label is a ratio, so
+    `mid_t * (1 + ret_10min_mid)` reconstructs D+1's prevailing mid
+    exactly. A read-time gate that only refuses the partition's OWN date
+    therefore hands the lockbox back through the neighbouring day's label
+    tail -- the build-side rule `assert_buildable` already enforces
+    (D-04-11), mirrored here.
+    """
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    manifest = _built_day(lake_root, registry_root, DATE)
+
+    write_holdout_registry(registry_root, [NEXT_DATE])
+    with pytest.raises(QuarantinedDateError) as exc:
+        load_features(
+            manifest["manifest_id"],
+            f"{SYMBOL}.features",
+            registry_root=registry_root,
+            lake_root=lake_root,
+        )
+    message = str(exc.value)
+    assert NEXT_DATE in message, "the message must name the day that was refused"
+    assert "label tail" in message, "...and say why a D-dated partition reads it"
+
+
+def test_load_features_refuses_only_the_tail_day_not_the_whole_lake(tmp_path: Path):
+    """The discriminating half: D+2 held out leaves D readable.
+
+    A gate that refused every date would pass the test above while being
+    useless. D's tail reaches exactly one day forward, so exactly one
+    extra day may refuse it.
+    """
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    manifest = _built_day(lake_root, registry_root, DATE)
+
+    write_holdout_registry(registry_root, ["2026-09-15"])
+    df = load_features(
+        manifest["manifest_id"],
+        f"{SYMBOL}.features",
+        registry_root=registry_root,
+        lake_root=lake_root,
+    )
+    assert df.height == 3
+
+
+def test_the_recorded_label_tail_dates_are_refused_too(tmp_path: Path):
+    """Belt and braces: the refusal is the UNION of the derived D+1 and
+    whatever the manifest's own `inputs[]` recorded.
+
+    Deriving D+1 is what covers the three partitions already on the lake,
+    whose committed bodies cannot be backfilled. Reading the recorded
+    dates is what keeps the gate honest if a future build ever reaches
+    further than one day forward.
+    """
+    from features.tier import LABEL_TAIL_ROLE
+
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    manifest = _built_day(lake_root, registry_root, DATE)
+    body_path = store.manifest_path(
+        registry_root, f"{SYMBOL}.features", manifest["manifest_id"]
+    )
+    assert body_path.exists()
+
+    # A manifest whose recorded tail reaches two days forward -- NOT the
+    # shape today's build produces, which is exactly the point.
+    far = "2026-09-20"
+    forged = dict(manifest)
+    forged["inputs"] = [{"role": LABEL_TAIL_ROLE, "dates": [far]}]
+
+    from features.tier import refused_dates_for
+
+    assert far in refused_dates_for(forged)
+    assert NEXT_DATE in refused_dates_for(manifest)

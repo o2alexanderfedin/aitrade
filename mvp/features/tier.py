@@ -48,6 +48,7 @@ import polars as pl
 
 from data import store
 from data.capture.rotation import write_parquet_atomic
+from data.dates import next_utc_date
 from data.holdout import assert_not_quarantined
 from data.store import (
     FEATURES_TIER,
@@ -63,7 +64,9 @@ __all__ = [
     "FEATURE_COLUMNS",
     "LABEL_COLUMNS",
     "PRIMARY_LABEL",
+    "LABEL_TAIL_ROLE",
     "feature_partition_path",
+    "refused_dates_for",
     "write_feature_partition",
     "curated_manifest_input",
     "issue_feature_manifest",
@@ -90,6 +93,12 @@ LABEL_COLUMNS: tuple[str, ...] = (
     get_label("ret_1min_mid").name,
     get_label("ret_10min_mid").name,
 )
+
+#: The `inputs[].role` of the curated manifest whose quotes became day
+#: D's long-horizon label tail. Spelled once: `build.py` writes it and
+#: `refused_dates_for` reads it, and the two drifting apart would silently
+#: widen the read-time gate's blind spot rather than fail.
+LABEL_TAIL_ROLE: str = "l1_label_tail"
 
 #: The label Stage 1 trades on; the one whose coverage the feature-tier DQ
 #: report judges (the other three are diagnostic, D-04-17).
@@ -261,6 +270,16 @@ def curated_manifest_input(
         "dataset": dataset,
         "manifest_id": manifest_id,
         "role": role,
+        # PROVENANCE, NOT THE GATE (04-REVIEW.md CR-01). Recording the
+        # dates an input covers makes the cross-day dependency legible in
+        # the artifact instead of only in the build script. It must not be
+        # the thing `refused_dates_for` relies on: manifest bodies are
+        # content-hashed and append-only, so the three bodies already
+        # committed cannot grow this key, and a gate that consulted it
+        # alone would fail OPEN on exactly the partitions that matter.
+        "dates": sorted(
+            {part["date"] for part in body["partitions"] if "date" in part}
+        ),
     }
 
 
@@ -333,6 +352,36 @@ def assert_buildable(
     )
 
 
+def refused_dates_for(manifest: dict) -> list[str]:
+    """Every date `load_features` must refuse this manifest on: its own
+    partition dates, PLUS each of their label-tail days.
+
+    THE TAIL IS THE POINT (04-REVIEW.md CR-01). A features partition for
+    day D has exactly one partition date, D -- and it stores D+1's price
+    path. `mid` is written raw and every label is a ratio, so
+    `mid_t * (1 + ret_10min_mid)` reconstructs D+1's prevailing mid to
+    1.5e-11 USDT. Refusing only D would hand the lockbox back through the
+    neighbouring day's label tail, which is the one thing D-04-11 forbids.
+
+    DERIVED FIRST, RECORDED SECOND, UNION OF BOTH. The tail is always
+    exactly D+1 -- `features.labels.next_day_quote_series` builds it from
+    `next_utc_date(date)` and there is no other path into it -- so the
+    derivation needs no manifest field and therefore covers the three
+    bodies already committed, which are content-hashed and can never be
+    backfilled. `inputs[].dates` is read ON TOP of that, not instead of
+    it: a future build whose tail reached further would be refused on
+    what it recorded, and a body that recorded nothing still gets the
+    derived day. Neither source can narrow the other.
+    """
+    dates = {part["date"] for part in manifest.get("partitions", []) if "date" in part}
+    refused = set(dates) | {next_utc_date(date) for date in dates}
+    for entry in manifest.get("inputs", []):
+        if entry.get("role") != LABEL_TAIL_ROLE:
+            continue
+        refused.update(entry.get("dates") or ())
+    return sorted(refused)
+
+
 def load_features(
     manifest_id: str, dataset: str, *, registry_root: Path, lake_root: Path
 ) -> pl.DataFrame:
@@ -347,11 +396,13 @@ def load_features(
        hard-link-aware), and every partition's on-disk sha256 must match.
        Integrity FIRST: a manifest that fails its own hash must never
        reach a holdout or a DQ conversation.
-    2. the holdout refusal, over the dates the manifest's partitions
-       actually name. RUNTIME-FIRST, and read-time rather than build-time
-       only: the registry is the authority, not the build history, so a
-       partition written before its date was declared held out is still
-       refused now.
+    2. the holdout refusal, over `refused_dates_for(manifest)` -- the
+       partitions' own dates AND their label-tail days. RUNTIME-FIRST, and
+       read-time rather than build-time only: the registry is the
+       authority, not the build history, so a partition written before its
+       date was declared held out is still refused now, and so is one
+       whose LABEL TAIL reaches into a day declared held out afterwards
+       (04-REVIEW.md CR-01).
     3. `store._enforce_dq_pause` -- a features manifest with no report row
        of its own is `missing`, which pauses, so the feature-tier DQ rows
        are not optional decoration.
@@ -361,10 +412,16 @@ def load_features(
     bytes by the time gate 2 runs -- that is the price of integrity-first
     ordering, and it is why `load_features` returning no rows is the
     guarantee, not "the file was never opened". The bytes on disk are the
-    residual T-04-09 accepts: a features partition built BEFORE its date
-    was held out stays readable to anything that bypasses this loader, and
-    moving or deleting it is part of Phase 5's declaration step, not
-    something a read-time refusal can do for it.
+    residual T-04-09 accepts: a features partition stays readable to
+    anything that bypasses this loader, and moving or quarantining it is
+    part of Phase 5's declaration step, not something a read-time refusal
+    can do for it.
+
+    AND THE PARTITION THAT STEP MUST MOVE IS NOT THE OBVIOUS ONE. Declaring
+    day X held out makes `features/date=X` (which may not exist -- the most
+    recent day never does) AND `features/date=X-1` unreadable here, because
+    X-1's label tail is X's price path. It is the day BEFORE the declared
+    date that carries the held-out bytes.
     """
     manifest = store.resolve_manifest(
         manifest_id,
@@ -373,12 +430,15 @@ def load_features(
         lake_root=lake_root,
         expected_tier=FEATURES_TIER,
     )
-    dates = sorted({part["date"] for part in manifest["partitions"]})
     assert_not_quarantined(
-        dates,
+        refused_dates_for(manifest),
         symbol=manifest["symbol"],
         registry_root=registry_root,
-        context=f"load_features of manifest {manifest_id[:12]}",
+        context=(
+            f"load_features of manifest {manifest_id[:12]} (its long-horizon "
+            "label tail stores the NEXT day's prevailing mids: mid_t * (1 + "
+            "ret_10min_mid) reconstructs them)"
+        ),
     )
     acks = store._enforce_dq_pause(
         manifest, registry_root=registry_root, lake_root=lake_root

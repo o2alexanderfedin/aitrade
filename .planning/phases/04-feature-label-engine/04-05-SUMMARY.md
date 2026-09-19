@@ -539,10 +539,15 @@ test rescoped during Task 2.
 
 ## Next Phase Readiness — handoff notes
 
-- **T-04-09, carried forward verbatim:** a features partition written before its date is declared
+- **T-04-09, carried forward:** a features partition written before its date is declared
   held out **stays readable on disk**. `load_features` refuses it, but the refusal covers the code
   path, not the bytes. Moving or deleting the partition is part of Phase 5's declaration step;
   no read-time gate can do it.
+  **CORRECTED 2026-09-19 (04-REVIEW.md CR-01):** the partition Phase 5 must move when it declares
+  day `X` held out is **`features/date=X-1`**, not (only) `features/date=X`. Day `D`'s label tail
+  stores day `D+1`'s prevailing mids, recoverable as `mid_t * (1 + ret_10min_mid)` to 1.5e-11 USDT
+  — 77,962 such rows measured in `date=2026-09-14` for 2026-09-15. `load_features` now refuses on
+  the partition dates **and** their `D+1` tail days (`features.tier.refused_dates_for`).
 - **Phase 5 must not use `post_gap_warmup` as its staleness filter.** It tags capture-process
   outages the ledger saw. The rows that matter — trades carrying a frozen book through an L1
   silence — are invisible to it and visible to the lake-derived gap rule. A lake-derived

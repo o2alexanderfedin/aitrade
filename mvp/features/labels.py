@@ -67,13 +67,13 @@ starts. No Python loop over rows anywhere.
 
 from __future__ import annotations
 
-import datetime as dt
 import json
 from pathlib import Path
 
 import numpy as np
 
 from data import store
+from data.dates import next_utc_date
 from data.dq.checks import load_dq_thresholds
 from data.time_ns import LABEL_HORIZON_NS
 from features.event_stream import event_arrays, project_bookticker
@@ -89,6 +89,10 @@ __all__ = [
     "big_quote_gaps",
     "default_gap_threshold_ns",
     "compute_labels",
+    # RE-EXPORTED, not defined here (04-REVIEW.md CR-01). The calendar
+    # arithmetic moved to `data/dates.py` so `features/tier.py` -- which
+    # this module imports, and which now needs the same "what is day D+1"
+    # answer at READ time -- can reach it without a circular import.
     "next_utc_date",
     "assert_next_day_available",
     "append_next_day_quotes",
@@ -397,17 +401,6 @@ class NextDayUnavailableError(RuntimeError):
     Not an error in the data -- an error in the TIMING of the build, and
     the difference matters: waiting a day fixes it.
     """
-
-
-def next_utc_date(date: str) -> str:
-    """The UTC day after `date`, both as `YYYY-MM-DD`.
-
-    Calendar arithmetic on the date STRING, never on an etime: a day here
-    is the partition key `date=`, and deriving it from a timestamp would
-    reintroduce exactly the midnight/offset question the string already
-    answers.
-    """
-    return (dt.date.fromisoformat(date) + dt.timedelta(days=1)).isoformat()
 
 
 def assert_next_day_available(
