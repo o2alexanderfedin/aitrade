@@ -655,6 +655,20 @@ def test_a_crash_between_the_write_and_the_manifest_is_recovered_automatically(
     assert [p.name[:5] for p in sorted(date_dir.glob("*.parquet"))] == ["part-"], (
         "exactly one committed partition, and no leftover staging file"
     )
+    entry = result["partition_entry"]
+    committed = lake_root / entry["path"]
+    assert committed.stat().st_mtime_ns == entry["mtime_ns"], (
+        "the staging rename must preserve mtime: the manifest records it at "
+        "write time and `check_no_manifest_rewrite`'s fast path compares it "
+        "without reopening the file, so a rename that touched it would make "
+        "every manifest this build issues look rewritten"
+    )
+    assert committed.stat().st_size == entry["size_bytes"]
+    import hashlib as _hashlib
+
+    assert _hashlib.sha256(committed.read_bytes()).hexdigest() == entry["sha256"], (
+        "...and the bytes the manifest names are the bytes at the final path"
+    )
 
 
 def test_an_orphan_part_file_reports_the_date_and_does_not_abort_the_range(

@@ -127,6 +127,12 @@ leaves a `part-` orphan, and the range reports `orphaned` for that date while st
 next one. **Mutation checks:** disabling the staging name turns the first red; removing the
 `FileExistsError` clause turns the second red.
 
+The rename also has to preserve `mtime_ns`, `size_bytes` and the sha256 the partition entry already
+carries — `check_no_manifest_rewrite`'s fast path compares mtime and size WITHOUT reopening the
+file, so a rename that touched them would make every manifest the build issues look rewritten. That
+is now asserted rather than inferred from POSIX, and replacing `os.replace` with a copy turns the
+test red.
+
 ### WR-02: one absolute 30 s threshold served horizons of 1 s and 10 s
 
 **Commit:** `e77eb38`
@@ -340,6 +346,20 @@ reader meets the code, rather than leaving the glob to read as a guarantee.
   of the review's thresholdless rule. Reasoning above; easy to revisit.
 - **Nothing under `capture/` was touched.** The daemon (PID 72546) ran undisturbed throughout — it
   has 2 days 9 hours uptime as of this report.
+
+## For the orchestrator
+
+`04-VERIFICATION.md`'s frontmatter still reads `status: human_needed` with two
+`human_verification` entries. Both are now resolved and can be flipped:
+
+- the FEAT-01 enforcement hole (gap A) by `d4b97fd` — `build.py` goes through `features.api`, the
+  guardrail sanctions three files rather than a directory, and the verifier's own rogue module
+  fails the scan;
+- T-04-09's disposition by `6d4f2b7` — the read-time refusal now covers the label-tail day as well
+  as the partition's own, and the handoff naming the wrong partition is corrected in both
+  summaries. The residual that remains is the byte-level one the verifier described: a partition
+  stays readable to anything that bypasses `load_features`, and moving it is Phase 5's declaration
+  step.
 
 ---
 

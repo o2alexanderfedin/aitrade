@@ -125,6 +125,13 @@ arriving from there was otherwise 14 percentage points out.
   precedence, so the counts sum to the NaNs and a test asserts they do. The past-end guard exists
   because `searchsorted` cannot express it: the index happily returns the last quote and the
   arithmetic succeeds.
+  **CORRECTED 2026-09-19 (04-REVIEW.md WR-02): there are now FOUR,** with `null_stale` last in the
+  precedence — no quote arrived in `(t, t+h]` at all, so the prevailing mid at `t+h` is the very
+  quote that produced `mid_t` and the label would be a carried-forward price differenced against
+  itself. The three above could not express that: the gap rule's single absolute 30 s threshold is
+  3x the primary horizon, so any shorter silence swallowing the window produced a finite `0.0`.
+  Measured across all three built days: 69 primary labels and 180 `ret_1s_mid`, every one of them
+  previously exactly `0.0`.
 - **The day boundary is a refusal.** `assert_next_day_available` reads the curated by-date pointer
   and refuses day D until D+1 exists. Derived rather than transcribed, the buildable feature days
   are **2026-09-12, 2026-09-13 and 2026-09-14** — never the most recent day.
