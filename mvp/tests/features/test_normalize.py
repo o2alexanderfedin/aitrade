@@ -41,6 +41,8 @@ from features.normalize import (
 
 SYMBOL = "BTCUSDT"
 TRAIN_END_DATE = "2026-09-13"
+#: The two days the fixture's source feature manifests cover, newest last.
+TRAIN_DATES = ("2026-09-12", "2026-09-13")
 CODE_HASH = "0" * 40
 
 
@@ -65,7 +67,15 @@ def _artifact_inputs(registry_root: Path) -> list[dict]:
     for index, manifest_id in enumerate(("a" * 64, "b" * 64)):
         path = registry_root / "manifests" / "BTCUSDT.features" / f"{manifest_id}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
-        body = {"manifest_id": manifest_id, "row_count": 10 * (index + 1)}
+        body = {
+            "manifest_id": manifest_id,
+            "row_count": 10 * (index + 1),
+            # The dates the fit's rows came from. Real feature manifests
+            # always carry these; the fixture used to omit them, which is
+            # how a loader that had no holdout gate also had nothing to
+            # gate ON (04-REVIEW.md WR-03).
+            "partitions": [{"date": TRAIN_DATES[index]}],
+        }
         path.write_text(json.dumps(body))
         inputs.append(
             {
@@ -418,3 +428,75 @@ def test_a_second_artifact_for_the_same_train_end_is_refused(tmp_path):
     assert len(list(parent.glob("part-*.parquet"))) == 1, (
         "the refusal must happen BEFORE the write, not as a cleanup"
     )
+
+
+def test_load_normalization_refuses_a_held_out_training_date(tmp_path):
+    """The same shape as CR-01, one tier over.
+
+    `load_normalization` ran `resolve_manifest` and
+    `read_verified_partitions` and nothing else. A mean and a standard
+    deviation are a weaker channel than a price path, but they are still a
+    summary of whatever rows went in, and the loader could not have
+    refused even if it wanted to: the body records `train_end_date` and an
+    etime range, not the list of dates the parameters were fit over.
+
+    The dates are DERIVED from the source feature manifests rather than
+    read out of the artifact body, for the same reason CR-01's tail is
+    derived: the artifact already on the lake is write-once and its
+    manifest body is content-hashed, so a gate that depended on a new
+    field would fail OPEN on exactly the artifact that exists.
+    """
+    from data.holdout import QuarantinedDateError
+    from tests.fixtures.feature_tier import write_holdout_registry
+
+    etime, values = _segment(200)
+    fit = fit_training_segment(values, etime, train_end_etime=int(etime[-1]))
+    manifest = _write(
+        fit.params,
+        tmp_path,
+        train_row_count=fit.train_row_count,
+        train_etime_range=fit.train_etime_range,
+    )
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    dataset = normalization_dataset(SYMBOL)
+
+    # Nothing held out: it loads.
+    assert (
+        load_normalization(
+            manifest["manifest_id"],
+            dataset,
+            registry_root=registry_root,
+            lake_root=lake_root,
+        ).params
+        == fit.params
+    )
+
+    write_holdout_registry(registry_root, [TRAIN_DATES[0]])
+    with pytest.raises(QuarantinedDateError, match=TRAIN_DATES[0]):
+        load_normalization(
+            manifest["manifest_id"],
+            dataset,
+            registry_root=registry_root,
+            lake_root=lake_root,
+        )
+
+    # Discriminating half: a date the fit never saw does not refuse it.
+    write_holdout_registry(registry_root, ["2026-09-20"])
+    assert (
+        load_normalization(
+            manifest["manifest_id"],
+            dataset,
+            registry_root=registry_root,
+            lake_root=lake_root,
+        ).params
+        == fit.params
+    )
+
+
+def test_an_artifact_that_cannot_say_what_it_was_fit_on_is_refused(tmp_path):
+    """Fail-closed, not fail-open: an artifact whose inputs name no dates
+    cannot be gated, so it cannot be read."""
+    from features.normalize import _train_dates
+
+    with pytest.raises(ValueError, match="cannot say which dates"):
+        _train_dates({"inputs": [], "symbol": SYMBOL}, registry_root=tmp_path)

@@ -49,6 +49,7 @@ this module's code, which is what
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import time
 from dataclasses import dataclass
@@ -58,9 +59,11 @@ import numpy as np
 import polars as pl
 
 from data.capture.rotation import write_parquet_atomic
+from data.holdout import assert_not_quarantined
 from data.store import (
     FEATURES_NORM_TIER,
     issue_manifest,
+    manifest_path,
     read_verified_partitions,
     resolve_manifest,
 )
@@ -409,6 +412,68 @@ def write_normalization_artifact(
     )
 
 
+def _train_dates(manifest: dict, *, registry_root: Path) -> list[str]:
+    """The dates the stored parameters summarise, from the artifact's own
+    `inputs[]`.
+
+    DERIVED, NOT READ OUT OF THE BODY (04-REVIEW.md WR-03). The artifact
+    records `train_end_date` and an etime range but no date list, and the
+    one artifact already on the lake is write-once with a content-hashed
+    manifest body -- so a gate that depended on a new column or a new
+    manifest field would fail OPEN on exactly the artifact that exists.
+    Each `inputs[]` entry names a feature manifest by id; that manifest's
+    partition dates ARE the days whose rows went into the fit.
+
+    An entry that records its own `dates` (every one issued by
+    `features.tier.curated_manifest_input` from now on) is believed as
+    well; the two sources are unioned, so neither can narrow the other.
+
+    FAIL-CLOSED: an input whose manifest does not resolve, whose bytes do
+    not hash to what the artifact recorded, or which names no dates at
+    all, raises. An artifact that cannot say what it was fit on cannot be
+    gated, and an ungateable artifact must not be readable.
+
+    NO D+1 TAIL HERE, unlike `features.tier.refused_dates_for`. This tier
+    summarises the FEATURE columns only -- `mid`, `imb_top`, `ofi`,
+    `trade_flow` at day D's decision rows. None of them reads a later
+    day; only the labels do, and no label is fit here.
+    """
+    dates: set[str] = set()
+    inputs = manifest.get("inputs") or []
+    for entry in inputs:
+        dates.update(entry.get("dates") or ())
+        path = manifest_path(
+            Path(registry_root), entry["dataset"], entry["manifest_id"]
+        )
+        if not path.exists():
+            raise ValueError(
+                f"load_normalization: source manifest {entry['manifest_id'][:12]} "
+                f"is not in this registry ({path}) -- refusing to read an "
+                "artifact whose training dates cannot be established"
+            )
+        raw = path.read_bytes()
+        recorded = entry.get("sha256")
+        actual = hashlib.sha256(raw).hexdigest()
+        if recorded is not None and actual != recorded:
+            raise ValueError(
+                f"load_normalization: source manifest {path} hashes to "
+                f"{actual[:12]} but the artifact recorded {recorded[:12]} -- "
+                "refusing to establish training dates from bytes that moved"
+            )
+        body = json.loads(raw)
+        dates.update(
+            part["date"] for part in body.get("partitions", []) if "date" in part
+        )
+    if not dates:
+        raise ValueError(
+            "load_normalization: this artifact cannot say which dates its "
+            f"parameters were fit over ({len(inputs)} input(s), none naming a "
+            "date) -- an artifact the holdout gate cannot judge must not be "
+            "read"
+        )
+    return sorted(dates)
+
+
 def load_normalization(
     manifest_id: str,
     dataset: str,
@@ -432,6 +497,14 @@ def load_normalization(
     The data quality of an artifact is not a separate question anyway: it is
     a deterministic function of feature partitions that the gate already
     judged when `load_features` read them.
+
+    IT DOES CALL THE HOLDOUT GATE, AND THAT IS A DIFFERENT QUESTION
+    (04-REVIEW.md WR-03). A mean and a standard deviation are a weaker
+    channel than a price path, but they are still a summary of whatever
+    rows went in, and the docstring above justifies skipping the DQ pause
+    only. The dates are derived from the source feature manifests
+    (`_train_dates`), so the gate works on the artifact already on the
+    lake without reissuing it.
     """
     manifest = resolve_manifest(
         manifest_id,
@@ -439,6 +512,15 @@ def load_normalization(
         registry_root=Path(registry_root),
         lake_root=Path(lake_root),
         expected_tier=FEATURES_NORM_TIER,
+    )
+    assert_not_quarantined(
+        _train_dates(manifest, registry_root=Path(registry_root)),
+        symbol=manifest["symbol"],
+        registry_root=Path(registry_root),
+        context=(
+            f"load_normalization of {manifest_id[:12]} (its parameters "
+            "summarise the feature rows of those days)"
+        ),
     )
     frames = read_verified_partitions(manifest, lake_root=Path(lake_root))
     body = pl.concat(frames, how="vertical")
