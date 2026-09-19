@@ -805,23 +805,70 @@ def test_rtime_plausibility_fails_an_unknown_source_with_an_actionable_reason():
     assert "rtime_plausibility" in result["reason"]
 
 
-def test_every_real_manifest_still_has_a_known_source():
-    """Measured read-only over all 111 committed by-date manifests: 4 capture,
-    107 archive, zero unknown. The fail-closed branch must not pause a single
-    real day."""
+def test_every_real_curated_manifest_still_has_a_known_source():
+    """Measured read-only over every committed CURATED by-date manifest:
+    4 capture, 107 archive, zero unknown. The fail-closed branch of
+    `check_rtime_plausibility` must not pause a single real day.
+
+    SCOPED TO CURATED, and the scoping is the finding rather than a
+    loosening. Phase 4's features tier issues by-date pointers of its own,
+    and `manifest_source` reports `"unknown"` for every one of them -- a
+    features manifest's `inputs[]` are manifest JSON paths, not
+    `/source=.../` partition paths, so there is nothing for it to read.
+    That is harmless exactly once, and the assertion below is what keeps it
+    so: `data.dq.report.STREAMS` drives the only loop that ever reaches
+    `check_rtime_plausibility`, and `"features"` is not in it. A decision
+    row has no receive clock; there is no rtime to judge.
+    """
     import json
 
+    from data.dq.report import STREAMS
     from data.lake_paths import LAKE_REGISTRY_ROOT
     from data.store import manifest_source
 
     manifests_dir = LAKE_REGISTRY_ROOT / "manifests"
     pointers = sorted(manifests_dir.rglob("by-date/*.json"))
-    assert len(pointers) == 111, f"expected 111 by-date pointers, found {len(pointers)}"
+    curated = [p for p in pointers if "features" not in p.parent.parent.name]
+    features = [p for p in pointers if "features" in p.parent.parent.name]
+    assert len(curated) == 111, f"expected 111 curated by-date pointers, {len(curated)}"
 
-    counts: dict[str, int] = {}
-    for pointer in pointers:
+    def source_of(pointer):
         manifest_id = json.loads(pointer.read_text())["manifest_id"]
         body = json.loads(next(manifests_dir.rglob(f"{manifest_id}.json")).read_text())
-        source = manifest_source(body)
+        return manifest_source(body)
+
+    counts: dict[str, int] = {}
+    for pointer in curated:
+        source = source_of(pointer)
         counts[source] = counts.get(source, 0) + 1
     assert counts == {"capture": 4, "archive": 107}, counts
+
+    assert features, "the features tier has no committed by-date pointer"
+    assert {source_of(p) for p in features} == {"unknown"}
+    assert "features" not in STREAMS, (
+        "adding 'features' to the curated stream loop would send "
+        "check_rtime_plausibility at a manifest with no rtime, and its "
+        "fail-closed unknown-source branch would pause every features day"
+    )
+
+
+def test_the_label_gap_threshold_converts_exactly_not_by_float_multiply():
+    """04-REVIEW.md IN-05: `int(2.3 * 1_000_000_000)` is `2299999999`.
+
+    The integral `30` in the TOML today is exact either way, which is
+    precisely why a float multiply here would have gone unnoticed until
+    the first fractional threshold -- in a project whose stated discipline
+    is that time arithmetic is integer nanoseconds.
+    """
+    from data.dq.checks import LabelGapThresholds
+
+    def ns(seconds):
+        return LabelGapThresholds(
+            max_quote_gap_seconds=seconds, notes=""
+        ).max_quote_gap_ns
+
+    assert ns(30) == 30_000_000_000
+    assert ns(2.3) == 2_300_000_000, "the float multiply gives 2299999999"
+    assert ns(0.5) == 500_000_000
+    assert ns(1.000000001) == 1_000_000_001
+    assert all(isinstance(ns(v), int) for v in (30, 2.3, 0.5))

@@ -192,6 +192,11 @@ ALLOWLISTED_SEC_TO_NS_SITES: dict[str, str] = {
         "display of outage/gap durations (03-REVIEW.md CR-05: previously "
         "hidden from this check by binding the literal to a name)"
     ),
+    "data/time_ns.py": (
+        "the single Phase 4 home for window/horizon seconds -> ns constants "
+        "(04-CONTEXT.md D-04-13); every other feature/label module imports "
+        "the pre-multiplied value"
+    ),
 }
 
 MUL_CALL_NAMES = frozenset({"mul", "__mul__", "__rmul__", "__imul__", "multiply"})

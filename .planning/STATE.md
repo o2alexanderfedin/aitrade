@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: ready_to_plan
-stopped_at: Phase 3 complete and merged to develop; Phase 4 ready to plan
-last_updated: "2026-09-17T07:40:00.000Z"
-last_activity: 2026-09-17
+stopped_at: "Phase 4 COMPLETE (all 7 plans). 04-07 closed FEAT-01 and FEAT-05: one feature entry point (features/api.py) called three genuinely different ways -- one batch, 64 chunks with 45 of 63 boundaries inside an etime group, and 200,000 rows one at a time -- byte-identical on all 6,864,853 decision rows of the real 2026-09-13 day AND byte-identical to the partition features/build.py already wrote. Kernel-entry counts asserted exactly (1 / 64 / 200,000): a working delegation from the simulator to the batch path leaves every equality test green and only that count catches it. Normalization is a manifest-addressed features_norm artifact (d1d35fbf, 5,568 bytes, 4 rows) fit on 11,057,990 decision rows of 09-12+09-13; handing the fit all three days plus a boundary gives bit-identical parameters, and scoring 11.3M held-back 09-14 rows leaves its sha256 unchanged. mid's frozen z on 09-14 is +4.31 sigma with 2.85x the training dispersion -- the transform working, and the strongest signal yet that `mid` wants a differenced form as a model input (a NEW catalogue name, Phase 8). 930 tests green; 18 pre-commit hooks. Phase 5 (fold harness) next. Capture daemon Run J (PID 72546) live, same PID before and after, never signalled. Open user action: sudo pmset -b disablesleep 1."
+last_updated: "2026-09-19T12:10:00.000Z"
+last_activity: 2026-09-19
 progress:
   total_phases: 11
-  completed_phases: 3
-  total_plans: 8
-  completed_plans: 8
-  percent: 27
+  completed_phases: 4
+  total_plans: 21
+  completed_plans: 21
+  percent: 36
 ---
 
 # Project State
@@ -21,22 +21,24 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-10)
 
 **Core value:** A reproducible, leakage-proof two-stage pipeline achieving Net P&L > 0 and annualized Sharpe > 5 on a locked held-out walk-forward window under stated simplifications — produced by a workflow where agentic iteration verifiably improves the model.
-**Current focus:** Phase 3 — Data Layer: Backfill, Ingest & Lockbox
+**Current focus:** Phase 4 — Feature & Label Engine
 
 ## Current Position
 
-Phase: 4 of 11 (feature & label engine)
+Phase: 5 of 11 (fold harness & overfitting controls)
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-09-17
+Last activity: 2026-09-19
 
-Progress: [███░░░░░░░] 27%
+Progress: [██████████] 100%
+
+> That 100% is `state.update-progress`'s definition -- SUMMARY files over PLAN files on disk (22 summaries over 21 plans, capped at 100%). Every one of the 21 plans now has a summary; the 22nd is `03-07-GAPS-SUMMARY.md`, which has no plan of its own. It is NOT milestone completion: phases 5-11 have no plans on disk yet, and 3 of 11 phases are marked complete -- Phase 4's seven plans are all executed, and the phase closes at its verification/merge step, exactly as Phases 1-3 did.
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 15
+- Total plans completed: 23
 - Average duration: -
 - Total execution time: -
 
@@ -45,6 +47,7 @@ Progress: [███░░░░░░░] 27%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 3 | 7 | - | - |
+| 4 | 7 | - | - |
 
 **Recent Trend:**
 
@@ -58,6 +61,13 @@ Progress: [███░░░░░░░] 27%
 | Phase 01 P04 | ~70min | 3 tasks | 13 files |
 | Phase 02 P01 | 10min | 3 tasks | 15 files |
 | Phase 02 P04 | 18min | 2 tasks | 4 files |
+| Phase 04 P01 | ~35min | 2 tasks | 11 files |
+| Phase 04 P02 | ~2h | 3 tasks | 14 files |
+| Phase 04 P03 | ~2h | 3 tasks | 8 files |
+| Phase 04 P04 | ~2h | 2 tasks | 8 files |
+| Phase 04 P05 | ~3h | 2 tasks | 10 files |
+| Phase 4 P06 | ~2h | 2 tasks | 12 files |
+| Phase 4 P07 | ~2h | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -97,7 +107,30 @@ Recent decisions affecting current work:
 - [Phase 2]: diff_definition_changes(old, new, field='definition') defaults to the features comparison key; every label call site passes field='computation' explicitly since labels have no definition key.
 - [Phase 2]: Pre-commit and GitHub Actions run byte-identical command strings for every guardrail (repo:local hooks, no astral ruff-pre-commit integration hook) -- eliminates the ruff-version-drift class of bug entirely.
 - [Phase 2]: All eight Stage-0 CI guardrails mechanically observed red-then-green, plus a real GitHub Actions run observed both failing (ci-red-proof, deleted) and succeeding (real branch): success run https://github.com/o2alexanderfedin/aitrade/actions/runs/34799740762, failure run https://github.com/o2alexanderfedin/aitrade/actions/runs/34799815465.
+- [Phase 4]: The merged event stream's order is `(etime, source_rank, seq)` with bookTicker = 0 (the LEFT frame of `merge_sorted`), materialized as a column and asserted at runtime inside every merge -- swapping the merge arguments raises instead of silently reversing the tie order. Verified on the real 2026-09-13 day: 18,576,995 events, 6,864,853 decision rows, 329,580 of them trade rows (= the distinct trade etime count, true by construction under quotes-first).
+- [Phase 4]: Phase 2's "a test package must not shadow a real source package" lesson recurred exactly: `mvp/tests/features/__init__.py` (written by Plan 01 Task 1, correct at the time) shadowed the new `mvp/features/` package the moment Task 2 created it. Deleted. The rule is now three instances old (tests/spec, tests/tools+tracking, tests/features) -- treat "does a source package share this test directory's name?" as a checklist item when adding a test directory.
+- [Phase 4]: `polars`' `.to_numpy()` on a Float64 column WITH nulls returns a NaN-filled COPY and does not raise (re-measured 2026-09-19). Every polars->numba boundary must assert `null_count() == 0` per column; `features/event_stream.py:event_arrays` is the one that does it for the event stream.
 - [Phase 2]: mvp/tests/leakage/ scaffolded with one placeholder test, wired into both CI callers' pytest invocation identically to tests/spec/tracking/capture, so Phase 4's real per-feature shuffle-future leakage tests land in an already-CI-exercised directory.
+- [Phase 4]: lake/features/ is a full lake tier, not a flag on the curated one. store.BY_DATE_INDEXED_TIERS is the explicit allowlist granting a tier a date-addressable pointer; the quarantined tier stays outside it and the EXCLUDED half is asserted directly. load_features mirrors load_curated one tier over -- every reader names the one tier it may reach.
+- [Phase 4]: The holdout refusal covers day D AND day D+1, at both the write and the read -- D's ret_10min_mid tail is computed from D+1's mids, so building D while D+1 is held out launders the holdout through a neighbour's label tail. data/holdout.py is dependency-free (no mlflow import, no quarantined-tier path string); an absent registry returns QuarantinedDates(declared=False), so 'not armed yet' is a different value from 'armed and empty', and a malformed one raises.
+- [Phase 4]: check_lockbox_containment flags the bare string 'lockbox' in any file outside its four SANCTIONED_TEST_FILES. New tests needing that literal go INTO the already-sanctioned file rather than extending the list (a sanction disables every rule for a file); a sibling test file proves the same _enforce_tier_containment code path with raw/ as the escape target.
+- [Phase 4]: A features row missing from report.parquet is invisible in the artifact and fatal at the loader. write_report rebuilds the file wholesale, so a features row not RECOMPUTED on every regeneration is deleted by the next curated regen -- leaving an ok/degraded-looking report while load_features is paused on 'missing' forever. Observed by removing the call; the regeneration test is the control, not the convention.
+- [Phase 4]: Every measured label statistic must name its ROW SET. 04-RESEARCH-NOTES.md measured per L1 update (17.2M rows, 2.5 quotes per distinct etime); the feature tier writes per decision row (6.86M). ret_10s_mid is exactly zero on 43.9% of decision rows, not 29.7%; std 1.447e-04, not 1.853e-04. Both reproduced exactly on their own row sets before the catalogue was corrected (04-04).
+- [Phase 4]: **`post_gap_warmup` and the labels' `null_gap` do not see the same outages, and the difference is structural.** Trades are archive-sourced (backfilled after an outage); bookTicker is capture-only and has never been published to data.binance.vision, so its holes are permanent. Every decision row inside an L1 silence is therefore a REAL trade carrying a frozen book, with both warm-up flags false -- 29,058 of them inside 09-14's 2894 s gap, 499 inside a 160.8 s silence the capture gap ledger never recorded at all (the connection was not silent, so the watchdog structurally could not fire). `post_gap_warmup` answers "was the capture process down?"; `null_gap` answers "was the data silent?". Only the second is derivable from the lake alone. Phase 5 must not use post_gap_warmup as its staleness filter.
+- [Phase 4]: **`resync_warmup.seconds = 60` measured on 09-14 and left unchanged.** No settling transient exists: quote rate recovers past the day's 123/s mean within 10-30 s of each resumption, and post-gap std(ret_1s_mid) is 0.00-0.90x the day's baseline at every horizon out to 5 minutes -- post-gap rows are QUIETER than the day, never noisier. The only bound the kernel's own state justifies is 1 s (the trade_flow window) plus exactly one stale `ofi`. The window's LEFT edge is the part to fix first: `gap_end_etime_approx` was 4.830 s EARLY on one 09-14 window (tagging 5 s of nothing) and 18 ms LATE on another, which is enough to leave the first two post-outage quotes untagged. Retuning a Phase 3 threshold inside a Phase 4 build was deliberately not done.
+- [Phase 4]: **A mutation can survive because the system is layered, not because the test is weak.** 04-05's plan mutation (a) -- move `assert_buildable` after the write -- passes, because `write_feature_partition`'s own `assert_not_quarantined` and `next_day_quote_series`'s internal `assert_buildable` both still fire first. Only removing all three makes the directory-absence assertion bite (and it does: the exception still raises, the day is on disk). Fourth instance this phase of a mutation weaker than its own sentence.
+- [Phase 4]: **Removing `assert_strict_total_order` from `merge_curated_streams` leaves all nine `tests/features/test_event_stream.py` tests green.** They exercise the function; only the build-level test exercises the gate. The silently-wrong build wrote a well-formed, hash-verified 2-row partition with `ofi = 3.0` on both rows and a `decision_source_rank` that lies about which event was the decision.
+- [Phase 4]: **`ret_10s_mid`'s point mass at exactly zero is NOT a stable property of the target:** 70.2% / 43.9% / 12.3% on 2026-09-12 / 09-13 / 09-14. It tracks L1 density, not the label's nature. A loss function or IC statistic tuned on one day's quantisation will be wrong on the next.
+- [Phase 4]: `build_stats.json` for the features tier lives at `lake/features_meta/symbol=/date=/build_stats.json` (`feature_build_stats_path`), which is what `data/dq/report.py` reads. `build_stats_path(..., "features", ...)` under `curated_meta/` resolves to a path nothing reads -- writing there produces three `feature_build_stats` FAILED rows and three paused days.
+- [Phase 4]: Give `build_features_range` ONE `code_hash` per run, or commit each manifest before building the next day: each build process recomputes the hash, and the previous day's untracked manifest JSON makes every subsequent day's provenance `-dirty`. Observed on 09-13 and 09-14; 09-12 is clean.
+- [Phase 4]: 04-06: information_set/embargo are machine-parsed (spec/information_set.py) and compared against the measured reach; an unrecognised declaration RAISES rather than degrading to unbounded or 0. The duration table aliases data/time_ns.py's pre-multiplied constants -- no second seconds-to-ns site.
+- [Phase 4]: 04-06: every leakage invariance property has a sensitivity counterpart. Measured: a constant `mid` leaves BOTH shuffle properties GREEN -- containment is one-sided and an empty measured set satisfies every declaration.
+- [Phase 4]: 04-06: `embargo` is guarded ONLY by tests/leakage/test_embargo.py. check_spec_diff appears to catch a shortened embargo but only via spec.md render drift; re-render as its own message instructs and it is green.
+- [Phase 4]: 04-07: byte-equality between call sites is evidence ONLY when the call sites are proven different. A `for_simulation` that collects its rows and takes the batch path leaves 12 of 13 tests green; the exact kernel-entry counts (1 / n_chunks / n_rows), measured with a counting wrapper, are the only assertion that dies.
+- [Phase 4]: 04-07: `features/build.py` still drives the kernel directly instead of calling `features.api`. Proven byte-identical on the real day, but it IS a second caller and the tripwire sanctions `features/` wholesale. Rewiring it is a small follow-up whose acceptance test already exists.
+- [Phase 4]: 04-07: the `features_norm` tier has no DQ rows and its loader deliberately skips the pause gate; its partition entries carry no `date`, so the gate is not merely unnecessary but INAPPLICABLE (KeyError, measured). Adding the gate alone pauses it forever; adding a date alone gives it a `missing` verdict.
+- [Phase 4]: 04-07: a fold boundary is an inclusive int64-ns `train_end_etime` argument (`fit_training_segment`), never a date string. The artifact stores Welford `(count, mean, M2)` so an EXTENDED training segment can resume exactly rather than refit.
+- [Phase 4]: 04-07: frozen normalization of `mid` puts the very next day at z = +4.31 with 2.85x the training spread. Correct behaviour (a level moved), and the reason a per-window recomputation would look tidy and be a leak. Phase 8 should give `mid` a differenced model-input form under a NEW catalogue name.
 
 ### Pending Todos
 
@@ -117,6 +150,8 @@ Recent decisions affecting current work:
 - ~~[Phase 1]: Human decision required — Tardis.dev L1 history buy vs wait-for-capture vs two-regime dataset~~ **RESOLVED 2026-09-11: two-regime dataset.**
 - [Phase 2]: Spot L1 etime strategy — **decided** (spot deferred post-MVP, swap-only); still must be **written into spec.md** during Stage 0.
 - [Phase 1]: Capture has not started yet. Roadmap was created 2026-06-10; it is now 2026-09-11, so ~3 months of L1 the roadmap assumed would be accruing were never captured. L1-dependent phases are gated on capture depth from the day the daemon actually starts.
+- [Phase 4, 2026-09-19]: **Any script that runs a `cache=True` numba kernel OUTSIDE pytest must export `NUMBA_CACHE_DIR` itself.** `tests/conftest.py`'s pin only applies under pytest, and the `*.nbc`/`*.nbi` land in `mvp/features/__pycache__/`, which is gitignored -- `git status` stays clean and only the repo-walk assertion (`test_no_numba_cache_artifacts_under_mvp`) can see them. Observed firing by accident during Plan 04-03's own mutation checks, which is how T-04-14's `accept` disposition earns its keep.
+- [Phase 4, 2026-09-19]: **A green test can be green for the wrong reason, and only mutating the code it claims to cover finds that.** Plan 04-03's tie-order test drew `etime`s from a grid so fine that 4,000 rows shared 3 distinct values -- with no ties the two merge orders were literally the same stream, so the float64-accumulator mutation survived a passing test. Generalises the phase's guardrails-runtime-first lesson: mutate the code behind a test that already passes, not only the code behind a new one.
 - [Phase 8]: Q3 (GPU spec & training budget) unresolved — blocks transformer track; mvp.md says needed before v0
 - [Phase 11]: Q5 (2nd-tier symbol choice) — check tick-size/filter re-tick history of candidates first
 
@@ -130,6 +165,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-17
-Stopped at: Phase 3 (Data Layer) complete — 6 plans + gap closure, verification 5/5 (T-03-09 resolved: CI now runs check_manifest_id_integrity + --full against a committed fixture lake), three review/fix iterations (ITER3: 0 critical; all 3 warnings + 5 info fixed in 03-REVIEW-FIX-ITER3.md), 548 tests, CI green; merged to develop with `git merge --no-ff`. Design lesson carried forward: static source-scanning guardrails (ms→ns single site, lockbox containment) do not converge against every spelling — they are defense-in-depth against accidents; the load-bearing guarantees are runtime/data controls (etime/event_time plausibility → `failed` → loader pause; chmod 0000 lockbox + loader containment + MLflow-first one-look token; sha256 on every manifest read; append-only history check over all parents). New guardrails should be designed runtime-first. Next: `/gsd-autonomous --from 4` (Feature & Label Engine). Work ONLY from /Volumes/ProjectsSSD/aihedgefund/repo. Capture daemon Run J (PID 72546, schema v2, per-run raw segment files). Open user action: `sudo pmset -b disablesleep 1`.
-Resume file: .planning/phases/03-data-layer-backfill-ingest-lockbox/03-REVIEW-FIX-ITER3.md
+Last session: 2026-09-19
+Stopped at: Phase 4 (Feature & Label Engine) complete -- 7 plans, 953 tests, CI green, verification 5/5 (both human items resolved), review 1 critical + 7 warnings all fixed and re-proved. Merged to develop. The decision-row matrix exists on the real lake: features/date=2026-09-12/13/14, 22,381,684 rows, manifest-addressed with provenance chaining to curated. CARRY FORWARD INTO PHASE 5: (a) a held-out day's feature BYTES stay readable by a bare read_parquet -- load_features is one barrier where Phase 3's lockbox had two, and Phase 5's declaration step must move or delete the partition for the day BEFORE the declared date, since that is the one carrying the label tail; (b) 249 labels on disk are fabricated zeros from the pre-fix staleness rule (180 ret_1s, 69 ret_10s) -- partitions are write-once, so a rebuild under a new manifest is Phase 5's call; (c) every row inside an L1 outage is a real trade wearing a frozen book (29,058 inside one 2894s gap) with both warm-up flags false -- Phase 5 needs a lake-derived staleness flag; (d) the primary label is exactly zero on 43.89% of written decision rows, so loss and IC/Sharpe choices must account for a point mass at zero; (e) test_the_embargo_bound_is_tight_enough_to_bite asserts embargo == horizon, so LENGTHENING an embargo fails CI by design. Next: `/gsd-autonomous --from 5` (Fold Harness & Overfitting Controls). Work ONLY from /Volumes/ProjectsSSD/aihedgefund/repo. Capture daemon Run J (PID 72546) still carries the OLD power probe and segment stamp -- a restart is pending user approval. Battery sleep is now held by /Library/LaunchDaemons/com.aihedgefund.disablebatterysleep.plist (proved: flipped to 0, restored after 195s).
+Resume file: .planning/phases/04-feature-label-engine/04-REVIEW-FIX.md

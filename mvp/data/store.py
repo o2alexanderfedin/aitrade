@@ -81,10 +81,35 @@ class DQPauseError(ValueError):
     acknowledgement JSON at `dq_acknowledgement_path(...)` to proceed."""
 
 
-#: The only tier the default loader (`load_curated`) and the by-date index
-#: ever serve. Every other tier is reachable only through its own audited
-#: module, which passes its own tier name to `resolve_manifest`.
+#: The only tier the default loader (`load_curated`) ever serves. Every
+#: other tier is reachable only through its own audited module, which
+#: passes its own tier name to `resolve_manifest`.
 CURATED_TIER = "curated"
+
+#: The decision-row matrix tier (04-CONTEXT.md D-04-07), read by
+#: `features.tier.load_features` and by nothing else.
+FEATURES_TIER = "features"
+
+#: The train-only normalization-parameter tier (D-04-06). Named here
+#: alongside its sibling so the plan that uses it never has to edit this
+#: file; it is deliberately NOT in `BY_DATE_INDEXED_TIERS` -- a
+#: normalization artifact belongs to a fold, not to a date.
+FEATURES_NORM_TIER = "features_norm"
+
+#: Tiers whose manifests get a by-date `(dataset, symbol, stream, date)`
+#: pointer. Everything else is addressable by `manifest_id` only.
+#:
+#: The CR-04 rule this preserves is that a QUARANTINED segment must never
+#: re-point a pointer some loader will follow. It still holds with the
+#: features tier added, for two independent reasons: the quarantined tier
+#: is not a member of this set, and the features dataset namespace
+#: (`"<SYMBOL>.features"` with `stream="features"`) is disjoint from the
+#: curated one (`"<SYMBOL>.trade"` / `"<SYMBOL>.bookTicker"`), so no
+#: manifest of any tier can collide with a curated or a features pointer.
+#:
+#: Adding a tier here is a deliberate, reviewed act: it grants that tier a
+#: date-addressable entry point that anything holding a date can follow.
+BY_DATE_INDEXED_TIERS: frozenset[str] = frozenset({CURATED_TIER, FEATURES_TIER})
 
 
 class ManifestTierError(ValueError):
@@ -372,15 +397,17 @@ def issue_manifest(
 
     _atomic_write_json(manifest_path(registry_root, dataset, manifest_id), manifest)
 
-    # The by-date index is the CURATED tier's date -> manifest pointer, read
-    # by the DQ report and the curated build. A manifest of any other tier
-    # never writes it: a quarantined segment issued for a date must not
-    # silently re-point the curated pointer for that date (03-REVIEW.md
-    # CR-04). Other tiers are addressed by manifest_id only.
+    # The by-date index is a date -> manifest pointer for the tiers in
+    # BY_DATE_INDEXED_TIERS (curated, read by the DQ report and the curated
+    # build; features, read by the DQ report and the feature loader). A
+    # manifest of any other tier never writes one: a quarantined segment
+    # issued for a date must not silently re-point a pointer some loader
+    # will follow (03-REVIEW.md CR-04). See BY_DATE_INDEXED_TIERS for why
+    # adding the features tier cannot make a quarantined manifest reachable.
     covered_dates = (
         dates if dates is not None else sorted({p["date"] for p in partitions})
     )
-    if tier != CURATED_TIER:
+    if tier not in BY_DATE_INDEXED_TIERS:
         covered_dates = []
     for date in covered_dates:
         _atomic_write_json(

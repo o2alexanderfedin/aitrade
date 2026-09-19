@@ -378,3 +378,98 @@ def test_the_verified_bytes_are_the_returned_bytes(tmp_path: Path, monkeypatch):
     assert sorted(df["trade_id"].to_list()) == [1, 2], (
         "the returned rows came from a second open, not from the verified bytes"
     )
+
+
+# --- 04-02-PLAN.md T-04-06: `issue_manifest` now writes a by-date pointer
+# --- for the features tier as well as the curated one
+# --- (`store.BY_DATE_INDEXED_TIERS`). These two tests are the control on
+# --- that extension: the quarantined tier stays outside the set, so it
+# --- still gets no date-addressable entry point of its own.
+
+
+def _issue_for(
+    registry_root: Path, dataset: str, stream: str, tier: str, rel: str, lake_root: Path
+) -> dict:
+    part = _partition(lake_root, rel)
+    return issue_manifest(
+        dataset=dataset,
+        symbol="BTCUSDT",
+        stream=stream,
+        tier=tier,
+        schema_version=1,
+        inputs=[],
+        partitions=[part],
+        code_hash="deadbeef",
+        registry_root=registry_root,
+    )
+
+
+def test_a_quarantined_tier_manifest_still_gets_no_by_date_pointer(tmp_path: Path):
+    """The tier allowlist, asserted from the side that must stay excluded:
+    a features manifest gets a pointer, a quarantined-tier one gets none --
+    in its OWN dataset namespace, where no curated pointer exists to be
+    protected by the namespace argument alone."""
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+
+    features = _issue_for(
+        registry_root,
+        "BTCUSDT.features",
+        "features",
+        store.FEATURES_TIER,
+        "features/symbol=BTCUSDT/date=2026-09-13/part-1.parquet",
+        lake_root,
+    )
+    feature_idx = by_date_index_path(
+        registry_root, "BTCUSDT.features", "BTCUSDT", "features", DATE
+    )
+    assert json.loads(feature_idx.read_text())["manifest_id"] == features["manifest_id"]
+
+    _issue_for(
+        registry_root,
+        "BTCUSDT.held_out",
+        "held_out",
+        "lockbox",
+        "lockbox/symbol=BTCUSDT/date=2026-09-13/part-2.parquet",
+        lake_root,
+    )
+    quarantined_idx = by_date_index_path(
+        registry_root, "BTCUSDT.held_out", "BTCUSDT", "held_out", DATE
+    )
+    assert not quarantined_idx.exists(), (
+        "the quarantined tier must never be date-addressable"
+    )
+    assert "lockbox" not in store.BY_DATE_INDEXED_TIERS
+    assert store.BY_DATE_INDEXED_TIERS == frozenset({"curated", "features"})
+
+
+def test_the_features_loader_cannot_reach_the_quarantined_tier(
+    tmp_path: Path, monkeypatch
+):
+    """04-02 CR-04, the half `tests/store/test_features_tier_containment.py`
+    deliberately does not spell: `load_features` names ONE tier, so a
+    quarantined-tier manifest offered to it is refused before a byte is
+    read -- exactly as `load_curated` refuses the same manifest."""
+    from features.tier import load_features
+
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    part = _partition(
+        lake_root, "lockbox/symbol=BTCUSDT/date=2026-09-13/part-1.parquet"
+    )
+    manifest = _issue_for(
+        registry_root,
+        "BTCUSDT.features",
+        "features",
+        "lockbox",
+        "lockbox/symbol=BTCUSDT/date=2026-09-13/part-9.parquet",
+        lake_root,
+    )
+    assert part["path"] != manifest["partitions"][0]["path"]
+    reads = _spy_reads(monkeypatch)
+    with pytest.raises(store.ManifestTierError):
+        load_features(
+            manifest["manifest_id"],
+            "BTCUSDT.features",
+            registry_root=registry_root,
+            lake_root=lake_root,
+        )
+    assert reads == []

@@ -1,0 +1,53 @@
+{
+  "built_at": 1789812278395186000,
+  "code_hash": "12a15cff38277175dde2e355f9d5cdcdf43d8a74",
+  "dataset": "BTCUSDT.features",
+  "etime_range": [
+    1789171200002000000,
+    1789257599988000000
+  ],
+  "inputs": [
+    {
+      "dataset": "BTCUSDT.bookTicker",
+      "manifest_id": "f4d8d81d298d03daafcd60c49f424f8c49dcddd32c0961ed46b3ab4093e032e2",
+      "path": "/Volumes/ProjectsSSD/aihedgefund/repo/mvp/data/lake_registry/manifests/BTCUSDT.bookTicker/f4d8d81d298d03daafcd60c49f424f8c49dcddd32c0961ed46b3ab4093e032e2.json",
+      "role": "l1_day",
+      "rows": 7220489,
+      "sha256": "26a0374b555c42385a1d407242775f765d292a8dd3e382f4b2f445d5650eee22"
+    },
+    {
+      "dataset": "BTCUSDT.trade",
+      "manifest_id": "1b337fb9efbe5702fa6d16803399a80e8514067e849188459e696af29415036d",
+      "path": "/Volumes/ProjectsSSD/aihedgefund/repo/mvp/data/lake_registry/manifests/BTCUSDT.trade/1b337fb9efbe5702fa6d16803399a80e8514067e849188459e696af29415036d.json",
+      "role": "trade_day",
+      "rows": 791576,
+      "sha256": "9fe40492eddabe88c45605d21dce327ff4497e01474b5f7d461de4a3b4727a0e"
+    },
+    {
+      "dataset": "BTCUSDT.bookTicker",
+      "manifest_id": "223b0f2ae928f1b8695814f67f9bbb2626eb92dbefc51c58bf6e1c6b4080d498",
+      "path": "/Volumes/ProjectsSSD/aihedgefund/repo/mvp/data/lake_registry/manifests/BTCUSDT.bookTicker/223b0f2ae928f1b8695814f67f9bbb2626eb92dbefc51c58bf6e1c6b4080d498.json",
+      "role": "l1_label_tail",
+      "rows": 17167290,
+      "sha256": "2f0d22f70ef0f44e6cdba9e9abd734bdefd906f2008d41ed82530d1f89fe2d5a"
+    }
+  ],
+  "manifest_id": "1bf9af2e879d833a578779ff082cd368ef327c4b1171f8ee09d8e90149f28d62",
+  "partitions": [
+    {
+      "date": "2026-09-12",
+      "etime_max": 1789257599988000000,
+      "etime_min": 1789171200002000000,
+      "mtime_ns": 1789812278346205980,
+      "path": "features/symbol=BTCUSDT/date=2026-09-12/part-1789812278090352000.parquet",
+      "rows": 4193137,
+      "sha256": "ddf5020d9c4eac641590157a7aac59670739b975060bb0277df461483623940a",
+      "size_bytes": 49504857
+    }
+  ],
+  "row_count": 4193137,
+  "schema_version": 1,
+  "stream": "features",
+  "symbol": "BTCUSDT",
+  "tier": "features"
+}

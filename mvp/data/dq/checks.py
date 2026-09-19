@@ -94,12 +94,21 @@ magnitude) -- only small, already-bounded DIFFERENCES (outage durations,
 at most a few days' worth of ns) are ever divided down to a float seconds
 value, and only for reporting.
 
-GUARDRAIL NOTE: this module's seconds<->ns arithmetic (`NS_PER_SECOND`,
-`NS_PER_DAY`, and the ns -> seconds display divisions) IS a seconds-to-ns
-site as far as `tools/check_ms_to_ns_site.py` is concerned, and is
-allowlisted there explicitly under `data/dq/checks.py`. That guardrail
-resolves names to values (03-REVIEW.md CR-05); binding a literal to a name
-does not hide a conversion from it, and must never be used to try.
+GUARDRAIL NOTE: this module's seconds<->ns arithmetic (`warmup_seconds *
+NS_PER_SECOND`, the day-boundary multiples of `NS_PER_DAY`, and the ns ->
+seconds display divisions) IS a seconds-to-ns site as far as
+`tools/check_ms_to_ns_site.py` is concerned, and is allowlisted there
+explicitly under `data/dq/checks.py`. That guardrail resolves names to
+values (03-REVIEW.md CR-05); binding a literal to a name does not hide a
+conversion from it, and must never be used to try.
+
+Since Phase 4 Plan 01 the two constants themselves are DEFINED in
+`data/time_ns.py` -- the single home for feature/label seconds-to-ns
+arithmetic (04-CONTEXT.md D-04-13) -- and re-exported here so that every
+existing `from data.dq.checks import NS_PER_SECOND` importer keeps working
+against the same objects. The guardrail follows the import (it resolves
+values across modules), so this file stays allowlisted for the arithmetic it
+still does.
 """
 
 from __future__ import annotations
@@ -108,21 +117,27 @@ import datetime as dt
 import time
 import tomllib
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 
 import polars as pl
 
+from data.time_ns import NS_PER_DAY, NS_PER_SECOND
+
 PKG_ROOT = Path(__file__).resolve().parents[2]
 DQ_THRESHOLDS_TOML = PKG_ROOT / "spec" / "dq_thresholds.toml"
 
-#: Seconds <-> ns scale for day-boundary arithmetic and duration display. See
-#: the module docstring's GUARDRAIL NOTE (allowlisted, not hidden).
-NS_PER_SECOND = 1_000_000_000
-NS_PER_DAY = 86_400 * NS_PER_SECOND
+#: `NS_PER_SECOND`/`NS_PER_DAY` are imported above from `data.time_ns` (the
+#: single definition site, 04-CONTEXT.md D-04-13) and stay bound at module
+#: level here, so every existing `from data.dq.checks import NS_PER_SECOND`
+#: importer resolves to the very same objects. See the module docstring's
+#: GUARDRAIL NOTE (allowlisted, not hidden).
 
 _EPOCH = dt.date(1970, 1, 1)
 
 __all__ = [
+    "NS_PER_SECOND",
+    "NS_PER_DAY",
     "DQThresholds",
     "load_dq_thresholds",
     "collapse_outage_intervals",
@@ -200,6 +215,53 @@ class ResyncWarmupConfig:
 
 
 @dataclass(frozen=True)
+class LabelGapThresholds:
+    max_quote_gap_seconds: float
+    notes: str
+
+    @property
+    def max_quote_gap_ns(self) -> int:
+        """The same threshold on the project's one clock.
+
+        The conversion lives HERE and not in `features/labels.py` for the
+        reason `tools/check_ms_to_ns_site.py` exists: this module is
+        allowlisted for seconds -> ns (it already converts the rtime-skew
+        bounds the same way), and a second `* NS_PER_SECOND` in a Phase 4
+        module would be a new conversion site the guardrail fails on.
+        `data/time_ns.py`'s alternative -- a pre-multiplied constant --
+        does not fit a value that comes from config: the TOML is the
+        source of truth for the threshold and the constant would be a
+        second one.
+
+        EXACT, VIA `Decimal` (04-REVIEW.md IN-05). `int(2.3 * 1e9)` is
+        `2299999999` -- a nanosecond short, because 2.3 has no float64
+        representation. The integral `30` in the TOML today is exact
+        either way, which is precisely why this would have gone unnoticed
+        until the first fractional threshold. `Decimal(str(seconds))`
+        parses the DECIMAL literal the TOML author wrote rather than the
+        binary approximation of it, and `round` on an exact product is a
+        no-op that only fires for a threshold finer than a nanosecond.
+        """
+        return int(round(Decimal(str(self.max_quote_gap_seconds)) * NS_PER_SECOND))
+
+
+@dataclass(frozen=True)
+class FeatureLabelCoverageThresholds:
+    degraded_missing_pct: float
+    notes: str
+
+
+@dataclass(frozen=True)
+class FeatureRowFiltersThresholds:
+    notes: str
+
+
+@dataclass(frozen=True)
+class FeatureQuantizationThresholds:
+    notes: str
+
+
+@dataclass(frozen=True)
 class DQThresholds:
     gap_coverage: GapCoverageThresholds
     reconciliation: ReconciliationThresholds
@@ -211,6 +273,13 @@ class DQThresholds:
     event_time_plausibility: EtimePlausibilityThresholds
     rtime_plausibility: RtimePlausibilityThresholds
     resync_warmup: ResyncWarmupConfig
+    # Phase 4's feature-tier checks. They live on the same frozen object
+    # and are loaded by the same `load_dq_thresholds`, so there is exactly
+    # one TOML reader in the codebase and no second one to drift from it.
+    label_gap: LabelGapThresholds
+    feature_label_coverage: FeatureLabelCoverageThresholds
+    feature_row_filters: FeatureRowFiltersThresholds
+    feature_quantization: FeatureQuantizationThresholds
 
 
 def _load_toml(path: Path) -> dict[str, dict]:
@@ -238,6 +307,16 @@ def load_dq_thresholds(path: Path = DQ_THRESHOLDS_TOML) -> DQThresholds:
             ),
             rtime_plausibility=RtimePlausibilityThresholds(**raw["rtime_plausibility"]),
             resync_warmup=ResyncWarmupConfig(**raw["resync_warmup"]),
+            label_gap=LabelGapThresholds(**raw["label_gap"]),
+            feature_label_coverage=FeatureLabelCoverageThresholds(
+                **raw["feature_label_coverage"]
+            ),
+            feature_row_filters=FeatureRowFiltersThresholds(
+                **raw["feature_row_filters"]
+            ),
+            feature_quantization=FeatureQuantizationThresholds(
+                **raw["feature_quantization"]
+            ),
         )
     except (KeyError, TypeError) as exc:
         raise DQConfigError(f"malformed dq_thresholds.toml: {exc}") from None

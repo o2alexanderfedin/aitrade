@@ -183,7 +183,14 @@ def test_real_tree_has_exactly_one_ms_to_ns_site_at_parse_py(capsys):
 def test_real_tree_seconds_to_ns_allowlist_is_preserved():
     """The 8 pre-existing seconds->ns sites in the 3 originally-allowlisted
     capture files are still found (resolution added sites, it lost none), and
-    the only newly-visible file is the explicitly allowlisted dq/checks.py."""
+    the only other files holding one are the two explicitly allowlisted
+    homes: `data/dq/checks.py` (day-boundary/display arithmetic) and, since
+    Phase 4 Plan 01, `data/time_ns.py` (the single home for feature/label
+    window and horizon constants, 04-CONTEXT.md D-04-13).
+
+    This set is deliberately EXACT, not a subset check: a new file appearing
+    here is the convention drift the allowlist exists to make visible, so
+    growing it must be a deliberate edit to this list."""
     sites = tool.find_sec_to_ns_sites(tool.PKG_ROOT)
     by_file: dict[str, int] = {}
     for path, _ in sites:
@@ -195,7 +202,7 @@ def test_real_tree_seconds_to_ns_allowlist_is_preserved():
         "data/capture/watchdog.py",
     }
     assert sum(n for f, n in by_file.items() if f in original) == 8
-    assert set(by_file) == original | {"data/dq/checks.py"}
+    assert set(by_file) == original | {"data/dq/checks.py", "data/time_ns.py"}
     assert set(by_file) <= set(tool.ALLOWLISTED_SEC_TO_NS_SITES)
 
 

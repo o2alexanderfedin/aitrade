@@ -228,3 +228,105 @@ Read seconds=60 as "60 curated-etime seconds after an APPROXIMATELY
 located boundary", not etime-exact. Full transcript:
 03-07-GAPS-SUMMARY.md.
 """
+
+# --------------------------------------------------------------------------
+# Phase 4 (feature/label engine) -- the feature TIER's own checks. These
+# judge lake/features/ partitions, never curated ones, and are computed
+# from the build's own build_stats.json rather than re-scanned from the
+# written artifact (same reason as reconciliation/na_placeholder above: the
+# artifact structurally cannot answer questions about rows that were
+# filtered out before it was written).
+# --------------------------------------------------------------------------
+
+[label_gap]
+max_quote_gap_seconds = 30
+notes = """
+A label whose [t, t+h] window contains an L1 inter-quote gap longer than
+this is NULL, never a carried-forward price (04-CONTEXT.md D-04-05). The
+value matches l1_sparsity.degraded_seconds today, but it is a SEPARATE key
+on purpose: this one decides a per-ROW label's validity, l1_sparsity
+decides a per-DAY verdict, and the two will diverge the moment either is
+retuned. Measured context: the clean 2026-09-13 day has 27 inter-quote
+gaps over 1 s and NONE over 30 s, so the rule never fires there, while
+2026-09-14 carries four gaps over 30 s -- 2894.1 s, 302.4 s, 160.8 s and
+71.5 s -- of battery-sleep outage (root cause: data/capture/power.py --
+caffeinate's PreventSystemSleep assertion is honored on AC power only).
+Those four null 38,565 of that day's 11,323,694 primary labels (0.34%)
+and 221,904 of its ret_10min_mid (1.96%). A per-row rule is what keeps
+those outages from silently producing labels that span them.
+
+THIS THRESHOLD IS NOT THE STALENESS BOUND, AND DELIBERATELY HAS NO
+PER-HORIZON TABLE (04-REVIEW.md WR-02, resolved 2026-09-19). It decides
+one thing: whether an L1 OUTAGE overlapping [t, t+h] is long enough to
+call the window unknown. It used to decide a second thing by accident --
+whether the label existed at all -- and at one absolute 30 s it decided
+that badly for every horizon under 30 s: a silence shorter than the
+threshold that entirely contained [t, t+h] left the prevailing quote at
+t+h equal to the one that produced mid_t, so the label was exactly 0.0,
+finite, with no null reason. The bound on THAT question is now the
+horizon itself (features/labels.py's null_stale: no quote arrived in
+(t, t+h] at all). It is not a tunable and there is nothing here to set:
+any value looser than the horizon re-admits a carried-forward price, and
+any value tighter nulls rows that had a real quote in their window -- a
+5 s silence ending half a second inside a 1 s window is the case a
+per-horizon threshold gets wrong. Measured over all three built days
+(22.29M decision rows), null_stale nulls 69 primary labels and 180
+ret_1s_mid, all of them previously exactly 0.0, and nothing at 1 min or
+10 min.
+"""
+
+[feature_label_coverage]
+degraded_missing_pct = 2.0
+notes = """
+Fraction of decision rows whose PRIMARY label (ret_10s_mid) is null. Read
+from build_stats.json's n_decision_rows/null_primary_label_rows. With the
+D+1 label tail present, end-of-partition loss is ZERO by construction
+(the tail is what removes it); without a tail it would be 0.0074% at 10 s
+and 0.66% at 10 min on 2026-09-13's decision rows, so anything above 2%
+means a real gap rather than the day's own tail. MEASURED on the outage
+day 2026-09-14: 38,565 of 11,323,694 decision rows (0.34%) lose the
+primary label to the null-on-gap rule -- under this threshold, and
+correctly so: the day is degraded, not unusable. A day whose outages did
+push it over would be acknowledged, never threshold-widened (same rule as
+gap_coverage). A features manifest is
+acknowledged under stream="features" -- verified 2026-09-19 that
+store.validate_dq_acknowledgement has no stream allowlist.
+"""
+
+[feature_row_filters]
+notes = """
+Informational per-filter drop count on the feature tier, always
+dq_status="ok" when the counts are present -- no numeric threshold, mirroring
+crossed_locked_book. This is what DATA-07's "dropped-event counts per
+filter" asks for on this tier (04-CONTEXT.md D-04-12): X="NA" placeholder
+trades (price 0, qty 0) are excluded from trade_flow, and trades whose
+side_method is "unknown" contribute 0 to signed flow. Both counts AND both
+rates are reported so the two are distinguishable. FAIL-CLOSED on a
+missing key (the WR-02 pattern): a stats dict that cannot answer the
+question reports "failed", never "ok". Measured on 2026-09-13:
+na_placeholder_excluded=0 and unknown_side_rows=0 of 1,409,705 trade rows
+-- Phase 3's curated build already filtered the placeholders, so the
+filter is the uniform no-op its docstring predicts on an already-clean day.
+"""
+
+[feature_quantization]
+notes = """
+The labels' exact-zero fractions, recorded rather than smoothed
+(04-CONTEXT.md D-04-17). Always dq_status="ok": 97.5% of quotes sit at a
+1-tick spread, so mid lands on a half-tick 98.8% of the time and the
+returns are heavily quantized -- a property of the venue, not a defect.
+Measured on 2026-09-13 over the 6,864,853 DECISION ROWS -- the row set
+these fractions are computed on, because it is the row set the partition
+writes: ret_10s_mid is exactly zero on 43.9% of rows and ret_1s_mid on
+80.8%. 04-RESEARCH-NOTES.md's 29.7%/62.5% are the same day measured per
+L1 UPDATE (17,167,290 rows), which oversamples busy milliseconds at 2.5
+quotes per distinct etime and therefore shows fewer zeros; both are kept
+so a reader who arrives from the research note is not silently 14 points
+out. Recorded because it constrains Phase 5/8: the loss function and
+every IC/Sharpe statistic must be chosen knowing the target has a ~44%
+point mass at zero. Also carries the per-update ring-buffer
+window occupancy and the prevailing-vs-next-quote as-of disagreement
+fraction (0.206% of decision rows at h=10 s; 0.263% per L1 update) -- the latter is recorded as a DQ
+number rather than as a partition column, because an uncatalogued label
+column would be a catalogue-rule violation.
+"""
