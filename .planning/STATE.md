@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Phase 4 Plan 04 complete (four catalogued labels by a backward as-of rule; three null reasons that partition; the day-boundary refusal). 850 tests green. Buildable feature days: 2026-09-12, 09-13, 09-14. ret_10s_mid is exactly zero on 43.9% of DECISION rows (the catalogue said 29.7%, which was the per-L1-update row set) -- Phase 5/8 pick a loss function off that. 2026-09-14's four battery-sleep gaps null 0.34% of its primary labels. Plans 05-07 next. Capture daemon Run J (PID 72546) live; lake/capture read-only. Open user action: sudo pmset -b disablesleep 1."
-last_updated: "2026-09-19T09:38:41.121Z"
+stopped_at: "Phase 4 Plan 05 complete -- the decision-row matrix EXISTS: 22,381,684 real rows across 2026-09-12/13/14 (4,193,137 / 6,864,853 / 11,323,694), 287 MiB, manifests committed, all six feature-tier DQ checks ok on all three days, load_features round trip green. 863 tests green. Every independent 09-13 cross-check matched exactly. 09-15 refused (needs curated 09-16); a rebuild of 09-13 refused. Plans 06-07 next. Capture daemon Run J (PID 72546) live and untouched. Open user action: sudo pmset -b disablesleep 1."
+last_updated: "2026-09-19T11:05:00.000Z"
 last_activity: 2026-09-19
 progress:
   total_phases: 11
   completed_phases: 3
   total_plans: 21
-  completed_plans: 19
+  completed_plans: 20
   percent: 90
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 4 of 11 (feature & label engine)
-Plan: 4 of 07 complete
+Plan: 5 of 07 complete
 Status: Ready to execute
 Last activity: 2026-09-19
 
@@ -38,7 +38,7 @@ Progress: [█████████░] 90%
 
 **Velocity:**
 
-- Total plans completed: 15
+- Total plans completed: 16
 - Average duration: -
 - Total execution time: -
 
@@ -64,6 +64,7 @@ Progress: [█████████░] 90%
 | Phase 04 P02 | ~2h | 3 tasks | 14 files |
 | Phase 04 P03 | ~2h | 3 tasks | 8 files |
 | Phase 04 P04 | ~2h | 2 tasks | 8 files |
+| Phase 04 P05 | ~3h | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -112,6 +113,13 @@ Recent decisions affecting current work:
 - [Phase 4]: check_lockbox_containment flags the bare string 'lockbox' in any file outside its four SANCTIONED_TEST_FILES. New tests needing that literal go INTO the already-sanctioned file rather than extending the list (a sanction disables every rule for a file); a sibling test file proves the same _enforce_tier_containment code path with raw/ as the escape target.
 - [Phase 4]: A features row missing from report.parquet is invisible in the artifact and fatal at the loader. write_report rebuilds the file wholesale, so a features row not RECOMPUTED on every regeneration is deleted by the next curated regen -- leaving an ok/degraded-looking report while load_features is paused on 'missing' forever. Observed by removing the call; the regeneration test is the control, not the convention.
 - [Phase 4]: Every measured label statistic must name its ROW SET. 04-RESEARCH-NOTES.md measured per L1 update (17.2M rows, 2.5 quotes per distinct etime); the feature tier writes per decision row (6.86M). ret_10s_mid is exactly zero on 43.9% of decision rows, not 29.7%; std 1.447e-04, not 1.853e-04. Both reproduced exactly on their own row sets before the catalogue was corrected (04-04).
+- [Phase 4]: **`post_gap_warmup` and the labels' `null_gap` do not see the same outages, and the difference is structural.** Trades are archive-sourced (backfilled after an outage); bookTicker is capture-only and has never been published to data.binance.vision, so its holes are permanent. Every decision row inside an L1 silence is therefore a REAL trade carrying a frozen book, with both warm-up flags false -- 29,058 of them inside 09-14's 2894 s gap, 499 inside a 160.8 s silence the capture gap ledger never recorded at all (the connection was not silent, so the watchdog structurally could not fire). `post_gap_warmup` answers "was the capture process down?"; `null_gap` answers "was the data silent?". Only the second is derivable from the lake alone. Phase 5 must not use post_gap_warmup as its staleness filter.
+- [Phase 4]: **`resync_warmup.seconds = 60` measured on 09-14 and left unchanged.** No settling transient exists: quote rate recovers past the day's 123/s mean within 10-30 s of each resumption, and post-gap std(ret_1s_mid) is 0.00-0.90x the day's baseline at every horizon out to 5 minutes -- post-gap rows are QUIETER than the day, never noisier. The only bound the kernel's own state justifies is 1 s (the trade_flow window) plus exactly one stale `ofi`. The window's LEFT edge is the part to fix first: `gap_end_etime_approx` was 4.830 s EARLY on one 09-14 window (tagging 5 s of nothing) and 18 ms LATE on another, which is enough to leave the first two post-outage quotes untagged. Retuning a Phase 3 threshold inside a Phase 4 build was deliberately not done.
+- [Phase 4]: **A mutation can survive because the system is layered, not because the test is weak.** 04-05's plan mutation (a) -- move `assert_buildable` after the write -- passes, because `write_feature_partition`'s own `assert_not_quarantined` and `next_day_quote_series`'s internal `assert_buildable` both still fire first. Only removing all three makes the directory-absence assertion bite (and it does: the exception still raises, the day is on disk). Fourth instance this phase of a mutation weaker than its own sentence.
+- [Phase 4]: **Removing `assert_strict_total_order` from `merge_curated_streams` leaves all nine `tests/features/test_event_stream.py` tests green.** They exercise the function; only the build-level test exercises the gate. The silently-wrong build wrote a well-formed, hash-verified 2-row partition with `ofi = 3.0` on both rows and a `decision_source_rank` that lies about which event was the decision.
+- [Phase 4]: **`ret_10s_mid`'s point mass at exactly zero is NOT a stable property of the target:** 70.2% / 43.9% / 12.3% on 2026-09-12 / 09-13 / 09-14. It tracks L1 density, not the label's nature. A loss function or IC statistic tuned on one day's quantisation will be wrong on the next.
+- [Phase 4]: `build_stats.json` for the features tier lives at `lake/features_meta/symbol=/date=/build_stats.json` (`feature_build_stats_path`), which is what `data/dq/report.py` reads. `build_stats_path(..., "features", ...)` under `curated_meta/` resolves to a path nothing reads -- writing there produces three `feature_build_stats` FAILED rows and three paused days.
+- [Phase 4]: Give `build_features_range` ONE `code_hash` per run, or commit each manifest before building the next day: each build process recomputes the hash, and the previous day's untracked manifest JSON makes every subsequent day's provenance `-dirty`. Observed on 09-13 and 09-14; 09-12 is clean.
 
 ### Pending Todos
 
@@ -146,8 +154,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-19T09:38:41.115Z
-Stopped at: Phase 4 Plan 04 complete (four catalogued labels by a backward as-of rule; three null reasons that partition; the day-boundary refusal). 850 tests green. Buildable feature days: 2026-09-12, 09-13, 09-14. ret_10s_mid is exactly zero on 43.9% of DECISION rows (the catalogue said 29.7%, which was the per-L1-update row set) -- Phase 5/8 pick a loss function off that. 2026-09-14's four battery-sleep gaps null 0.34% of its primary labels. Plans 05-07 next. Capture daemon Run J (PID 72546) live; lake/capture read-only. Open user action: sudo pmset -b disablesleep 1.
+Last session: 2026-09-19T11:05:00.000Z
+Stopped at: Phase 4 Plan 05 complete -- the decision-row matrix exists on disk. 22,381,684 real rows across 2026-09-12 (4,193,137), 09-13 (6,864,853) and 09-14 (11,323,694); 287 MiB; manifests 1bf9af2e/1f10da67/fdbf58ca committed with by-date pointers; all six feature-tier DQ checks `ok` on all three days (no acknowledgement owed); load_features round trip green on real bytes. 863 tests green. Every independent 09-13 cross-check matched EXACTLY (18,576,995 events / 6,864,853 decision rows / max_window_occupancy 5,092 / empty_window_rows 784,343 / ofi null count 1 / ret_10s_mid zero fraction 43.889%). 09-15 observed refusing (needs a curated 09-16); a rebuild of 09-13 observed refusing on the write-once partition path. Plans 06-07 next. Capture daemon Run J (PID 72546) live, same PID before and after, never signalled. Open user action: sudo pmset -b disablesleep 1.
+Then: Phase 4 Plan 04 complete (four catalogued labels by a backward as-of rule; three null reasons that partition; the day-boundary refusal). 850 tests green. Buildable feature days: 2026-09-12, 09-13, 09-14. ret_10s_mid is exactly zero on 43.9% of DECISION rows (the catalogue said 29.7%, which was the per-L1-update row set) -- Phase 5/8 pick a loss function off that. 2026-09-14's four battery-sleep gaps null 0.34% of its primary labels. Plans 05-07 next. Capture daemon Run J (PID 72546) live; lake/capture read-only. Open user action: sudo pmset -b disablesleep 1.
 Then: Phase 4 Plan 01 executed on branch feature/phase-04-feature-label-engine (commits 4ec7943, fd90e9e) -- `data/time_ns.py` is the single allowlisted seconds-to-ns site and `features/event_stream.py` owns the merged stream + decision-row rule; 702 tests green. Plan 03 owes the deferred NUMBA_CACHE_DIR mutation check (no @njit kernel exists yet).
 Then: Phase 4 Plan 02 executed on the same branch (commits 722352d, cd8b436, 19aea31) -- `lake/features/` is a manifest-addressed write-once tier with its own loader, `data/holdout.py` refuses a held-out date at both the write and the read (covering D+1's label tail), and `data/dq/feature_checks.py` puts six feature-tier rows into the same `report.parquet` as the curated streams; 748 tests green. No lake data written. Buildable feature days for Plan 05: 2026-09-12, 09-13, 09-14 (09-15 waits for 09-16's curated L1 manifest). HANDOFF: Plan 05 must write every key in `FEATURE_BUILD_STATS_KEYS` into `lake/features_meta/.../build_stats.json` (that path needs adding to its writable list); Phase 5 must MOVE OR DELETE any existing features partition when it declares a date held out -- the read-time refusal covers the code path, not the bytes on disk (T-04-09, accepted).
 Resume file: None
