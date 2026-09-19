@@ -306,14 +306,14 @@ def test_inference_and_simulation_require_a_normalization_artifact():
 
     # and neither of them has a way to ASK for a fit
     with pytest.raises(TypeError):
-        for_inference(chunk_events(events, 64), fit_normalization=True)
+        for_inference(chunk_events(events, 64), fit=True)
     with pytest.raises(TypeError):
-        list(for_simulation(event_row_stream(events), fit_normalization=True))
+        list(for_simulation(event_row_stream(events), fit=True))
 
 
 def test_only_training_fits_and_it_fits_on_its_own_rows():
     events = interleaved_stream()
-    frame, _state, params = for_training(events, fit_normalization=True)
+    frame, _state, params = for_training(events, fit=True)
 
     assert params is not None
     for name in FEATURE_COLUMNS:
@@ -324,12 +324,12 @@ def test_only_training_fits_and_it_fits_on_its_own_rows():
         assert params[name][0] == finite.size
 
     with pytest.raises(ValueError, match="both"):
-        for_training(events, fit_normalization=True, normalization=params)
+        for_training(events, fit=True, normalization=params)
 
 
 def test_inference_and_simulation_apply_the_same_frozen_parameters():
     events = interleaved_stream()
-    _frame, _state, params = for_training(events, fit_normalization=True)
+    _frame, _state, params = for_training(events, fit=True)
 
     inference, _s, _p = for_inference(chunk_events(events, 64), normalization=params)
     simulation = decision_rows_to_frame(
@@ -359,3 +359,29 @@ def test_labels_are_refused_here_with_the_reason():
         compute_decision_rows(events, labels=True)
     with pytest.raises(LabelsNotHereError):
         for_training(events, labels=True)
+
+
+def test_the_simulator_refuses_a_feed_that_breaks_EVENT_SCHEMA():
+    """04-REVIEW.md IN-06: a float `etime` from a live feed used to be
+    truncated into the int64 buffer with no error.
+
+    Replayed streams come from `event_row_stream`, which yields int64
+    scalars, so this was latent -- but `EVENT_SCHEMA` is the contract
+    everywhere else in this phase, and on the ns clock a truncated
+    timestamp is a lost timestamp, not a rounding error.
+    """
+    events = interleaved_stream()
+    rows = list(event_row_stream(events))
+
+    floated = [dict(row) for row in rows]
+    floated[0]["etime"] = float(floated[0]["etime"])
+    with pytest.raises(ValueError, match="TRUNCATE"):
+        list(for_simulation(iter(floated)))
+
+    missing = [dict(row) for row in rows]
+    del missing[0]["etime"]
+    with pytest.raises(ValueError, match="missing"):
+        list(for_simulation(iter(missing)))
+
+    # Anti-vacuity: the stream the replayer actually produces still runs.
+    assert len(list(for_simulation(iter(rows)))) > 0

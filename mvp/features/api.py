@@ -264,11 +264,18 @@ def _resolve_normalization(
 def _frame(
     parts: list[dict[str, np.ndarray]],
     normalization: dict[str, tuple[int, float, float]] | None,
-    *,
-    expanding: bool,
 ) -> pl.DataFrame:
-    """Assemble emitted parts into one frame, optionally with the
-    normalized model-input columns beside the raw ones."""
+    """Assemble emitted parts into one frame, optionally with the FROZEN
+    normalized model-input columns beside the raw ones.
+
+    FROZEN ONLY (04-REVIEW.md IN-01). This used to take an `expanding`
+    flag selecting `expanding_z` instead, and all three call sites passed
+    `False` -- `for_training`'s fit path bypasses this function's
+    normalization entirely and applies the expanding transform itself. The
+    branch was dead, and this module's own practice is to delete a branch
+    proved dead rather than keep it as documentation of an intention.
+    `for_training` keeps owning the expanding transform, which is right:
+    it is the only call site allowed to fit."""
     if parts:
         columns = {
             name: np.concatenate([part[name] for part in parts])
@@ -295,9 +302,7 @@ def _frame(
         [
             pl.Series(
                 f"{name}{Z_SUFFIX}",
-                expanding_z(columns[name])
-                if expanding
-                else apply_normalization(columns[name], normalization[name]),
+                apply_normalization(columns[name], normalization[name]),
                 dtype=pl.Float64,
             )
             for name in FEATURE_COLUMNS
@@ -330,7 +335,7 @@ def compute_decision_rows(
     parts = emitter.feed(arrays, out)
     parts.extend(emitter.flush())
     return (
-        _frame(parts, normalization if wanted else None, expanding=False),
+        _frame(parts, normalization if wanted else None),
         state,
     )
 
@@ -340,19 +345,21 @@ def for_training(
     *,
     state: KernelState | None = None,
     normalization: dict[str, tuple[int, float, float]] | None = None,
-    fit_normalization: bool = False,
+    fit: bool = False,
     labels: bool = False,
 ) -> FeaturePass:
     """The trainer's call: ONE batch over a whole day, and the ONLY call
     site permitted to FIT normalization parameters.
 
-    NOTE the parameter `fit_normalization` SHADOWS the module-level
-    `features.normalize.fit_normalization` inside this function's scope.
-    The fit goes through `fit_normalization_from_frame`, which reads the
-    module global from its own scope; calling `fit_normalization(...)`
-    directly in here would call `True`.
+    THE PARAMETER IS `fit`, NOT `fit_normalization` (04-REVIEW.md IN-02).
+    It used to be the latter, which SHADOWED the module-level
+    `features.normalize.fit_normalization` inside this function's scope --
+    a trap the docstring warned about and routed around via
+    `fit_normalization_from_frame`. Documenting a hazard is not removing
+    it: any future line added in here that called `fit_normalization(...)`
+    would have called a `bool`. Renaming removes it.
 
-    With `fit_normalization=True` the parameters are fitted on THIS pass's
+    With `fit=True` the parameters are fitted on THIS pass's
     decision rows and the `_z` columns use the EXPANDING transform (row `t`
     normalized by training rows `<= t`). The fitted parameters come back in
     `FeaturePass.normalization` for the caller to persist with
@@ -360,13 +367,13 @@ def for_training(
     segment spans several days and therefore several of these calls, so
     this function deliberately does not write an artifact of its own.
     """
-    if fit_normalization and normalization is not None:
+    if fit and normalization is not None:
         raise ValueError(
-            "for_training: both fit_normalization=True and stored parameters "
+            "for_training: both fit=True and stored parameters "
             "were given -- fitting and freezing are different runs"
         )
     _refuse_labels(labels)
-    if not fit_normalization:
+    if not fit:
         frame, state = compute_decision_rows(
             events, state=state, normalization=normalization
         )
@@ -425,7 +432,7 @@ def for_inference(
         parts.extend(emitter.feed(arrays, out))
     parts.extend(emitter.flush())
     params = normalization if wanted else None
-    return FeaturePass(_frame(parts, params, expanding=False), state, params)
+    return FeaturePass(_frame(parts, params), state, params)
 
 
 def for_simulation(
@@ -465,6 +472,7 @@ def _simulate(
     emitter = _DecisionEmitter()
     buffers = {name: np.empty(1, dtype=_row_dtype(name)) for name in EVENT_SCHEMA}
     out = new_outputs(1)
+    checked = False
 
     def emit(parts):
         for part in parts:
@@ -477,11 +485,52 @@ def _simulate(
             yield row
 
     for event in rows:
+        if not checked:
+            _assert_event_dtypes(event)
+            checked = True
         for name, buffer in buffers.items():
             buffer[0] = event[name]
         _kernel_pass(buffers, state, out)
         yield from emit(emitter.feed(buffers, out))
     yield from emit(emitter.flush())
+
+
+def _assert_event_dtypes(event: Mapping[str, object]) -> None:
+    """EVENT_SCHEMA, checked once on the FIRST row of a live stream
+    (04-REVIEW.md IN-06).
+
+    `buffers[name][0] = event[name]` assigns into a preallocated int64
+    array, so a feed handing `etime` as a Python float -- or a float64
+    numpy scalar -- is TRUNCATED with no error, and an int64 ns clock
+    silently loses its last digits. Replayed streams come from
+    `event_row_stream`, which yields int64 scalars, so this has only ever
+    been latent; `EVENT_SCHEMA` is the contract everywhere else in the
+    phase, and this is what makes the simulator hold to it too.
+
+    Once, not per row: the dtype of a feed does not change mid-stream, and
+    a per-row check would sit in the most adversarial hot loop there is.
+    """
+    for name, dtype in EVENT_SCHEMA.items():
+        if name not in event:
+            raise ValueError(
+                f"for_simulation: the first event is missing {name!r}; the "
+                f"contract is EVENT_SCHEMA {list(EVENT_SCHEMA)}"
+            )
+        value = event[name]
+        wanted = _row_dtype(name)
+        actual = np.asarray(value).dtype
+        if np.issubdtype(wanted, np.integer) and not np.issubdtype(actual, np.integer):
+            raise ValueError(
+                f"for_simulation: event field {name!r} arrived as {actual}, not "
+                f"an integer type. It is assigned into a preallocated "
+                f"{wanted} buffer, which would TRUNCATE it silently -- and on "
+                "the ns clock that is a lost timestamp, not a rounding error."
+            )
+        if np.issubdtype(wanted, np.floating) and not np.issubdtype(actual, np.number):
+            raise ValueError(
+                f"for_simulation: event field {name!r} arrived as {actual}, "
+                f"which is not a number; EVENT_SCHEMA declares {wanted}"
+            )
 
 
 def _row_dtype(name: str) -> np.dtype:
@@ -555,7 +604,7 @@ def for_build(events, *, state: KernelState | None = None) -> BuildPass:
 
     positions = decision_row_index(np.asarray(arrays["etime"]))
     parts = [_select(arrays, out, positions)] if positions.size else []
-    frame = _frame(parts, None, expanding=False)
+    frame = _frame(parts, None)
 
     counters = {name: int(state[0][index]) for name, index in STATE_I64_SLOTS.items()}
     return BuildPass(
