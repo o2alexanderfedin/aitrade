@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Phase 4 Plan 03 complete (one @njit(cache=True) streaming kernel for mid/imb_top/ofi/trade_flow + a pure-Python reference twin proven bit-identical + the first real tests/leakage contents + the feature catalogue's information_set/notes pinned to what the code computes); 817 tests green; verified on the real 2026-09-13 day (OFI cross-check 2.842e-14 over 17,167,289 rows, max ring occupancy 5,092, 0 tie-order-dependent decision rows, 206 M rows/s). Plans 04-07 next (labels, the build, normalization, the leakage suite's remainder). Work ONLY from /Volumes/ProjectsSSD/aihedgefund/repo. Capture daemon Run J (PID 72546) still live; lake/capture read-only to agents. Open user action: `sudo pmset -b disablesleep 1`."
-last_updated: "2026-09-19T08:55:04.704Z"
+stopped_at: "Phase 4 Plan 04 complete (four catalogued labels by a backward as-of rule; three null reasons that partition; the day-boundary refusal). 850 tests green. Buildable feature days: 2026-09-12, 09-13, 09-14. ret_10s_mid is exactly zero on 43.9% of DECISION rows (the catalogue said 29.7%, which was the per-L1-update row set) -- Phase 5/8 pick a loss function off that. 2026-09-14's four battery-sleep gaps null 0.34% of its primary labels. Plans 05-07 next. Capture daemon Run J (PID 72546) live; lake/capture read-only. Open user action: sudo pmset -b disablesleep 1."
+last_updated: "2026-09-19T09:38:41.121Z"
 last_activity: 2026-09-19
 progress:
   total_phases: 11
   completed_phases: 3
   total_plans: 21
-  completed_plans: 18
-  percent: 86
+  completed_plans: 19
+  percent: 90
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 4 of 11 (feature & label engine)
-Plan: 3 of 07 complete
+Plan: 4 of 07 complete
 Status: Ready to execute
 Last activity: 2026-09-19
 
-Progress: [█████████░] 86%
+Progress: [█████████░] 90%
 
 > That 86% is `state.update-progress`'s definition -- plans WITH a SUMMARY over plans WRITTEN so far (18 of 21, phases 1-4). It is not milestone completion: phases 5-11 have no plans on disk yet, and only 3 of 11 phases are complete.
 
@@ -63,6 +63,7 @@ Progress: [█████████░] 86%
 | Phase 04 P01 | ~35min | 2 tasks | 11 files |
 | Phase 04 P02 | ~2h | 3 tasks | 14 files |
 | Phase 04 P03 | ~2h | 3 tasks | 8 files |
+| Phase 04 P04 | ~2h | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -110,6 +111,7 @@ Recent decisions affecting current work:
 - [Phase 4]: The holdout refusal covers day D AND day D+1, at both the write and the read -- D's ret_10min_mid tail is computed from D+1's mids, so building D while D+1 is held out launders the holdout through a neighbour's label tail. data/holdout.py is dependency-free (no mlflow import, no quarantined-tier path string); an absent registry returns QuarantinedDates(declared=False), so 'not armed yet' is a different value from 'armed and empty', and a malformed one raises.
 - [Phase 4]: check_lockbox_containment flags the bare string 'lockbox' in any file outside its four SANCTIONED_TEST_FILES. New tests needing that literal go INTO the already-sanctioned file rather than extending the list (a sanction disables every rule for a file); a sibling test file proves the same _enforce_tier_containment code path with raw/ as the escape target.
 - [Phase 4]: A features row missing from report.parquet is invisible in the artifact and fatal at the loader. write_report rebuilds the file wholesale, so a features row not RECOMPUTED on every regeneration is deleted by the next curated regen -- leaving an ok/degraded-looking report while load_features is paused on 'missing' forever. Observed by removing the call; the regeneration test is the control, not the convention.
+- [Phase 4]: Every measured label statistic must name its ROW SET. 04-RESEARCH-NOTES.md measured per L1 update (17.2M rows, 2.5 quotes per distinct etime); the feature tier writes per decision row (6.86M). ret_10s_mid is exactly zero on 43.9% of decision rows, not 29.7%; std 1.447e-04, not 1.853e-04. Both reproduced exactly on their own row sets before the catalogue was corrected (04-04).
 
 ### Pending Todos
 
@@ -144,8 +146,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-19T08:55:04.694Z
-Stopped at: Phase 3 (Data Layer) complete — 6 plans + gap closure, verification 5/5 (T-03-09 resolved: CI now runs check_manifest_id_integrity + --full against a committed fixture lake), three review/fix iterations (ITER3: 0 critical; all 3 warnings + 5 info fixed in 03-REVIEW-FIX-ITER3.md), 548 tests, CI green; merged to develop with `git merge --no-ff`. Design lesson carried forward: static source-scanning guardrails (ms→ns single site, lockbox containment) do not converge against every spelling — they are defense-in-depth against accidents; the load-bearing guarantees are runtime/data controls (etime/event_time plausibility → `failed` → loader pause; chmod 0000 lockbox + loader containment + MLflow-first one-look token; sha256 on every manifest read; append-only history check over all parents). New guardrails should be designed runtime-first. Next: `/gsd-autonomous --from 4` (Feature & Label Engine). Work ONLY from /Volumes/ProjectsSSD/aihedgefund/repo. Capture daemon Run J (PID 72546, schema v2, per-run raw segment files). Open user action: `sudo pmset -b disablesleep 1`.
+Last session: 2026-09-19T09:38:41.115Z
+Stopped at: Phase 4 Plan 04 complete (four catalogued labels by a backward as-of rule; three null reasons that partition; the day-boundary refusal). 850 tests green. Buildable feature days: 2026-09-12, 09-13, 09-14. ret_10s_mid is exactly zero on 43.9% of DECISION rows (the catalogue said 29.7%, which was the per-L1-update row set) -- Phase 5/8 pick a loss function off that. 2026-09-14's four battery-sleep gaps null 0.34% of its primary labels. Plans 05-07 next. Capture daemon Run J (PID 72546) live; lake/capture read-only. Open user action: sudo pmset -b disablesleep 1.
 Then: Phase 4 Plan 01 executed on branch feature/phase-04-feature-label-engine (commits 4ec7943, fd90e9e) -- `data/time_ns.py` is the single allowlisted seconds-to-ns site and `features/event_stream.py` owns the merged stream + decision-row rule; 702 tests green. Plan 03 owes the deferred NUMBA_CACHE_DIR mutation check (no @njit kernel exists yet).
 Then: Phase 4 Plan 02 executed on the same branch (commits 722352d, cd8b436, 19aea31) -- `lake/features/` is a manifest-addressed write-once tier with its own loader, `data/holdout.py` refuses a held-out date at both the write and the read (covering D+1's label tail), and `data/dq/feature_checks.py` puts six feature-tier rows into the same `report.parquet` as the curated streams; 748 tests green. No lake data written. Buildable feature days for Plan 05: 2026-09-12, 09-13, 09-14 (09-15 waits for 09-16's curated L1 manifest). HANDOFF: Plan 05 must write every key in `FEATURE_BUILD_STATS_KEYS` into `lake/features_meta/.../build_stats.json` (that path needs adding to its writable list); Phase 5 must MOVE OR DELETE any existing features partition when it declares a date held out -- the read-time refusal covers the code path, not the bytes on disk (T-04-09, accepted).
 Resume file: None
