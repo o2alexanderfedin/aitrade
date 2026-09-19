@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Phase 4 Plan 05 complete -- the decision-row matrix EXISTS: 22,381,684 real rows across 2026-09-12/13/14 (4,193,137 / 6,864,853 / 11,323,694), 287 MiB, manifests committed, all six feature-tier DQ checks ok on all three days, load_features round trip green. 863 tests green. Every independent 09-13 cross-check matched exactly. 09-15 refused (needs curated 09-16); a rebuild of 09-13 refused. Plans 06-07 next. Capture daemon Run J (PID 72546) live and untouched. Open user action: sudo pmset -b disablesleep 1."
-last_updated: "2026-09-19T11:05:00.000Z"
+stopped_at: "Phase 4 Plan 05 complete -- the decision-row matrix exists on disk. 22,381,684 real rows across 2026-09-12 (4,193,137), 09-13 (6,864,853) and 09-14 (11,323,694); 287 MiB; manifests 1bf9af2e/1f10da67/fdbf58ca committed with by-date pointers; all six feature-tier DQ checks `ok` on all three days (no acknowledgement owed); load_features round trip green on real bytes. 863 tests green. Every independent 09-13 cross-check matched EXACTLY (18,576,995 events / 6,864,853 decision rows / max_window_occupancy 5,092 / empty_window_rows 784,343 / ofi null count 1 / ret_10s_mid zero fraction 43.889%). 09-15 observed refusing (needs a curated 09-16); a rebuild of 09-13 observed refusing on the write-once partition path. Plans 06-07 next. Capture daemon Run J (PID 72546) live, same PID before and after, never signalled. Open user action: sudo pmset -b disablesleep 1."
+last_updated: "2026-09-19T10:57:57.644Z"
 last_activity: 2026-09-19
 progress:
   total_phases: 11
   completed_phases: 3
   total_plans: 21
-  completed_plans: 20
-  percent: 90
+  completed_plans: 21
+  percent: 100
 ---
 
 # Project State
@@ -26,13 +26,13 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 4 of 11 (feature & label engine)
-Plan: 5 of 07 complete
+Plan: 6 of 07 complete
 Status: Ready to execute
 Last activity: 2026-09-19
 
-Progress: [█████████░] 90%
+Progress: [██████████] 100%
 
-> That 86% is `state.update-progress`'s definition -- plans WITH a SUMMARY over plans WRITTEN so far (18 of 21, phases 1-4). It is not milestone completion: phases 5-11 have no plans on disk yet, and only 3 of 11 phases are complete.
+> That 100% is `state.update-progress`'s definition -- SUMMARY files over PLAN files on disk (21 over 21), and it reads 100% only because the counts coincide: 20 of the 21 plans have a summary, `04-07` does not, and the 21st summary is `03-07-GAPS-SUMMARY.md`, which has no plan of its own. It is NOT milestone completion: phases 5-11 have no plans on disk yet, and only 3 of 11 phases are complete.
 
 ## Performance Metrics
 
@@ -65,6 +65,7 @@ Progress: [█████████░] 90%
 | Phase 04 P03 | ~2h | 3 tasks | 8 files |
 | Phase 04 P04 | ~2h | 2 tasks | 8 files |
 | Phase 04 P05 | ~3h | 2 tasks | 10 files |
+| Phase 4 P06 | ~2h | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -120,6 +121,9 @@ Recent decisions affecting current work:
 - [Phase 4]: **`ret_10s_mid`'s point mass at exactly zero is NOT a stable property of the target:** 70.2% / 43.9% / 12.3% on 2026-09-12 / 09-13 / 09-14. It tracks L1 density, not the label's nature. A loss function or IC statistic tuned on one day's quantisation will be wrong on the next.
 - [Phase 4]: `build_stats.json` for the features tier lives at `lake/features_meta/symbol=/date=/build_stats.json` (`feature_build_stats_path`), which is what `data/dq/report.py` reads. `build_stats_path(..., "features", ...)` under `curated_meta/` resolves to a path nothing reads -- writing there produces three `feature_build_stats` FAILED rows and three paused days.
 - [Phase 4]: Give `build_features_range` ONE `code_hash` per run, or commit each manifest before building the next day: each build process recomputes the hash, and the previous day's untracked manifest JSON makes every subsequent day's provenance `-dirty`. Observed on 09-13 and 09-14; 09-12 is clean.
+- [Phase 4]: 04-06: information_set/embargo are machine-parsed (spec/information_set.py) and compared against the measured reach; an unrecognised declaration RAISES rather than degrading to unbounded or 0. The duration table aliases data/time_ns.py's pre-multiplied constants -- no second seconds-to-ns site.
+- [Phase 4]: 04-06: every leakage invariance property has a sensitivity counterpart. Measured: a constant `mid` leaves BOTH shuffle properties GREEN -- containment is one-sided and an empty measured set satisfies every declaration.
+- [Phase 4]: 04-06: `embargo` is guarded ONLY by tests/leakage/test_embargo.py. check_spec_diff appears to catch a shortened embargo but only via spec.md render drift; re-render as its own message instructs and it is green.
 
 ### Pending Todos
 
@@ -154,8 +158,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-19T11:05:00.000Z
-Stopped at: Phase 4 Plan 05 complete -- the decision-row matrix exists on disk. 22,381,684 real rows across 2026-09-12 (4,193,137), 09-13 (6,864,853) and 09-14 (11,323,694); 287 MiB; manifests 1bf9af2e/1f10da67/fdbf58ca committed with by-date pointers; all six feature-tier DQ checks `ok` on all three days (no acknowledgement owed); load_features round trip green on real bytes. 863 tests green. Every independent 09-13 cross-check matched EXACTLY (18,576,995 events / 6,864,853 decision rows / max_window_occupancy 5,092 / empty_window_rows 784,343 / ofi null count 1 / ret_10s_mid zero fraction 43.889%). 09-15 observed refusing (needs a curated 09-16); a rebuild of 09-13 observed refusing on the write-once partition path. Plans 06-07 next. Capture daemon Run J (PID 72546) live, same PID before and after, never signalled. Open user action: sudo pmset -b disablesleep 1.
+Last session: 2026-09-19T10:58:10.000Z
+Stopped at: Phase 4 Plan 06 complete -- FEAT-03 is a gate, not a claim. `pytest tests/leakage -x -q` is a NAMED step in both .pre-commit-config.yaml and .github/workflows/ci.yml (byte-identical, verified by extraction), 23 tests, 1.8 s warm / 2.2 s cold. 899 tests green (863 before). spec/information_set.py parses every catalogue declaration and RAISES on anything else; `embargo >= horizon` is asserted for all four labels (FEAT-04's CI half). Every invariance property has a sensitivity counterpart -- a constant `mid` leaves BOTH shuffle properties green, transcribed in the summary. Phase 2's tests/leakage scaffold deleted. Real-data check on 2026-09-13: 200 probe rows x (shuffle + delete) over a 500,000-row window, 34.9M decision-row comparisons all bit-identical, 93/200 probe rows on a tied etime, 199/200 shuffles visibly changed the future; the four features recomputed for 200 rows match the stored partition BITWISE. Plan 07 next. Capture daemon Run J (PID 72546) live, same PID and start time, never signalled; nothing written to the lake. Open user action: sudo pmset -b disablesleep 1.
+Then: Phase 4 Plan 05 complete -- the decision-row matrix exists on disk. 22,381,684 real rows across 2026-09-12 (4,193,137), 09-13 (6,864,853) and 09-14 (11,323,694); 287 MiB; manifests 1bf9af2e/1f10da67/fdbf58ca committed with by-date pointers; all six feature-tier DQ checks `ok` on all three days (no acknowledgement owed); load_features round trip green on real bytes. 863 tests green. Every independent 09-13 cross-check matched EXACTLY (18,576,995 events / 6,864,853 decision rows / max_window_occupancy 5,092 / empty_window_rows 784,343 / ofi null count 1 / ret_10s_mid zero fraction 43.889%). 09-15 observed refusing (needs a curated 09-16); a rebuild of 09-13 observed refusing on the write-once partition path. Plans 06-07 next. Capture daemon Run J (PID 72546) live, same PID before and after, never signalled. Open user action: sudo pmset -b disablesleep 1.
 Then: Phase 4 Plan 04 complete (four catalogued labels by a backward as-of rule; three null reasons that partition; the day-boundary refusal). 850 tests green. Buildable feature days: 2026-09-12, 09-13, 09-14. ret_10s_mid is exactly zero on 43.9% of DECISION rows (the catalogue said 29.7%, which was the per-L1-update row set) -- Phase 5/8 pick a loss function off that. 2026-09-14's four battery-sleep gaps null 0.34% of its primary labels. Plans 05-07 next. Capture daemon Run J (PID 72546) live; lake/capture read-only. Open user action: sudo pmset -b disablesleep 1.
 Then: Phase 4 Plan 01 executed on branch feature/phase-04-feature-label-engine (commits 4ec7943, fd90e9e) -- `data/time_ns.py` is the single allowlisted seconds-to-ns site and `features/event_stream.py` owns the merged stream + decision-row rule; 702 tests green. Plan 03 owes the deferred NUMBA_CACHE_DIR mutation check (no @njit kernel exists yet).
 Then: Phase 4 Plan 02 executed on the same branch (commits 722352d, cd8b436, 19aea31) -- `lake/features/` is a manifest-addressed write-once tier with its own loader, `data/holdout.py` refuses a held-out date at both the write and the read (covering D+1's label tail), and `data/dq/feature_checks.py` puts six feature-tier rows into the same `report.parquet` as the curated streams; 748 tests green. No lake data written. Buildable feature days for Plan 05: 2026-09-12, 09-13, 09-14 (09-15 waits for 09-16's curated L1 manifest). HANDOFF: Plan 05 must write every key in `FEATURE_BUILD_STATS_KEYS` into `lake/features_meta/.../build_stats.json` (that path needs adding to its writable list); Phase 5 must MOVE OR DELETE any existing features partition when it declares a date held out -- the read-time refusal covers the code path, not the bytes on disk (T-04-09, accepted).
