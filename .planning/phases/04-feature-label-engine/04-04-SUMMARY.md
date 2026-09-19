@@ -86,6 +86,7 @@ completed: 2026-09-19
 | 1 | Backward as-of labels, and the three ways a label is null | `a216775` | `features/labels.py`, `tests/features/test_labels.py`, `data/dq/checks.py` |
 | 2 | The day-boundary rule, and the label catalogue | `473a9d9` | `features/labels.py`, `tests/features/test_label_day_boundary.py`, `spec/labels.toml`, `spec.md` |
 | — | Row-set correction forced by the real-data run (Deviation 1) | `f9aaf57` | `spec/labels.toml`, `spec/dq_thresholds.toml`, `data/dq/feature_checks.py`, `features/labels.py`, `spec.md` |
+| — | This summary + STATE/ROADMAP | `31d4449` | `.planning/phases/04-feature-label-engine/04-04-SUMMARY.md`, `.planning/STATE.md`, `.planning/ROADMAP.md` |
 
 ## The finding that changes what Phase 5/8 will read
 
@@ -507,6 +508,15 @@ green; nothing had to be reverted.
 - **The null mask is not a pure function of `[t, t+h]`** — it reads arrival times up to
   `t + h + max_quote_gap`. Plan 06's leakage suite should encode the correct, split property rather
   than the plan's original wording.
+- **`04-05-PLAN.md`'s verification table (line 171) still expects `ret_10s_mid` exactly-zero
+  0.297, and `04-CONTEXT.md` D-04-17 still says 29.7 % without naming a row set.** Both were
+  written before this plan measured the decision-row figure. The build will report **0.439**, and
+  that is correct — check the row-set table above before treating the difference as a STOP.
+- **Plan 06's leakage suite must learn the two-part information set.** The four labels'
+  `information_set` strings now say "data through t+h for the VALUE; quote ARRIVAL TIMES through
+  t+h+max_quote_gap decide whether it exists". `tests/leakage/test_feature_information_set.py`'s
+  `_allowed_sources` raises on a string it cannot read, and the plan's original one-line property
+  ("nothing after t+h can change the label") is FALSE against correct code — see Deviation 3.
 - **Loading a real day pair costs ~23 s and peaks around 1.5 GB** (17.2M + 38.6M quotes plus the
   concatenation copy). The D+1 slice optimisation is available and deliberately untaken.
 
