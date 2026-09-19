@@ -18,6 +18,8 @@ from features.labels import compute_labels
 from features.reference import FEATURE_OUTPUT_NAMES
 from spec.catalogue import load_features, load_labels
 from spec.information_set import InformationSetError, parse_information_set
+from tests.leakage.test_feature_information_set import FEATURE_NAMES
+from tests.leakage.test_label_information_set import LABEL_NAMES
 
 #: Kernel output columns that are NOT catalogued features. `warmup` is
 #: D-04-09's flag travelling with the row, not a value a model reads; it has
@@ -83,3 +85,27 @@ def test_an_uncatalogued_declaration_form_is_refused_not_guessed():
     strings parse, not because the parser accepts anything."""
     with pytest.raises(InformationSetError):
         parse_information_set("whatever the code happens to read")
+
+
+def test_every_feature_and_label_is_covered_by_a_leakage_property():
+    """T-04-27. The properties in this directory are written against named
+    features and labels. A FIFTH catalogue entry would be proved nothing
+    about -- silently, since every existing property would still pass.
+
+    This is the test that keeps the suite honest as Phase 8 adds features:
+    a new entry fails here until someone writes its property and adds its
+    name to the tuple, which is also the moment they have to decide what
+    its information set means.
+    """
+    assert set(load_features()) == set(FEATURE_NAMES), (
+        "features with no leakage property: "
+        f"{sorted(set(load_features()) - set(FEATURE_NAMES))}; leakage "
+        f"properties for features that are not catalogued: "
+        f"{sorted(set(FEATURE_NAMES) - set(load_features()))}"
+    )
+    assert set(load_labels()) == set(LABEL_NAMES), (
+        "labels with no leakage property: "
+        f"{sorted(set(load_labels()) - set(LABEL_NAMES))}; leakage properties "
+        f"for labels that are not catalogued: "
+        f"{sorted(set(LABEL_NAMES) - set(load_labels()))}"
+    )

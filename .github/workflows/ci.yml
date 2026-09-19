@@ -73,5 +73,12 @@ jobs:
       - name: check_manifest_append_only
         run: uv run --locked --directory mvp python -m tools.check_manifest_append_only
 
+      # FEAT-03's gate. Deliberately redundant with the full-suite step
+      # below -- see the matching comment in `.pre-commit-config.yaml`.
+      # A leakage proof with no name of its own in the CI log is a claim,
+      # not a gate.
+      - name: pytest (leakage suite)
+        run: uv run --locked --directory mvp pytest tests/leakage -x -q
+
       - name: pytest (tests, via testpaths)
         run: uv run --locked --directory mvp pytest tests -x -q

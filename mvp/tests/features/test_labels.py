@@ -6,11 +6,14 @@
 made arithmetic: every fixture below is small enough that the expected
 value is computed by hand in the assertion itself.
 
-A label is the ONE value in this pipeline allowed to look forward, so the
-tests that matter most are the two property tests at the bottom:
-perturbing a quote strictly after `t+h` cannot change a label's VALUE, and
--- the anti-vacuity counterpart -- perturbing the prevailing quote CAN.
-Without the second, the first passes on a function returning a constant.
+A label is the ONE value in this pipeline allowed to look forward. The
+properties that bound HOW FAR forward now live in
+`tests/leakage/test_label_information_set.py`, together with the feature
+side and under the named `leakage-suite` CI gate -- a leakage proof that
+only runs as part of a 900-test suite is one nobody can point at in a CI
+log. The generator they share with the one property left here
+(`label_problem`) lives in `tests/fixtures/leakage_streams.py`, so a bug
+in it cannot make one suite pass while the other fails.
 
 NULLS ARE NaN HERE. Inside `features/labels.py` an absent label is NaN;
 `features/tier.py:write_feature_partition` is the single NaN -> null
@@ -25,13 +28,11 @@ import math
 import numpy as np
 import pytest
 from hypothesis import HealthCheck, given, settings
-from hypothesis import strategies as st
 
 from data.time_ns import (
     LABEL_HORIZON_NS,
     NS_PER_SECOND,
     RET_1MIN_NS,
-    RET_1S_NS,
     RET_10S_NS,
 )
 from features.labels import (
@@ -39,6 +40,7 @@ from features.labels import (
     big_quote_gaps,
     compute_labels,
 )
+from tests.fixtures.leakage_streams import label_problem
 
 H10 = "ret_10s_mid"
 GAP_30S = 30 * NS_PER_SECOND
@@ -398,60 +400,8 @@ def test_a_non_positive_mid_at_t_is_refused():
 # --------------------------------------------------------------------------
 
 
-@st.composite
-def _quote_series(draw, max_quotes=30):
-    """Ascending quote etimes on a COARSE grid (ties and exact `t+h` hits
-    have to actually occur, or the exact-match path is covered only by the
-    example tests above) with positive mids."""
-    n = draw(st.integers(min_value=2, max_value=max_quotes))
-    steps = draw(
-        st.lists(
-            st.sampled_from([0, 1, 2, 5, 10, 31]),
-            min_size=n,
-            max_size=n,
-        )
-    )
-    etimes = np.cumsum(_i64(steps)) * NS_PER_SECOND
-    mids = (
-        _f64(
-            draw(
-                st.lists(
-                    st.integers(min_value=990, max_value=1010),
-                    min_size=n,
-                    max_size=n,
-                )
-            )
-        )
-        / 10.0
-    )
-    return etimes.astype(np.int64), mids
-
-
-@st.composite
-def _label_problem(draw):
-    quote_etime, quote_mid = draw(_quote_series())
-    n_rows = draw(st.integers(min_value=1, max_value=8))
-    span = int(quote_etime[-1]) + 5 * NS_PER_SECOND
-    decision_etime = _i64(
-        sorted(
-            draw(
-                st.lists(
-                    st.integers(min_value=0, max_value=max(span, 1)),
-                    min_size=n_rows,
-                    max_size=n_rows,
-                )
-            )
-        )
-    )
-    # mid_t is the prevailing mid at t, exactly as the kernel computes it;
-    # NaN before the first quote.
-    idx = np.searchsorted(quote_etime, decision_etime, side="right") - 1
-    decision_mid = np.where(idx < 0, np.nan, quote_mid[np.maximum(idx, 0)])
-    return decision_etime, decision_mid.astype(np.float64), quote_etime, quote_mid
-
-
 @settings(deadline=None, max_examples=150, suppress_health_check=[HealthCheck.too_slow])
-@given(problem=_label_problem())
+@given(problem=label_problem())
 def test_label_is_never_zero_by_default(problem):
     """Every label is either NaN or exactly the hand-computed return. No
     code path invents a 0.0 that was not a real equal-price pair."""
@@ -472,89 +422,3 @@ def test_label_is_never_zero_by_default(problem):
         assert label[i] == expected, "bitwise, never approx"
         if label[i] == 0.0:
             assert float(quote_mid[j]) == float(decision_mid[i])
-
-
-@settings(deadline=None, max_examples=150, suppress_health_check=[HealthCheck.too_slow])
-@given(problem=_label_problem(), bump=st.floats(min_value=1.0, max_value=50.0))
-def test_perturbing_a_quote_after_t_plus_h_cannot_change_a_label(problem, bump):
-    """T-04-15. The MID VALUES of quotes strictly after the last row's
-    `t+h` are re-priced; every label must be bit-identical.
-
-    Only mid values -- moving their ETIMES is a different question, and
-    `test_perturbing_an_etime_after_t_plus_h_only_toggles_nullness` below
-    is where it is answered.
-    """
-    decision_etime, decision_mid, quote_etime, quote_mid = problem
-    horizon = RET_10S_NS
-    label, _ = _one_horizon(
-        decision_etime, decision_mid, quote_etime, quote_mid, horizon_ns=horizon
-    )
-
-    last_needed = int(decision_etime[-1]) + horizon
-    future = quote_etime > last_needed
-    if not future.any():
-        return
-    perturbed = quote_mid.copy()
-    perturbed[future] = perturbed[future] + bump
-    label_after, _ = _one_horizon(
-        decision_etime, decision_mid, quote_etime, perturbed, horizon_ns=horizon
-    )
-    assert np.array_equal(label, label_after, equal_nan=True)
-
-
-@settings(deadline=None, max_examples=150, suppress_health_check=[HealthCheck.too_slow])
-@given(problem=_label_problem(), bump=st.floats(min_value=1.0, max_value=50.0))
-def test_perturbing_an_etime_after_t_plus_h_only_toggles_nullness(problem, bump):
-    """The null MASK legitimately reads arrival TIMES past `t+h`: a gap
-    that begins at `t+h` and runs longer than the threshold means the
-    prevailing quote is the last thing known for 30+ seconds.
-
-    So the honest property is weaker than "nothing after `t+h` matters" --
-    a label may appear or disappear, but a finite label never becomes a
-    DIFFERENT finite label.
-    """
-    decision_etime, decision_mid, quote_etime, quote_mid = problem
-    horizon = RET_10S_NS
-    label, _ = _one_horizon(
-        decision_etime, decision_mid, quote_etime, quote_mid, horizon_ns=horizon
-    )
-
-    last_needed = int(decision_etime[-1]) + horizon
-    future = quote_etime > last_needed
-    if not future.any():
-        return
-    moved = quote_etime.copy()
-    moved[future] = moved[future] + int(bump) * NS_PER_SECOND
-    label_after, _ = _one_horizon(
-        decision_etime, decision_mid, moved, quote_mid, horizon_ns=horizon
-    )
-    both_finite = ~np.isnan(label) & ~np.isnan(label_after)
-    assert np.array_equal(label[both_finite], label_after[both_finite])
-
-
-@settings(deadline=None, max_examples=150, suppress_health_check=[HealthCheck.too_slow])
-@given(problem=_label_problem(), bump=st.floats(min_value=1.0, max_value=50.0))
-def test_perturbing_the_prevailing_quote_DOES_change_the_label(problem, bump):
-    """Anti-vacuity for the two properties above: without this, both pass
-    on `compute_labels` returning a constant array."""
-    decision_etime, decision_mid, quote_etime, quote_mid = problem
-    horizon = RET_1S_NS
-    label, _ = _one_horizon(
-        decision_etime, decision_mid, quote_etime, quote_mid, horizon_ns=horizon
-    )
-    labelled = np.flatnonzero(~np.isnan(label))
-    if labelled.size == 0:
-        return
-    row = int(labelled[0])
-    target = int(decision_etime[row]) + horizon
-    j = int(np.searchsorted(quote_etime, target, side="right")) - 1
-
-    perturbed = quote_mid.copy()
-    perturbed[j] = perturbed[j] + bump
-    label_after, _ = _one_horizon(
-        decision_etime, decision_mid, quote_etime, perturbed, horizon_ns=horizon
-    )
-    assert label_after[row] != label[row], (
-        "the prevailing quote at t+h is exactly the row this label reads; "
-        "if moving it changes nothing, the label reads nothing"
-    )

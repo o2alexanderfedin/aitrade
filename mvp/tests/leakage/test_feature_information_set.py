@@ -38,11 +38,40 @@ from hypothesis import strategies as st
 
 from data.time_ns import TRADE_FLOW_WINDOW_NS
 from features.event_stream import SOURCE_RANK_BOOKTICKER, decision_row_index
+from features.kernel import run_kernel_checked
 from features.reference import FEATURE_OUTPUT_NAMES, run_reference_checked
 from spec.catalogue import get_feature
+from spec.information_set import (
+    PREV_UPDATE,
+    InformationSet,
+    parse_information_set,
+)
 from tests.fixtures.event_streams import build_events, quote, trade
 
 FEATURE_NAMES = ("mid", "imb_top", "ofi", "trade_flow")
+
+
+def _declared() -> dict[str, InformationSet]:
+    """Each feature's PARSED information set, pinned to the string the
+    catalogue holds today.
+
+    Names are literals: `tools/check_catalogue_completeness.py` rejects a
+    dynamically-constructed `get_feature` argument, which is what stops
+    this file drifting away from the catalogue it is checking.
+    """
+    raw = {
+        "mid": get_feature("mid").information_set,
+        "imb_top": get_feature("imb_top").information_set,
+        "ofi": get_feature("ofi").information_set,
+        "trade_flow": get_feature("trade_flow").information_set,
+    }
+    assert raw == {
+        "mid": "t",
+        "imb_top": "t",
+        "ofi": "[prev_l1_update, t]",
+        "trade_flow": "[t-1s, t]",
+    }
+    return {name: parse_information_set(text) for name, text in raw.items()}
 
 
 def _features(events):
@@ -221,8 +250,21 @@ def _perturbations(events, j):
         yield perturbed
 
 
-def _measured_sources(events):
-    """`{feature: {decision_row: {row indices that can change it}}}`."""
+def _measured_sources(events, *, include_future=False):
+    """`{feature: {decision_row: {row indices that can change it}}}`.
+
+    `include_future=False` records only rows at or before each decision
+    row -- the shape the containment test wants, where "which of the PAST
+    can reach me" is the question.
+
+    `include_future=True` records rows AFTER the decision row too, and
+    that difference is the whole point of
+    `test_feature_measured_lookback_matches_the_declaration` below: with
+    the skip in place, a one-row lookahead is invisible BY CONSTRUCTION,
+    because the row that leaked was never perturbed against that decision
+    row in the first place. It costs nothing to collect -- the reference is
+    already run once per perturbation either way.
+    """
     baseline = _features(events)
     decisions = decision_row_index(events["etime"])
     measured = {name: {int(k): set() for k in decisions} for name in FEATURE_NAMES}
@@ -232,7 +274,7 @@ def _measured_sources(events):
             moved = _features(perturbed)
             for name in FEATURE_NAMES:
                 for k in decisions:
-                    if j > k:
+                    if j > k and not include_future:
                         continue
                     if not _same(baseline[name][k], moved[name][k]):
                         measured[name][int(k)].add(j)
@@ -250,19 +292,32 @@ def _last_two_l1_rows(events, k):
     return first, second
 
 
-def _allowed_sources(events, declared, k):
-    """The row indices `declared` permits a feature at `k` to depend on."""
+def _allowed_sources(events, declared: InformationSet, k):
+    """The row indices `declared` permits a feature at `k` to depend on.
+
+    Dispatches on the PARSED declaration, not on the catalogue string, so
+    the grammar has one home (`spec/information_set.py`) and this file
+    cannot drift into accepting a form the parser rejects. An unreadable
+    string never reaches here: `parse_information_set` raises first.
+    """
     i1, i2 = _last_two_l1_rows(events, k)
-    if declared == "t":
+    if declared.lookahead_ns != 0:
+        raise AssertionError(
+            f"{declared.text!r} declares a {declared.lookahead_ns} ns "
+            "lookahead -- that is a label's declaration, not a feature's"
+        )
+    if declared.lookback_ns == 0 and declared.lookback_events == 0:
+        # "t": the prevailing top of book, which on a trade row is older
+        # than t. The catalogue note says so in those words.
         return {k, i1}
-    if declared == "[prev_l1_update, t]":
+    if declared.lookback_events == PREV_UPDATE:
         return {k, i1, i2}
-    if declared == "[t-1s, t]":
+    if declared.lookback_ns is not None:
         t = int(events["etime"][k])
         return {k} | {
             j
             for j in range(k + 1)
-            if t - TRADE_FLOW_WINDOW_NS < int(events["etime"][j]) <= t
+            if t - declared.lookback_ns < int(events["etime"][j]) <= t
         }
     raise AssertionError(f"no executable reading of information_set {declared!r}")
 
@@ -275,18 +330,7 @@ def test_declared_information_set_matches_the_measured_lookback():
     dynamically-constructed `get_feature` argument, which is what stops this
     test drifting away from the catalogue it is checking.
     """
-    declared = {
-        "mid": get_feature("mid").information_set,
-        "imb_top": get_feature("imb_top").information_set,
-        "ofi": get_feature("ofi").information_set,
-        "trade_flow": get_feature("trade_flow").information_set,
-    }
-    assert declared == {
-        "mid": "t",
-        "imb_top": "t",
-        "ofi": "[prev_l1_update, t]",
-        "trade_flow": "[t-1s, t]",
-    }
+    declared = _declared()
 
     events = _crafted_stream()
     measured, decisions = _measured_sources(events)
@@ -361,6 +405,85 @@ def test_a_feature_IS_sensitive_to_its_own_declared_window():
     assert not (set(outside) & measured["trade_flow"][k]), (
         "a trade outside trade_flow's declared window changed it"
     )
+
+
+def test_feature_measured_lookback_matches_the_declaration():
+    """The exhaustive twin of the two shuffle properties: perturb EVERY row
+    of the stream one field at a time -- including rows AFTER the decision
+    row -- and compare the set that moves each feature against what the
+    catalogue declares.
+
+    WHY "INCLUDING ROWS AFTER" IS THE WHOLE SENTENCE. The containment test
+    above skips `j > k`, because its question is "which of the past can
+    reach me". That skip makes a one-row lookahead invisible to it BY
+    CONSTRUCTION -- the leaking row is never perturbed against the decision
+    row it leaks into. Here nothing is skipped, so a feature that reads
+    `t + 1ns` names the offending row in the failure message instead of
+    showing up only as a statistical shuffle failure.
+
+    The shuffle property and this one are not redundant: the shuffle
+    permutes many rows at once over generated streams (broad, random);
+    this perturbs one field at a time over one crafted stream (exact,
+    and it can say WHICH row).
+    """
+    declared = _declared()
+    events = _crafted_stream()
+    measured, decisions = _measured_sources(events, include_future=True)
+
+    for name in FEATURE_NAMES:
+        for k in decisions:
+            k = int(k)
+            future = {j for j in measured[name][k] if j > k}
+            assert not future, (
+                f"{name} at decision row {k} (etime={events['etime'][k]}) can "
+                f"be changed by row(s) {sorted(future)}, which are AFTER it -- "
+                f"its declared information_set {declared[name].text!r} has a "
+                f"lookahead of {declared[name].lookahead_ns} ns"
+            )
+            excess = measured[name][k] - _allowed_sources(events, declared[name], k)
+            assert not excess, (
+                f"{name} at decision row {k} (etime={events['etime'][k]}) can "
+                f"be changed by row(s) {sorted(excess)}, which its declared "
+                f"information_set {declared[name].text!r} does not permit"
+            )
+
+    # Anti-vacuity, on THIS measurement rather than on a second one: a
+    # feature nothing can move has an empty measured set at every row, and
+    # an empty set is inside every declaration.
+    late = [int(k) for k in decisions if k >= 8]
+    for name in FEATURE_NAMES:
+        assert any(measured[name][k] for k in late), (
+            f"{name} is not sensitive to ANY row -- the containment "
+            "assertions above are vacuous for it"
+        )
+
+
+def test_kernel_and_reference_agree_on_the_leakage_fixtures():
+    """Everything above is proved about `features.reference`, the Python
+    twin -- a JIT dispatch per hypothesis example would make this suite
+    unusable. This runs the SAME streams through the `@njit` kernel that
+    the build actually calls, so the properties are not proved only about
+    the twin.
+
+    `tests/features/test_kernel.py` already proves the two agree in
+    general. This is the narrower, load-bearing claim: they agree on the
+    exact fixtures the leakage properties are measured over, including
+    every single-field perturbation of them.
+    """
+    streams = [_crafted_stream()]
+    base = _crafted_stream()
+    for j in (0, 5, len(base["etime"]) - 1):
+        streams.extend(_perturbations(base, j))
+
+    for index, events in enumerate(streams):
+        reference = run_reference_checked(events)
+        kernel = run_kernel_checked(events)
+        for name in FEATURE_OUTPUT_NAMES:
+            assert _same(reference[name], kernel[name]), (
+                f"kernel and reference disagree on {name} for leakage "
+                f"fixture {index} -- every property in this file is proved "
+                "about the reference and assumed of the kernel"
+            )
 
 
 def test_every_catalogued_feature_is_covered_by_these_properties():

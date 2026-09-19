@@ -138,6 +138,25 @@ repos:
         language: system
         pass_filenames: false
 
+      # FEAT-03's gate, DELIBERATELY REDUNDANT with the full-suite hook
+      # below -- do not "clean this up". `tests/leakage` is collected by
+      # `pytest tests` too, so this re-runs ~2 s of work. What it buys is a
+      # line in the pre-commit/CI output that says the words: a leakage
+      # proof nobody can point at, inside a 900-test summary line, is a
+      # claim rather than a gate. It also fails FIRST and on its own, so
+      # "the leakage suite broke" is distinguishable at a glance from "some
+      # test broke".
+      #
+      # The `uv run` here is Phase 2's convention for these two callers and
+      # is what makes this string byte-identical to the `run:` step in
+      # `.github/workflows/ci.yml`. The project's ban on `uv run` is about
+      # LONG-RUNNING processes; this one takes seconds.
+      - id: leakage-suite
+        name: pytest (leakage suite)
+        entry: uv run --locked --directory mvp pytest tests/leakage -x -q
+        language: system
+        pass_filenames: false
+
       - id: pytest
         name: pytest (tests, via testpaths)
         entry: uv run --locked --directory mvp pytest tests -x -q
