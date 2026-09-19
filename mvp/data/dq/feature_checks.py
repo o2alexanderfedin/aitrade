@@ -58,6 +58,7 @@ FEATURE_BUILD_STATS_KEYS: frozenset[str] = frozenset(
         "ret_1s_mid_zero_fraction",
         "warmup_rows",
         "post_gap_warmup_rows",
+        "resync_sidecar_present",
         "max_window_occupancy",
         "window_capacity",
         "window_overflow",
@@ -195,18 +196,44 @@ def check_feature_warmup(build_stats: dict, thresholds: DQThresholds) -> dict:
     D-04-09: the tag travels with the row rather than being recomputed by
     consumers, so the day-level count is the only place the size of the
     excluded-from-training set is visible at a glance.
+
+    DEGRADED WHEN THE SIDECAR WAS ABSENT (04-REVIEW.md WR-04). Then
+    `post_gap_warmup` is false on every row of a write-once partition
+    whether or not the day had an outage, and `post_gap_warmup_rows: 0` is
+    the same number a clean day records. The count alone cannot tell the
+    two apart, so `resync_sidecar_present` is read explicitly. `degraded`
+    rather than `failed`: the day is acknowledgeable and its features are
+    fine, but nobody may read the zero as "there was no outage" without
+    saying so in a committed acknowledgement.
     """
-    keys = ("warmup_rows", "post_gap_warmup_rows")
+    keys = ("warmup_rows", "post_gap_warmup_rows", "resync_sidecar_present")
     problem = _missing("feature_warmup", build_stats, keys)
     if problem is not None:
         return problem
     warmup = int(build_stats["warmup_rows"])
     post_gap = int(build_stats["post_gap_warmup_rows"])
+    sidecar = bool(build_stats["resync_sidecar_present"])
+    if not sidecar:
+        return {
+            "check": "feature_warmup",
+            "dq_status": "degraded",
+            "count": warmup,
+            "reason": (
+                f"warmup_rows={warmup}; post_gap_warmup_rows={post_gap} but "
+                "resync_sidecar_present=False -- this day was built before its "
+                "DQ report existed, so post_gap_warmup is false on every row "
+                "whether or not there was an outage, and the partition is "
+                "write-once"
+            ),
+        }
     return {
         "check": "feature_warmup",
         "dq_status": "ok",
         "count": warmup,
-        "reason": f"warmup_rows={warmup}; post_gap_warmup_rows={post_gap}",
+        "reason": (
+            f"warmup_rows={warmup}; post_gap_warmup_rows={post_gap}; "
+            "resync_sidecar_present=True"
+        ),
     }
 
 

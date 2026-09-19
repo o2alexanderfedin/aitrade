@@ -202,14 +202,48 @@ def test_post_gap_warmup_is_tagged_from_the_sidecar(tmp_path: Path):
     )
 
 
-def test_a_date_with_no_sidecar_still_builds_with_every_tag_false(tmp_path: Path):
+def test_a_date_with_no_sidecar_still_builds_but_records_that_it_was_blind(
+    tmp_path: Path,
+):
+    """The build proceeds -- a missing DQ report must not stop a day being
+    built -- but it says so, and the DQ check degrades on it (WR-04).
+
+    Without the recorded fact, `post_gap_warmup_rows: 0` is exactly what a
+    clean day writes, so a multi-minute post-outage warm-up tagged on no
+    row at all is indistinguishable from an outage-free day -- in a
+    write-once partition nobody can correct.
+    """
+    from data.dq.report import dq_resync_windows_path
+
     lake_root, registry_root = _roots(tmp_path)
     seed_two_days(lake_root, registry_root)
+    dq_resync_windows_path(lake_root, DATE).unlink()
+
     result = _build(lake_root, registry_root)
     written = _written_frame(lake_root, result)
 
     assert not written["post_gap_warmup"].any()
     assert result["build_stats"]["post_gap_warmup_rows"] == 0
+    assert result["build_stats"]["resync_sidecar_present"] is False
+    assert (
+        check_feature_warmup(result["build_stats"], load_dq_thresholds())["dq_status"]
+        == "degraded"
+    )
+
+
+def test_an_empty_sidecar_is_not_a_missing_one(tmp_path: Path):
+    """The discriminating half: a date whose DQ report ran and saw no
+    outage writes an EMPTY sidecar, and that day is `ok`."""
+    lake_root, registry_root = _roots(tmp_path)
+    seed_two_days(lake_root, registry_root)
+    result = _build(lake_root, registry_root)
+
+    assert result["build_stats"]["post_gap_warmup_rows"] == 0
+    assert result["build_stats"]["resync_sidecar_present"] is True
+    assert (
+        check_feature_warmup(result["build_stats"], load_dq_thresholds())["dq_status"]
+        == "ok"
+    )
 
 
 def test_the_tag_follows_the_sidecar_rather_than_the_row(tmp_path: Path):

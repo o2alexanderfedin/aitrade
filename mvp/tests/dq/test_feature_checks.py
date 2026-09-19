@@ -68,6 +68,7 @@ REAL_DAY_STATS: dict = {
     "ret_1s_mid_zero_fraction": 0.625,
     "warmup_rows": 1,
     "post_gap_warmup_rows": 0,
+    "resync_sidecar_present": True,
     "max_window_occupancy": 5_092,
     "window_capacity": 1 << 16,
     "window_overflow": False,
@@ -166,6 +167,7 @@ def test_warmup_and_asof_convention_are_informational():
     warmup = check_feature_warmup(_stats(), THRESHOLDS)
     assert warmup["dq_status"] == "ok"
     assert warmup["count"] == 1
+    assert "resync_sidecar_present=True" in warmup["reason"]
 
     asof = check_feature_asof_convention(_stats(), THRESHOLDS)
     assert asof["dq_status"] == "ok"
@@ -405,4 +407,33 @@ def test_the_curated_half_of_the_report_still_regenerates(tmp_path: Path):
     assert report.filter(pl.col("stream") == "bookTicker").height > 0, (
         "the curated verdict must still be refreshed -- a downstream tier "
         "must not be able to block it"
+    )
+
+
+def test_a_day_built_without_a_resync_sidecar_is_degraded_not_ok():
+    """04-REVIEW.md WR-04: `post_gap_warmup_rows: 0` must not mean two
+    different things.
+
+    A build that runs before the DQ report exists tags no row at all, and
+    the partition is write-once -- so the column is wrong forever and the
+    only repair is a new manifest for a day already issued. The count it
+    records is exactly the count a clean day records, so nothing in the
+    report could tell them apart. `degraded` rather than `failed`: the day
+    is acknowledgeable and its features are fine; what is not acceptable
+    is reading the zero as "there was no outage" without saying so.
+    """
+    clean = check_feature_warmup(_stats(), THRESHOLDS)
+    blind = check_feature_warmup(_stats(resync_sidecar_present=False), THRESHOLDS)
+
+    assert clean["dq_status"] == "ok"
+    assert blind["dq_status"] == "degraded"
+    assert clean["count"] == blind["count"], (
+        "the COUNTS are identical -- which is the whole finding; only the "
+        "recorded fact distinguishes them"
+    )
+    assert "resync_sidecar_present=False" in blind["reason"]
+
+    absent = {k: v for k, v in _stats().items() if k != "resync_sidecar_present"}
+    assert check_feature_warmup(absent, THRESHOLDS)["dq_status"] == "failed", (
+        "a stats file that cannot answer the question fails closed"
     )

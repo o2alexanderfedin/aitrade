@@ -242,10 +242,20 @@ def seed_day(
     trades: pl.DataFrame | None = None,
     dq_status: str = "ok",
     symbol: str = SYMBOL,
+    resync_windows: list[tuple[int, int]] | None = None,
 ) -> dict[str, str]:
     """Seed one complete curated day: bookTicker (+ optional trade),
-    manifests, by-date pointers, and the day's DQ report scoring every
-    manifest it issued. Returns `{stream: manifest_id}`."""
+    manifests, by-date pointers, the day's DQ report scoring every
+    manifest it issued, AND an (empty by default) resync sidecar.
+    Returns `{stream: manifest_id}`.
+
+    THE EMPTY SIDECAR IS THE REALISTIC STATE, not a convenience: a date
+    whose DQ report ran and saw no outage writes exactly that. A fixture
+    with NO sidecar models a day built before its report existed, which
+    `check_feature_warmup` now reports as `degraded` (04-REVIEW.md
+    WR-04) -- so a test that wants that case deletes the file and says
+    so.
+    """
     ids = {
         L1_STREAM: issue_curated_partition(
             lake_root,
@@ -271,6 +281,7 @@ def seed_day(
         [(stream, mid, dq_status) for stream, mid in ids.items()],
         symbol=symbol,
     )
+    write_resync_windows(lake_root, date, resync_windows or [])
     return ids
 
 

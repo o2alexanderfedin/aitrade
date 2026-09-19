@@ -143,7 +143,7 @@ def _load_curated_day(symbol: str, stream: str, date: str, *, registry_root, lak
 
 def _post_gap_warmup_tags(
     decision_etime: np.ndarray, lake_root: Path, date: str
-) -> np.ndarray:
+) -> tuple[np.ndarray, bool]:
     """Which decision rows fall inside a post-outage warm-up window.
 
     D-04-09: THE TAG TRAVELS WITH THE ROW. Phase 3's
@@ -164,25 +164,41 @@ def _post_gap_warmup_tags(
     `collapse_outage_intervals`), so the last window starting at or before
     `t` is the only one that can contain `t`.
 
-    NO SIDECAR IS NOT A FINDING. A date whose DQ report ran but saw no
-    outage writes an EMPTY sidecar; a date whose report has not been
-    generated has none at all. Both mean "no post-gap rows", and neither
-    should stop a build -- the report is regenerable, the partition is not.
+    NO SIDECAR IS NOT A REFUSAL, BUT IT IS RECORDED (04-REVIEW.md WR-04).
+    A date whose DQ report ran but saw no outage writes an EMPTY sidecar;
+    a date whose report has not been generated has none at all. The old
+    docstring said both mean "no post-gap rows" and defended the silence
+    with "the report is regenerable, the partition is not". That reasoning
+    runs backwards. PRECISELY BECAUSE the partition is not regenerable, a
+    build that runs before the DQ report exists writes an unfixable
+    column: every row of a multi-minute post-outage warm-up carries
+    `post_gap_warmup = false` forever, and the only repair is a new
+    manifest for a day that was already issued.
+
+    The absence used to be invisible afterwards too -- `build_stats.json`
+    recorded `post_gap_warmup_rows: 0`, which is exactly what a clean day
+    records. So the second return value is the fact itself: this function
+    reports whether it had a sidecar to read, `_build_stats` persists it
+    as `resync_sidecar_present`, and `check_feature_warmup` returns
+    `degraded` when it is false. A degraded day is acknowledgeable; a
+    silently-untagged one is not.
+
+    Returns `(tags, sidecar_present)`.
     """
     path = dq_resync_windows_path(Path(lake_root), date)
     tags = np.zeros(decision_etime.shape, dtype=np.bool_)
     if not path.exists():
-        return tags
+        return tags, False
     windows = pl.read_parquet(path)
     if windows.height == 0:
-        return tags
+        return tags, True
     windows = windows.sort("gap_end_etime_approx")
     starts = windows["gap_end_etime_approx"].to_numpy()
     ends = windows["warmup_end_etime_approx"].to_numpy()
     idx = np.searchsorted(starts, decision_etime, side="right") - 1
     safe = np.maximum(idx, 0)
     np.logical_and(idx >= 0, decision_etime < ends[safe], out=tags)
-    return tags
+    return tags, True
 
 
 def _build_stats(
@@ -193,6 +209,7 @@ def _build_stats(
     label_stats: dict,
     warmup_rows: int,
     post_gap_warmup_rows: int,
+    resync_sidecar_present: bool,
     curated_manifest_ids: dict[str, str],
     next_day_manifest_id: str,
 ) -> dict:
@@ -239,6 +256,12 @@ def _build_stats(
         # --- the two warm-up kinds, counted separately ---
         "warmup_rows": int(warmup_rows),
         "post_gap_warmup_rows": int(post_gap_warmup_rows),
+        # WHETHER THE TAG COULD BE COMPUTED AT ALL (04-REVIEW.md WR-04).
+        # `post_gap_warmup_rows: 0` means two different things without
+        # this: "the sidecar said there were no windows" and "there was no
+        # sidecar". The second writes an unfixable column into a
+        # write-once partition, and `check_feature_warmup` degrades on it.
+        "resync_sidecar_present": bool(resync_sidecar_present),
         # --- labels ---
         "label_null_counts": {
             name: {reason: h[reason] for reason in ("null_total", *NULL_REASONS)}
@@ -379,7 +402,9 @@ def build_features_day(
     del quote_etime, quote_mid
 
     # (7) the post-gap warm-up tag, joined from Phase 3's sidecar.
-    post_gap = _post_gap_warmup_tags(decision["etime"], lake_root, date)
+    post_gap, resync_sidecar_present = _post_gap_warmup_tags(
+        decision["etime"], lake_root, date
+    )
 
     # (8) the frame, in FEATURE_ROW_SCHEMA order, WITH NaN still in it.
     n = decision["etime"].size
@@ -433,6 +458,7 @@ def build_features_day(
         label_stats=label_stats,
         warmup_rows=warmup_rows,
         post_gap_warmup_rows=post_gap_warmup_rows,
+        resync_sidecar_present=resync_sidecar_present,
         curated_manifest_ids={
             L1_STREAM: l1_manifest_id,
             TRADE_STREAM: trade_manifest_id,
