@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 4 Plan 01 complete (ns constants + merged event stream); Plan 02+ next
-last_updated: "2026-09-19T07:28:30.495Z"
+stopped_at: "Phase 4 Plan 02 complete (lake/features tier + holdout refusal covering D and D+1 + feature-tier DQ rows); 748 tests green; Plans 03-07 next"
+last_updated: "2026-09-19T08:04:54.340Z"
 last_activity: 2026-09-19
 progress:
   total_phases: 11
   completed_phases: 3
   total_plans: 21
-  completed_plans: 16
-  percent: 76
+  completed_plans: 17
+  percent: 81
 ---
 
 # Project State
@@ -26,13 +26,13 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 4 of 11 (feature & label engine)
-Plan: 01 of 07 complete
-Status: Executing
+Plan: 2 of 07 complete
+Status: Ready to execute
 Last activity: 2026-09-19
 
-Progress: [████████░░] 76%
+Progress: [████████░░] 81%
 
-> That 76% is `state.update-progress`'s definition -- plans WITH a SUMMARY over plans WRITTEN so far (16 of 21, phases 1-4). It is not milestone completion: phases 5-11 have no plans on disk yet, and only 3 of 11 phases are complete.
+> That 81% is `state.update-progress`'s definition -- plans WITH a SUMMARY over plans WRITTEN so far (17 of 21, phases 1-4). It is not milestone completion: phases 5-11 have no plans on disk yet, and only 3 of 11 phases are complete.
 
 ## Performance Metrics
 
@@ -61,6 +61,7 @@ Progress: [████████░░] 76%
 | Phase 02 P01 | 10min | 3 tasks | 15 files |
 | Phase 02 P04 | 18min | 2 tasks | 4 files |
 | Phase 04 P01 | ~35min | 2 tasks | 11 files |
+| Phase 04 P02 | ~2h | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -104,6 +105,10 @@ Recent decisions affecting current work:
 - [Phase 4]: Phase 2's "a test package must not shadow a real source package" lesson recurred exactly: `mvp/tests/features/__init__.py` (written by Plan 01 Task 1, correct at the time) shadowed the new `mvp/features/` package the moment Task 2 created it. Deleted. The rule is now three instances old (tests/spec, tests/tools+tracking, tests/features) -- treat "does a source package share this test directory's name?" as a checklist item when adding a test directory.
 - [Phase 4]: `polars`' `.to_numpy()` on a Float64 column WITH nulls returns a NaN-filled COPY and does not raise (re-measured 2026-09-19). Every polars->numba boundary must assert `null_count() == 0` per column; `features/event_stream.py:event_arrays` is the one that does it for the event stream.
 - [Phase 2]: mvp/tests/leakage/ scaffolded with one placeholder test, wired into both CI callers' pytest invocation identically to tests/spec/tracking/capture, so Phase 4's real per-feature shuffle-future leakage tests land in an already-CI-exercised directory.
+- [Phase 4]: lake/features/ is a full lake tier, not a flag on the curated one. store.BY_DATE_INDEXED_TIERS is the explicit allowlist granting a tier a date-addressable pointer; the quarantined tier stays outside it and the EXCLUDED half is asserted directly. load_features mirrors load_curated one tier over -- every reader names the one tier it may reach.
+- [Phase 4]: The holdout refusal covers day D AND day D+1, at both the write and the read -- D's ret_10min_mid tail is computed from D+1's mids, so building D while D+1 is held out launders the holdout through a neighbour's label tail. data/holdout.py is dependency-free (no mlflow import, no quarantined-tier path string); an absent registry returns QuarantinedDates(declared=False), so 'not armed yet' is a different value from 'armed and empty', and a malformed one raises.
+- [Phase 4]: check_lockbox_containment flags the bare string 'lockbox' in any file outside its four SANCTIONED_TEST_FILES. New tests needing that literal go INTO the already-sanctioned file rather than extending the list (a sanction disables every rule for a file); a sibling test file proves the same _enforce_tier_containment code path with raw/ as the escape target.
+- [Phase 4]: A features row missing from report.parquet is invisible in the artifact and fatal at the loader. write_report rebuilds the file wholesale, so a features row not RECOMPUTED on every regeneration is deleted by the next curated regen -- leaving an ok/degraded-looking report while load_features is paused on 'missing' forever. Observed by removing the call; the regeneration test is the control, not the convention.
 
 ### Pending Todos
 
@@ -139,4 +144,5 @@ Items acknowledged and carried forward from previous milestone close:
 Last session: 2026-09-19
 Stopped at: Phase 3 (Data Layer) complete — 6 plans + gap closure, verification 5/5 (T-03-09 resolved: CI now runs check_manifest_id_integrity + --full against a committed fixture lake), three review/fix iterations (ITER3: 0 critical; all 3 warnings + 5 info fixed in 03-REVIEW-FIX-ITER3.md), 548 tests, CI green; merged to develop with `git merge --no-ff`. Design lesson carried forward: static source-scanning guardrails (ms→ns single site, lockbox containment) do not converge against every spelling — they are defense-in-depth against accidents; the load-bearing guarantees are runtime/data controls (etime/event_time plausibility → `failed` → loader pause; chmod 0000 lockbox + loader containment + MLflow-first one-look token; sha256 on every manifest read; append-only history check over all parents). New guardrails should be designed runtime-first. Next: `/gsd-autonomous --from 4` (Feature & Label Engine). Work ONLY from /Volumes/ProjectsSSD/aihedgefund/repo. Capture daemon Run J (PID 72546, schema v2, per-run raw segment files). Open user action: `sudo pmset -b disablesleep 1`.
 Then: Phase 4 Plan 01 executed on branch feature/phase-04-feature-label-engine (commits 4ec7943, fd90e9e) -- `data/time_ns.py` is the single allowlisted seconds-to-ns site and `features/event_stream.py` owns the merged stream + decision-row rule; 702 tests green. Plan 03 owes the deferred NUMBA_CACHE_DIR mutation check (no @njit kernel exists yet).
-Resume file: .planning/phases/04-feature-label-engine/04-01-SUMMARY.md
+Then: Phase 4 Plan 02 executed on the same branch (commits 722352d, cd8b436, 19aea31) -- `lake/features/` is a manifest-addressed write-once tier with its own loader, `data/holdout.py` refuses a held-out date at both the write and the read (covering D+1's label tail), and `data/dq/feature_checks.py` puts six feature-tier rows into the same `report.parquet` as the curated streams; 748 tests green. No lake data written. Buildable feature days for Plan 05: 2026-09-12, 09-13, 09-14 (09-15 waits for 09-16's curated L1 manifest). HANDOFF: Plan 05 must write every key in `FEATURE_BUILD_STATS_KEYS` into `lake/features_meta/.../build_stats.json` (that path needs adding to its writable list); Phase 5 must MOVE OR DELETE any existing features partition when it declares a date held out -- the read-time refusal covers the code path, not the bytes on disk (T-04-09, accepted).
+Resume file: .planning/phases/04-feature-label-engine/04-02-SUMMARY.md
