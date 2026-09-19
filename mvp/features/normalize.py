@@ -367,10 +367,20 @@ def write_normalization_artifact(
     )
 
     final_path = normalization_artifact_path(lake_root, symbol, train_end_date)
-    if final_path.exists():
+    # THE PARENT, NOT THE FILE (04-REVIEW.md WR-05). This used to test
+    # `final_path.exists()` on a path whose name embeds `time.time_ns()`,
+    # constructed on the line above -- a guard that could never fire, so
+    # two artifacts for one `(symbol, train_end)` landed side by side each
+    # with its own manifest. Globbing the `train_end=` directory is what
+    # `features/tier.py:write_feature_partition` does one tier over, and
+    # it is the version of this rule that is actually enforced.
+    existing = sorted(final_path.parent.glob("part-*.parquet"))
+    if existing:
         raise FileExistsError(
-            f"normalization artifact {final_path} already exists -- partitions "
-            "are write-once"
+            f"normalization artifact directory {final_path.parent} already "
+            f"holds {existing[0].name} -- partitions are write-once. A second "
+            "fit for the same train_end is a NEW train_end or a new tier "
+            "path, never a second file beside the first."
         )
     write_parquet_atomic(body, final_path, compression="zstd")
 

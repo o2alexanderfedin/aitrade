@@ -390,3 +390,31 @@ def test_load_normalization_does_not_enforce_a_dq_pause(tmp_path):
         store._enforce_dq_pause(
             manifest, registry_root=registry_root, lake_root=lake_root
         )
+
+
+def test_a_second_artifact_for_the_same_train_end_is_refused(tmp_path):
+    """The write-once refusal used to be unreachable.
+
+    `normalization_artifact_path` embeds `time.time_ns()`, so the
+    `if final_path.exists()` guard on the very next line tested a path
+    constructed nanoseconds earlier and could never be true. Two artifacts
+    for the same `(symbol, train_end)` landed side by side, each with its
+    own manifest -- nothing corrupted, but a guard that reads as
+    protection and is not one is worse than no guard at all. The features
+    tier one directory over globs the parent for written part files, which
+    is what actually enforces the rule; this mirrors it.
+    """
+    etime, values = _segment(50)
+    params = fit_training_segment(values, etime, train_end_etime=int(etime[-1])).params
+
+    first = _write(params, tmp_path, train_row_count=50, train_etime_range=(1, 2))
+    lake_root = tmp_path / "lake"
+    parent = (lake_root / first["partitions"][0]["path"]).parent
+    assert len(list(parent.glob("part-*.parquet"))) == 1
+
+    with pytest.raises(FileExistsError, match="write-once"):
+        _write(params, tmp_path, train_row_count=50, train_etime_range=(1, 2))
+
+    assert len(list(parent.glob("part-*.parquet"))) == 1, (
+        "the refusal must happen BEFORE the write, not as a cleanup"
+    )
