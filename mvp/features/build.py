@@ -55,18 +55,10 @@ from data.dq.checks import DQThresholds, load_dq_thresholds
 from data.dq.feature_checks import FEATURE_BUILD_STATS_KEYS, feature_build_stats_path
 from data.dq.report import dq_resync_windows_path
 from data.store import by_date_index_path
+from features.api import FEATURE_PASS_SCHEMA, for_build
 from features.event_stream import (
-    SOURCE_RANK_BOOKTICKER,
     assert_strict_total_order,
-    decision_row_index,
-    event_arrays,
     merge_curated_streams,
-)
-from features.kernel import (
-    STATE_I64_SLOTS,
-    RING_CAPACITY,
-    new_state,
-    run_kernel_checked,
 )
 from features.labels import (
     NextDayUnavailableError,
@@ -192,7 +184,8 @@ def _post_gap_warmup_tags(
 def _build_stats(
     *,
     merge_stats: dict,
-    state_i64: np.ndarray,
+    counters: dict[str, int],
+    window_capacity: int,
     label_stats: dict,
     warmup_rows: int,
     post_gap_warmup_rows: int,
@@ -220,7 +213,7 @@ def _build_stats(
     `failed` for a missing key, and so the claim is recorded per day rather
     than inferred from the absence of a crash.
     """
-    slots = {name: int(state_i64[i]) for name, i in STATE_I64_SLOTS.items()}
+    slots = dict(counters)
     per_horizon = label_stats["per_horizon"]
     n_decision_rows = int(merge_stats["n_decision_rows"])
     disagreements = int(label_stats.get("asof_convention_disagreement_rows", 0))
@@ -235,7 +228,7 @@ def _build_stats(
         "unknown_side_rows": int(merge_stats["unknown_side_rows"]),
         # --- the kernel's own counters ---
         "max_window_occupancy": slots["max_occupancy"],
-        "window_capacity": int(RING_CAPACITY),
+        "window_capacity": int(window_capacity),
         "window_overflow": False,
         "empty_window_rows": slots["empty_window_rows"],
         "crossed_locked_rows": slots["crossed_locked_rows"],
@@ -344,30 +337,22 @@ def build_features_day(
     merged, merge_stats = merge_curated_streams(l1_df, trade_df)
     del l1_df, trade_df
     assert_strict_total_order(merged)
-    arrays = event_arrays(merged)
-    decisions = decision_row_index(arrays["etime"])
 
-    # (5) the one kernel, over EVERY row; decision rows are selected after.
-    state = new_state()
-    out = run_kernel_checked(arrays, state=state)
-    state_i64 = state[0]
-
-    # Own copies of everything that outlives the merged frame -- both
-    # `arrays` (read-only views of polars memory) and `out` (full-length)
-    # are dropped immediately below so day D's ~2.7 GB is not still
-    # resident while day D+1 loads.
-    is_quote = arrays["source_rank"] == SOURCE_RANK_BOOKTICKER
-    quote_etime = arrays["etime"][is_quote].copy()
-    quote_mid = out["mid"][is_quote].copy()
-    decision = {
-        "etime": arrays["etime"][decisions].copy(),
-        "decision_source_rank": arrays["source_rank"][decisions].copy(),
-        "decision_seq": arrays["seq"][decisions].copy(),
-        "warmup": out["warmup"][decisions].copy(),
-    }
-    for name in FEATURE_COLUMNS:
-        decision[name] = out[name][decisions].copy()
-    del arrays, out, merged, is_quote, decisions
+    # (5) the one kernel, THROUGH THE ONE ENTRY POINT. This module used to
+    #     call `run_kernel_checked` itself -- a second in-package caller
+    #     that `tools/check_single_feature_path.py` did not watch, because
+    #     the sanction was the whole `features/` directory
+    #     (04-VERIFICATION.md gap A). `features.api.for_build` runs the
+    #     same `_kernel_pass` the trainer, the serving loop and the
+    #     simulator run, and applies the same `decision_row_index` rule;
+    #     what it adds is the per-quote `mid` series the labels need.
+    #
+    #     Everything full-length lives and dies inside that call, so day
+    #     D's ~2.7 GB is not still resident while day D+1 loads.
+    built = for_build(merged)
+    del merged
+    quote_etime, quote_mid = built.quote_etime, built.quote_mid
+    decision = {name: built.frame[name].to_numpy() for name in FEATURE_PASS_SCHEMA}
 
     # (6) labels, against D's quotes EXTENDED by D+1's -- the cross-day
     #     read that makes day D's last ten minutes labellable at all.
@@ -436,7 +421,8 @@ def build_features_day(
     #     precisely so a crash in the window below is still diagnosable.
     stats = _build_stats(
         merge_stats=merge_stats,
-        state_i64=state_i64,
+        counters=built.counters,
+        window_capacity=built.window_capacity,
         label_stats=label_stats,
         warmup_rows=warmup_rows,
         post_gap_warmup_rows=post_gap_warmup_rows,

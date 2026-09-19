@@ -76,8 +76,8 @@ from data import store
 from data.dates import next_utc_date
 from data.dq.checks import load_dq_thresholds
 from data.time_ns import LABEL_HORIZON_NS
-from features.event_stream import event_arrays, project_bookticker
-from features.kernel import run_kernel_checked
+from features.api import quote_mid_series
+from features.event_stream import project_bookticker
 from features.tier import assert_buildable
 from spec.catalogue import get_label
 
@@ -250,7 +250,7 @@ def compute_labels(
 
     `decision_mid` is the kernel's `mid` at the decision rows and
     `quote_mid` is the kernel's `mid` at the L1 rows -- both come from
-    `features.kernel`, never from a second `(bid + ask) / 2` written here
+    `features.api`, never from a second `(bid + ask) / 2` written here
     (D-04-02: one implementation of a catalogued quantity).
 
     `quote_etime` is expected to already carry day D+1's quotes appended
@@ -505,8 +505,11 @@ def next_day_quote_series(
        built, instead of quietly producing a day whose tail is null
        because its neighbour was unreadable.
 
-    `mid` comes from `features.kernel`, the one implementation of it
-    (D-04-02). A `(bid + ask) / 2` written here would be a second
+    `mid` comes through `features.api.quote_mid_series`, the one entry
+    point to the one implementation of it (D-04-02, and
+    04-VERIFICATION.md gap A -- this module used to call the kernel
+    directly, which made it a second in-package caller the guardrail did
+    not watch). A `(bid + ask) / 2` written here would be a second
     definition of a catalogued feature, in the module least likely to be
     checked against the first.
 
@@ -531,10 +534,4 @@ def next_day_quote_series(
         registry_root=Path(registry_root),
         lake_root=Path(lake_root),
     )
-    quotes = project_bookticker(df)
-    arrays = event_arrays(quotes)
-    out = run_kernel_checked(arrays)
-    # `event_arrays` hands back READ-ONLY views of polars memory whose
-    # lifetime is `df`'s; copy the etimes out so the caller owns both
-    # arrays (`out["mid"]` is already this function's own allocation).
-    return arrays["etime"].copy(), out["mid"]
+    return quote_mid_series(project_bookticker(df))

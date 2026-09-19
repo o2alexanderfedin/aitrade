@@ -474,3 +474,77 @@ def test_the_total_order_gate_is_a_runtime_refusal_not_only_a_test(tmp_path: Pat
     with pytest.raises(ValueError, match="strict"):
         _build(lake2, registry2)
     assert not _partition_dir(lake2).exists()
+
+
+# --------------------------------------------------------------------------
+# (8) the build IS features.api -- 04-VERIFICATION.md gap A
+# --------------------------------------------------------------------------
+
+
+def test_the_built_partition_matches_features_api_bit_for_bit(tmp_path: Path):
+    """The build's feature columns are `features.api`'s, exactly.
+
+    THE HOLE THIS CLOSES. `build_features_day` used to drive
+    `run_kernel_checked` + `decision_row_index` itself, and nothing
+    mechanical compared it with `features.api` -- the guardrail sanctioned
+    the whole `features/` directory, `tests/features/test_build.py`
+    contained zero references to `api`, and
+    `test_three_call_sites_are_byte_identical` compared three call sites
+    that were all inside `api.py`. A deliberately divergent second caller
+    inside the package passed every gate.
+
+    NaN-for-NaN, because `np.nan != np.nan` would make a naive equality
+    check pass on a column that is entirely undefined.
+    """
+    from features.api import FEATURE_PASS_SCHEMA, for_training
+    from features.event_stream import merge_curated_streams
+    from features.tier import FEATURE_COLUMNS
+
+    lake_root, registry_root = _roots(tmp_path)
+    seed_two_days(lake_root, registry_root)
+    result = _build(lake_root, registry_root)
+    written = _written_frame(lake_root, result)
+
+    l1 = pl.read_parquet(
+        lake_root / f"curated/symbol={SYMBOL}/stream=bookTicker/date={DATE}"
+    )
+    trades = pl.read_parquet(
+        lake_root / f"curated/symbol={SYMBOL}/stream=trade/date={DATE}"
+    )
+    merged, _stats = merge_curated_streams(l1, trades)
+    through_api = for_training(merged).frame
+
+    assert through_api.height == written.height
+    for name in FEATURE_PASS_SCHEMA:
+        left = through_api[name].to_numpy()
+        right = written[name].to_numpy()
+        if name in FEATURE_COLUMNS:
+            both_nan = np.isnan(left) & np.isnan(right)
+            assert np.array_equal(left[~both_nan], right[~both_nan]), name
+            assert (
+                both_nan.sum()
+                == int(np.isnan(left).sum())
+                == int(np.isnan(right).sum())
+            ), name
+        else:
+            assert np.array_equal(left, right), name
+
+    # Anti-vacuity: a comparison over zero rows, or over columns that are
+    # entirely null, proves nothing.
+    assert written.height > 1_000
+    for name in FEATURE_COLUMNS:
+        assert int(np.isnan(through_api[name].to_numpy()).sum()) < written.height, name
+
+
+def test_the_build_does_not_import_the_kernel(tmp_path: Path):
+    """The static half of the same claim, run over the two modules the
+    guardrail used to sanction wholesale."""
+    from tools.check_single_feature_path import SANCTIONED_FILES, scan_source
+
+    root = Path(__file__).resolve().parents[2]
+    for relative in ("features/build.py", "features/labels.py"):
+        assert relative not in SANCTIONED_FILES, (
+            f"{relative} must not be sanctioned -- that is the hole gap A names"
+        )
+        violations = scan_source((root / relative).read_text(), relative)
+        assert violations == [], [str(v) for v in violations]

@@ -60,14 +60,25 @@ from typing import NamedTuple
 import numpy as np
 import polars as pl
 
-from features.event_stream import EVENT_SCHEMA, decision_row_index, event_arrays
-from features.kernel import new_state, run_kernel_checked
+from features.event_stream import (
+    EVENT_SCHEMA,
+    SOURCE_RANK_BOOKTICKER,
+    decision_row_index,
+    event_arrays,
+)
+from features.kernel import (
+    RING_CAPACITY,
+    STATE_I64_SLOTS,
+    new_state,
+    run_kernel_checked,
+)
 from features.normalize import apply_normalization, expanding_z, fit_normalization
 from features.reference import new_outputs
 from features.tier import FEATURE_COLUMNS
 
 __all__ = [
     "FEATURE_PASS_SCHEMA",
+    "BuildPass",
     "FeaturePass",
     "KernelState",
     "LabelsNotHereError",
@@ -77,9 +88,11 @@ __all__ = [
     "compute_decision_rows",
     "decision_rows_to_frame",
     "event_row_stream",
+    "for_build",
     "for_inference",
     "for_simulation",
     "for_training",
+    "quote_mid_series",
 ]
 
 #: The suffix of a normalized MODEL-INPUT column. Not a catalogue name:
@@ -478,6 +491,101 @@ def _row_dtype(name: str) -> np.dtype:
     if dtype == pl.Int8:
         return np.dtype(np.int8)
     return np.dtype(np.float64)
+
+
+class BuildPass(NamedTuple):
+    """What `features.build` needs out of one pass over a merged day.
+
+    `frame` is the decision rows in `FEATURE_PASS_SCHEMA`.
+    `quote_etime`/`quote_mid` are the kernel's `mid` at EVERY bookTicker
+    row -- the as-of search space a label's `mid_{t+h}` is looked up in,
+    and the reason the build cannot get by with `compute_decision_rows`
+    alone. `counters` is the kernel's own int64 state slots and
+    `window_capacity` the ring size, both of which the feature-tier DQ
+    report records per day. `state` is carried out like every other call
+    site's.
+    """
+
+    frame: pl.DataFrame
+    quote_etime: np.ndarray
+    quote_mid: np.ndarray
+    counters: dict[str, int]
+    window_capacity: int
+    state: KernelState
+
+
+def for_build(events, *, state: KernelState | None = None) -> BuildPass:
+    """The lake build's call: ONE batch over a merged day, returning the
+    decision rows AND the per-quote `mid` series the labels are looked up
+    in.
+
+    WHY THIS EXISTS RATHER THAN THE BUILD CALLING THE KERNEL ITSELF
+    (04-VERIFICATION.md gap A). `features/build.py` is the module that
+    produced every real feature partition on the lake, and it used to
+    drive `run_kernel_checked` + `decision_row_index` directly. Nothing
+    mechanical compared that path with this one, and the guardrail
+    sanctioned the whole `features/` directory -- so a deliberately
+    divergent second caller inside the package passed every gate. The
+    build now enters the kernel through `_kernel_pass` like everything
+    else, and `tools/check_single_feature_path.py` sanctions three FILES
+    rather than a directory.
+
+    NOT A FOURTH CONVENTION. The decision-row rule is `decision_row_index`,
+    the same function `_DecisionEmitter` uses; the batch call site reaches
+    those rows by position exactly as `compute_decision_rows` does. What
+    differs is only what comes back, because a label needs the quote
+    series and a serving loop does not.
+
+    NO NORMALIZATION ARGUMENT, DELIBERATELY. A written partition stores
+    raw feature columns (`spec/features.toml` declares
+    `normalization = "none"` for every one); the `_z` columns are a
+    model input, computed per fold, never persisted.
+    """
+    arrays = _as_arrays(events)
+    state = new_state() if state is None else state
+    out = _kernel_pass(arrays, state)
+
+    # Boolean masking allocates, so both of these are the caller's own
+    # arrays even though `arrays["etime"]` is a read-only view of polars
+    # memory. No further copy: a real day is 17M quotes, and a redundant
+    # one is 137 MB held twice.
+    is_quote = np.asarray(arrays["source_rank"]) == SOURCE_RANK_BOOKTICKER
+    quote_etime = np.asarray(arrays["etime"])[is_quote]
+    quote_mid = np.asarray(out["mid"])[is_quote]
+
+    positions = decision_row_index(np.asarray(arrays["etime"]))
+    parts = [_select(arrays, out, positions)] if positions.size else []
+    frame = _frame(parts, None, expanding=False)
+
+    counters = {name: int(state[0][index]) for name, index in STATE_I64_SLOTS.items()}
+    return BuildPass(
+        frame=frame,
+        quote_etime=quote_etime,
+        quote_mid=quote_mid,
+        counters=counters,
+        window_capacity=int(RING_CAPACITY),
+        state=state,
+    )
+
+
+def quote_mid_series(quotes, *, state: KernelState | None = None):
+    """`(etime, mid)` at EVERY row of a bookTicker-only event stream.
+
+    The D+1 label tail (`features.labels.next_day_quote_series`) needs the
+    next day's prevailing mids and nothing else -- no decision rows, no
+    features. It reaches them through this module for the same reason the
+    build does: `mid` is a catalogued feature, and a second `(bid + ask)
+    / 2` written in the label module would be a second definition of it in
+    the file least likely to be checked against the first (D-04-02).
+
+    The etime is COPIED and the mid is not: `event_arrays` hands back
+    read-only views of polars memory whose lifetime is the frame's, while
+    `out["mid"]` is this call's own allocation.
+    """
+    arrays = _as_arrays(quotes)
+    state = new_state() if state is None else state
+    out = _kernel_pass(arrays, state)
+    return np.asarray(arrays["etime"]).copy(), np.asarray(out["mid"])
 
 
 def chunk_events(events, size: int) -> Iterator[dict[str, np.ndarray]]:

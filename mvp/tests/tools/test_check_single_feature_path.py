@@ -56,10 +56,36 @@ def test_static_scan_flags_a_kernel_import_outside_features():
 
 def test_the_sanctioned_files_are_not_flagged():
     source = "from features.kernel import run_kernel_checked\n"
-    for sanctioned in ("features/build.py", "features/labels.py", "tests/x.py"):
+    for sanctioned in ("features/api.py", "features/kernel.py", "tests/x.py"):
         assert not _messages(source, sanctioned), f"{sanctioned} was flagged"
-    assert set(SANCTIONED_FILES) >= {"features", "tests"}
+    assert set(SANCTIONED_FILES) >= {"features/api.py", "tests"}
     assert WATCHED_MODULES == frozenset({"features.kernel", "features.reference"})
+
+
+def test_a_SECOND_IN_PACKAGE_caller_is_flagged():
+    """04-VERIFICATION.md gap A: the sanction used to be the whole
+    `features/` DIRECTORY, so a deliberately divergent `features/rogue.py`
+    passed this scan, the leakage suite and the single-path test.
+
+    The kernel now has exactly three legitimate importers -- the entry
+    point, the implementation, and its readable twin -- so a fourth module
+    inside the package is reported like any other second caller. This is
+    the test the verifier's rogue module would have failed.
+    """
+    source = "from features.kernel import run_kernel_checked\n"
+    for rogue in (
+        "features/rogue.py",
+        "features/build.py",
+        "features/labels.py",
+        "features/normalize.py",
+    ):
+        found = _messages(source, rogue)
+        assert found, f"{rogue} imported the kernel and was not reported"
+        assert rogue in found[0]
+
+    assert "features" not in SANCTIONED_FILES, (
+        "sanctioning the directory is exactly the hole gap A names"
+    )
 
 
 def test_a_relative_import_from_inside_the_package_is_understood():

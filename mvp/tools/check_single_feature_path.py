@@ -1,6 +1,8 @@
-"""CI-callable guardrail: only `mvp/features/` and `mvp/tests/` may import
-`features.kernel` or `features.reference`. Everything else reaches the
-features through `features.api` (D-04-02, FEAT-01).
+"""CI-callable guardrail: only `features/api.py`, the two implementation
+modules themselves, and `mvp/tests/` may import `features.kernel` or
+`features.reference`. Everything else -- INCLUDING the rest of the
+`features/` package -- reaches the features through `features.api`
+(D-04-02, FEAT-01).
 
 Invoked as `uv run --locked --directory mvp python -m
 tools.check_single_feature_path` (process cwd = mvp/) by both pre-commit
@@ -35,8 +37,20 @@ imported the kernel would be reported by its own check.
 WHY THE TESTS ARE SANCTIONED. `tests/features/test_kernel.py` compares the
 kernel against `features/reference.py` bitwise, and the leakage suite runs
 its properties against the reference. Both must import them by name. The
-sanction is a directory, not a file list, because a test that could not
-reach the kernel could not check it.
+tests are sanctioned as a DIRECTORY, not a file list, because a test that
+could not reach the kernel could not check it.
+
+WHY `features/` IS NOT (04-VERIFICATION.md gap A). It used to be. The
+sanction was the whole package directory, on the reasoning that
+`features/build.py` and `features/labels.py` are the entry point's
+siblings -- and the verifier demonstrated the hole by adding a
+deliberately DIVERGENT second kernel caller as `features/rogue.py`, which
+passed this scan, the leakage suite and the single-path runtime test, all
+green. `build.py` and `labels.py` now go through `features.api.for_build`
+and `features.api.quote_mid_series`, so the kernel has exactly three
+legitimate importers and the scan can name them one by one. A directory
+sanction around the one package most likely to grow a second caller was
+protection pointing outward from the room the risk was in.
 """
 
 from __future__ import annotations
@@ -53,11 +67,22 @@ PKG_ROOT = Path(__file__).resolve().parents[1]
 #: caller of the feature arithmetic.
 WATCHED_MODULES: frozenset[str] = frozenset({"features.kernel", "features.reference"})
 
-#: Top-level directories permitted to import them, one reason each.
+#: Paths permitted to import them, one reason each. A key with a `.py`
+#: suffix is ONE FILE, PKG_ROOT-relative; a key without one is a top-level
+#: directory and everything under it. The asymmetry is the finding: the
+#: kernel's callers are enumerable, its checkers are not.
 SANCTIONED_FILES: dict[str, str] = {
-    "features": (
-        "the package that OWNS the kernel: features/api.py is the entry "
-        "point, features/build.py and features/labels.py are its siblings"
+    "features/api.py": (
+        "THE entry point -- the one module that calls the kernel, and the "
+        "one `_kernel_pass` every consumer funnels through"
+    ),
+    "features/kernel.py": (
+        "the `@njit` implementation itself; it imports the status codes "
+        "and output allocator from its readable twin"
+    ),
+    "features/reference.py": (
+        "the readable twin the equivalence test compares the kernel "
+        "against -- it IS one of the two implementations, not a caller"
     ),
     "tests": (
         "the equivalence, leakage and kernel-state tests must name both "
@@ -143,7 +168,16 @@ def _import_call_target(node: ast.Call) -> str | None:
 
 
 def is_sanctioned(filename: str) -> bool:
-    parts = Path(filename).parts
+    """True for an exact sanctioned FILE, or anything under a sanctioned
+    top-level directory.
+
+    Posix-normalised first, so `features\\api.py` on a Windows-style path
+    and `./features/api.py` are decided the same way a human reads them.
+    """
+    path = Path(filename)
+    if path.as_posix() in SANCTIONED_FILES:
+        return True
+    parts = path.parts
     return bool(parts) and parts[0] in SANCTIONED_FILES
 
 
@@ -239,8 +273,9 @@ def main() -> int:
         return 1
     if violations:
         print(
-            "FAIL: the feature kernel is imported outside features/ -- there is "
-            "supposed to be ONE call path (features.api):"
+            "FAIL: the feature kernel is imported outside "
+            f"{sorted(SANCTIONED_FILES)} -- there is supposed to be ONE call "
+            "path (features.api):"
         )
         for violation in violations:
             print(f"  {violation}")
