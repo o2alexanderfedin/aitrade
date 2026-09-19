@@ -118,6 +118,8 @@ __all__ = [
     "STATUS_BOTH_TOP_SIZES_ZERO",
     "STATUS_QTY_NOT_REPRESENTABLE",
     "STATUS_RING_NOT_POWER_OF_TWO",
+    "STATUS_ARRAY_LENGTH_MISMATCH",
+    "QTY_SCALE_F",
     "STATUS_MESSAGES",
     "FEATURE_OUTPUT_NAMES",
     "FeatureStatusError",
@@ -149,6 +151,11 @@ STATUS_QTY_NOT_REPRESENTABLE: int = -3
 #: indexes with `& (cap - 1)`, which is only a modulo for powers of two.
 STATUS_RING_NOT_POWER_OF_TWO: int = -4
 
+#: An output, input or ring array is not the length the kernel was told to
+#: walk. numba does not bounds-check, so an output array one row short is a
+#: silent out-of-bounds WRITE -- checked before the loop, never discovered.
+STATUS_ARRAY_LENGTH_MISMATCH: int = -5
+
 STATUS_MESSAGES: dict[int, str] = {
     STATUS_OK: "ok",
     STATUS_RING_OVERFLOW: (
@@ -168,6 +175,10 @@ STATUS_MESSAGES: dict[int, str] = {
         "ring buffer length is not a power of two; the kernel indexes with "
         "& (cap - 1), which is a modulo only for powers of two"
     ),
+    STATUS_ARRAY_LENGTH_MISMATCH: (
+        "an input, output or ring array is not the length the kernel was "
+        "asked to walk; numba would have written out of bounds"
+    ),
 }
 
 #: The kernel's output columns. The first four are catalogue feature names
@@ -182,7 +193,13 @@ FEATURE_OUTPUT_NAMES: tuple[str, ...] = (
 )
 
 _NAN: float = math.nan
-_QTY_SCALE_F: float = float(QTY_SCALE)
+
+#: `QTY_SCALE` as a float64, defined ONCE so the reference and the kernel
+#: cannot divide by two different constants. `float()` is not a scale
+#: conversion: 1e8 is deliberately outside the {1e3, 1e6, 1e9} family
+#: `check_ms_to_ns_site` polices, because this is a quantity scale and must
+#: not read as a time one.
+QTY_SCALE_F: float = float(QTY_SCALE)
 
 
 class FeatureStatusError(ValueError):
@@ -290,8 +307,8 @@ def run_reference(
             if q != q:  # NaN; Python's round() would raise, numba's would not
                 state.error_row = i
                 return STATUS_QTY_NOT_REPRESENTABLE
-            scaled = int(round(q * _QTY_SCALE_F))
-            if float(scaled) / _QTY_SCALE_F != q:
+            scaled = int(round(q * QTY_SCALE_F))
+            if float(scaled) / QTY_SCALE_F != q:
                 state.error_row = i
                 return STATUS_QTY_NOT_REPRESENTABLE
             signed = scaled * int(trade_side[i])
@@ -353,7 +370,7 @@ def run_reference(
             state.empty_window_rows += 1
         # float(int) / float(int) is what numba's int64 / int64 compiles to;
         # written this way so the two implementations divide identically.
-        out_flow[i] = float(state.acc_scaled) / _QTY_SCALE_F
+        out_flow[i] = float(state.acc_scaled) / QTY_SCALE_F
 
         out_warmup[i] = (
             state.n_quotes_seen < 2

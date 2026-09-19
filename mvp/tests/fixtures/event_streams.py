@@ -129,3 +129,85 @@ def random_events(rng, *, n=40, span_ns=3_000_000_000, trade_fraction=0.4):
                 )
             )
     return build_events(rows)
+
+
+def canonical_streams():
+    """Every stream SHAPE Phase 4 Plan 03 pins, by name.
+
+    `tests/features/test_reference.py` asserts what each of these shapes
+    must produce; `tests/features/test_kernel.py` runs the same shapes
+    through both implementations and compares them bitwise. The
+    expectations live with the reference and the shapes live here, so the
+    equivalence test cannot quietly cover fewer cases than the arithmetic
+    tests do.
+    """
+    second = 1_000_000_000
+    prev = (100.0, 5.0, 101.0, 7.0)
+    streams = {
+        "ofi_repeated_identical_quote": [quote(0, *prev), quote(second, *prev)],
+        "ofi_bid_price_improving": [
+            quote(0, *prev),
+            quote(second, 100.1, 3.0, 101.0, 7.0),
+        ],
+        "ofi_bid_resized": [quote(0, *prev), quote(second, 100.0, 9.0, 101.0, 7.0)],
+        "ofi_bid_swept": [quote(0, *prev), quote(second, 99.9, 2.0, 101.0, 7.0)],
+        "ofi_ask_price_improving": [
+            quote(0, *prev),
+            quote(second, 100.0, 5.0, 100.9, 4.0),
+        ],
+        "ofi_ask_resized": [quote(0, *prev), quote(second, 100.0, 5.0, 101.0, 10.0)],
+        "ofi_ask_swept": [quote(0, *prev), quote(second, 100.0, 5.0, 101.1, 6.0)],
+        "ofi_first_quote_is_nan": [
+            quote(0, *prev),
+            trade(second // 2, 100.5, 1.0, 1),
+            quote(second, 100.1, 5.0, 101.0, 7.0),
+        ],
+        "window_open_end_excluded": [
+            quote(0, *prev),
+            trade(0, 100.5, 0.5, 1),
+            trade(second, 100.5, 0.25, 1),
+        ],
+        "window_one_ns_inside": [
+            quote(0, *prev),
+            trade(1, 100.5, 0.5, 1),
+            trade(second, 100.5, 0.25, 1),
+        ],
+        "unknown_side_contributes_zero": [quote(0, *prev), trade(1, 100.5, 3.0, 0)],
+        "empty_window_after_a_gap": [
+            quote(0, *prev),
+            trade(1, 100.5, 2.0, 1),
+            quote(5 * second, 100.1, 5.0, 101.0, 7.0),
+        ],
+        "flow_exactly_cancelled": [
+            quote(0, *prev),
+            trade(1, 100.5, 2.0, 1),
+            trade(2, 100.5, 2.0, -1),
+        ],
+        "trade_only_before_the_first_quote": [
+            trade(0, 100.5, 1.0, 1),
+            trade(second // 2, 100.5, 1.0, -1),
+            quote(second, *prev),
+            trade(second + 1, 100.5, 1.0, 1),
+        ],
+        "locked_then_crossed_then_normal": [
+            quote(0, 101.0, 5.0, 101.0, 7.0),
+            quote(second, 101.5, 5.0, 101.0, 7.0),
+            quote(2 * second, 100.0, 5.0, 101.0, 7.0),
+        ],
+        "warmup_boundary": [
+            quote(0, *prev),
+            quote(second // 2, 100.1, 5.0, 101.0, 7.0),
+            trade(second - 1, 100.5, 1.0, 1),
+            trade(second, 100.5, 1.0, 1),
+            quote(2 * second, 100.2, 5.0, 101.0, 7.0),
+        ],
+        "etime_ties_in_both_streams": [
+            quote(0, *prev),
+            quote(second, 100.1, 5.0, 101.0, 7.0),
+            trade(second, 100.5, 0.5, 1),
+            trade(second, 100.5, 0.25, -1),
+            quote(second, 100.2, 6.0, 101.2, 8.0),
+        ],
+        "single_row": [quote(0, *prev)],
+    }
+    return {name: build_events(rows) for name, rows in streams.items()}
