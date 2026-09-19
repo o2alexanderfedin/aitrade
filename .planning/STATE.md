@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_to_plan
-stopped_at: Phase 3 complete and merged to develop; Phase 4 ready to plan
-last_updated: "2026-09-17T07:40:00.000Z"
-last_activity: 2026-09-17
+status: executing
+stopped_at: Phase 4 Plan 01 complete (ns constants + merged event stream); Plan 02+ next
+last_updated: "2026-09-19T07:40:00.000Z"
+last_activity: 2026-09-19
 progress:
   total_phases: 11
   completed_phases: 3
-  total_plans: 8
-  completed_plans: 8
+  total_plans: 15
+  completed_plans: 9
   percent: 27
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-10)
 
 **Core value:** A reproducible, leakage-proof two-stage pipeline achieving Net P&L > 0 and annualized Sharpe > 5 on a locked held-out walk-forward window under stated simplifications — produced by a workflow where agentic iteration verifiably improves the model.
-**Current focus:** Phase 3 — Data Layer: Backfill, Ingest & Lockbox
+**Current focus:** Phase 4 — Feature & Label Engine
 
 ## Current Position
 
 Phase: 4 of 11 (feature & label engine)
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-09-17
+Plan: 01 of 07 complete
+Status: Executing
+Last activity: 2026-09-19
 
 Progress: [███░░░░░░░] 27%
 
@@ -58,6 +58,7 @@ Progress: [███░░░░░░░] 27%
 | Phase 01 P04 | ~70min | 3 tasks | 13 files |
 | Phase 02 P01 | 10min | 3 tasks | 15 files |
 | Phase 02 P04 | 18min | 2 tasks | 4 files |
+| Phase 04 P01 | ~35min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -97,6 +98,9 @@ Recent decisions affecting current work:
 - [Phase 2]: diff_definition_changes(old, new, field='definition') defaults to the features comparison key; every label call site passes field='computation' explicitly since labels have no definition key.
 - [Phase 2]: Pre-commit and GitHub Actions run byte-identical command strings for every guardrail (repo:local hooks, no astral ruff-pre-commit integration hook) -- eliminates the ruff-version-drift class of bug entirely.
 - [Phase 2]: All eight Stage-0 CI guardrails mechanically observed red-then-green, plus a real GitHub Actions run observed both failing (ci-red-proof, deleted) and succeeding (real branch): success run https://github.com/o2alexanderfedin/aitrade/actions/runs/34799740762, failure run https://github.com/o2alexanderfedin/aitrade/actions/runs/34799815465.
+- [Phase 4]: The merged event stream's order is `(etime, source_rank, seq)` with bookTicker = 0 (the LEFT frame of `merge_sorted`), materialized as a column and asserted at runtime inside every merge -- swapping the merge arguments raises instead of silently reversing the tie order. Verified on the real 2026-09-13 day: 18,576,995 events, 6,864,853 decision rows, 329,580 of them trade rows (= the distinct trade etime count, true by construction under quotes-first).
+- [Phase 4]: Phase 2's "a test package must not shadow a real source package" lesson recurred exactly: `mvp/tests/features/__init__.py` (written by Plan 01 Task 1, correct at the time) shadowed the new `mvp/features/` package the moment Task 2 created it. Deleted. The rule is now three instances old (tests/spec, tests/tools+tracking, tests/features) -- treat "does a source package share this test directory's name?" as a checklist item when adding a test directory.
+- [Phase 4]: `polars`' `.to_numpy()` on a Float64 column WITH nulls returns a NaN-filled COPY and does not raise (re-measured 2026-09-19). Every polars->numba boundary must assert `null_count() == 0` per column; `features/event_stream.py:event_arrays` is the one that does it for the event stream.
 - [Phase 2]: mvp/tests/leakage/ scaffolded with one placeholder test, wired into both CI callers' pytest invocation identically to tests/spec/tracking/capture, so Phase 4's real per-feature shuffle-future leakage tests land in an already-CI-exercised directory.
 
 ### Pending Todos
@@ -130,6 +134,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-17
+Last session: 2026-09-19
 Stopped at: Phase 3 (Data Layer) complete — 6 plans + gap closure, verification 5/5 (T-03-09 resolved: CI now runs check_manifest_id_integrity + --full against a committed fixture lake), three review/fix iterations (ITER3: 0 critical; all 3 warnings + 5 info fixed in 03-REVIEW-FIX-ITER3.md), 548 tests, CI green; merged to develop with `git merge --no-ff`. Design lesson carried forward: static source-scanning guardrails (ms→ns single site, lockbox containment) do not converge against every spelling — they are defense-in-depth against accidents; the load-bearing guarantees are runtime/data controls (etime/event_time plausibility → `failed` → loader pause; chmod 0000 lockbox + loader containment + MLflow-first one-look token; sha256 on every manifest read; append-only history check over all parents). New guardrails should be designed runtime-first. Next: `/gsd-autonomous --from 4` (Feature & Label Engine). Work ONLY from /Volumes/ProjectsSSD/aihedgefund/repo. Capture daemon Run J (PID 72546, schema v2, per-run raw segment files). Open user action: `sudo pmset -b disablesleep 1`.
-Resume file: .planning/phases/03-data-layer-backfill-ingest-lockbox/03-REVIEW-FIX-ITER3.md
+Then: Phase 4 Plan 01 executed on branch feature/phase-04-feature-label-engine (commits 4ec7943, fd90e9e) -- `data/time_ns.py` is the single allowlisted seconds-to-ns site and `features/event_stream.py` owns the merged stream + decision-row rule; 702 tests green. Plan 03 owes the deferred NUMBA_CACHE_DIR mutation check (no @njit kernel exists yet).
+Resume file: .planning/phases/04-feature-label-engine/04-01-SUMMARY.md
