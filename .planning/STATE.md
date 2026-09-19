@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 4 Plan 01 complete (ns constants + merged event stream); Plan 02+ next
-last_updated: "2026-09-19T07:40:00.000Z"
+last_updated: "2026-09-19T07:28:30.495Z"
 last_activity: 2026-09-19
 progress:
   total_phases: 11
   completed_phases: 3
-  total_plans: 15
-  completed_plans: 9
-  percent: 27
+  total_plans: 21
+  completed_plans: 16
+  percent: 76
 ---
 
 # Project State
@@ -30,7 +30,9 @@ Plan: 01 of 07 complete
 Status: Executing
 Last activity: 2026-09-19
 
-Progress: [███░░░░░░░] 27%
+Progress: [████████░░] 76%
+
+> That 76% is `state.update-progress`'s definition -- plans WITH a SUMMARY over plans WRITTEN so far (16 of 21, phases 1-4). It is not milestone completion: phases 5-11 have no plans on disk yet, and only 3 of 11 phases are complete.
 
 ## Performance Metrics
 

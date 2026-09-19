@@ -250,6 +250,7 @@ None blocking. The previous session's death during Task 2 left no partial work (
 - **Plan 03** (the first `@njit(cache=True)` kernel) owes the deferred `NUMBA_CACHE_DIR` mutation check: delete the `tests/conftest.py` line, run the suite, confirm `*.nbc` appears under `mvp/`, restore.
 - **Plan 05** (the build) persists the stats dict verbatim into `build_stats.json`; `n_decision_rows` is already cross-checked against `etime.n_unique()` on the real day.
 - **Plan 06** (leakage properties) can rely on `decision_row_index` being position-pure: truncating the merged frame after `t` re-derives the same decision rows for the prefix by construction.
+- **`event_arrays` hands back READ-ONLY views** — measured just now: `pl.Series(...).to_numpy().flags.writeable` is `False`, `owndata` `False`. A kernel that only reads is fine (and gets zero-copy); a kernel that tries to write into an `event_arrays` output will fail at numba compile time and must allocate its own output arrays. Plan 03 should assume read-only inputs.
 - `EVENT_SCHEMA` is the exact contract at the numba boundary. A later plan that carries extra columns must `.select(EVENT_SCHEMA)` before calling `event_arrays`.
 
 ## Self-Check: PASSED
