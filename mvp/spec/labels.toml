@@ -9,40 +9,45 @@
 # `:end` markers by `mvp/spec/render.py` -- keep table-declaration order meaningful:
 # rows render in this file's declaration order (primary label first), not sorted.
 #
-# Declared here, not implemented -- implementation lands in Phase 4 (FEAT-02).
+# `information_set` and `notes` were pinned to what the code computes by Phase 4
+# Plan 04 (D-04-05's as-of rule, null rules and day-boundary rule; D-04-17's
+# measured quantization). Every `computation` string is byte-unchanged from the
+# day it was declared: check_spec_diff compares `computation` only, and a
+# redefinition is supposed to get a NEW name, so the convention, the three null
+# cases and the measured numbers live in `information_set`/`notes` deliberately.
 
 [ret_10s_mid]
 horizon = "10s"
 computation = "(mid_{t+10s} - mid_t) / mid_t"
-information_set = "data through t + 10s"
+information_set = "data through t + 10s for the VALUE; the quote ARRIVAL TIMES through t + 10s + label_gap.max_quote_gap_seconds additionally decide whether the label exists (a gap that long overlapping [t, t+10s] nulls it) -- that direction can only REMOVE a label, never change a finite one"
 embargo = ">= 10s"
-notes = "Primary trading target"
+notes = "Primary trading target. mid_{t+h} is the PREVAILING mid -- the last L1 update with etime <= t+h (backward as-of, exact matches allowed; on a tie group the LAST update of that etime) -- never the first update after t+h. The next-quote convention disagrees on 0.26% of rows at h=10s (correlation 0.999907, measured 2026-09-13) and that delta is reported in the feature-tier DQ row (feature_asof_convention), not stored as a second column: an uncatalogued label column would break this catalogue's own rule. NULL -- never 0, never a carried-forward price -- when the horizon window ends past available data, spans an L1 gap longer than dq_thresholds.label_gap.max_quote_gap_seconds, or has no mid_t. Null-labelled rows are excluded from training by construction. Day D is built only once day D+1's curated manifest exists, so D's tail reads D+1's quotes and the most recent day is never built (partitions are write-once; a null tail could not be repointed). Measured 2026-09-13: std 1.85e-04 and EXACTLY ZERO ON 29.7% OF ROWS (D-04-17) -- a property of a venue where 97.5% of quotes sit at a 1-tick spread, NOT a defect, and not smoothed away here: Phase 5/8 must choose the loss function and every IC/Sharpe statistic knowing the target has a ~30% point mass at zero. End-of-partition coverage loss without the D+1 tail is 0.0063%. Embargo >= 10s, asserted in CI (FEAT-04)."
 version = 1
 introduced = "2026-09-13"
 
 [ret_1s_mid]
 horizon = "1s"
 computation = "(mid_{t+1s} - mid_t) / mid_t"
-information_set = "data through t + 1s"
+information_set = "data through t + 1s for the VALUE; quote ARRIVAL TIMES through t + 1s + label_gap.max_quote_gap_seconds decide whether it exists"
 embargo = ">= 1s"
-notes = "Diagnostic only"
+notes = "Diagnostic only -- do not train on this. mid_{t+h} is the PREVAILING mid -- the last L1 update with etime <= t+h (backward as-of, exact matches allowed; on a tie group the LAST update of that etime) -- never the first update after t+h. The next-quote convention disagrees on 0.26% of rows at h=10s (correlation 0.999907, measured 2026-09-13) and that delta is reported in the feature-tier DQ row (feature_asof_convention), not stored as a second column: an uncatalogued label column would break this catalogue's own rule. NULL -- never 0, never a carried-forward price -- when the horizon window ends past available data, spans an L1 gap longer than dq_thresholds.label_gap.max_quote_gap_seconds, or has no mid_t. Null-labelled rows are excluded from training by construction. Day D is built only once day D+1's curated manifest exists, so D's tail reads D+1's quotes and the most recent day is never built (partitions are write-once; a null tail could not be repointed). Measured 2026-09-13: std 6.88e-05 and exactly zero on 62.5% of rows, which is barely a continuous variable at all."
 version = 1
 introduced = "2026-09-13"
 
 [ret_1min_mid]
 horizon = "1min"
 computation = "(mid_{t+1min} - mid_t) / mid_t"
-information_set = "data through t + 1min"
+information_set = "data through t + 1min for the VALUE; quote ARRIVAL TIMES through t + 1min + label_gap.max_quote_gap_seconds decide whether it exists"
 embargo = ">= 1min"
-notes = "Diagnostic only"
+notes = "Diagnostic only. mid_{t+h} is the PREVAILING mid -- the last L1 update with etime <= t+h (backward as-of, exact matches allowed; on a tie group the LAST update of that etime) -- never the first update after t+h. The next-quote convention disagrees on 0.26% of rows at h=10s (correlation 0.999907, measured 2026-09-13) and that delta is reported in the feature-tier DQ row (feature_asof_convention), not stored as a second column: an uncatalogued label column would break this catalogue's own rule. NULL -- never 0, never a carried-forward price -- when the horizon window ends past available data, spans an L1 gap longer than dq_thresholds.label_gap.max_quote_gap_seconds, or has no mid_t. Null-labelled rows are excluded from training by construction. Day D is built only once day D+1's curated manifest exists, so D's tail reads D+1's quotes and the most recent day is never built (partitions are write-once; a null tail could not be repointed). Measured 2026-09-13: std 3.83e-04, exactly zero on 8.2% of rows."
 version = 1
 introduced = "2026-09-13"
 
 [ret_10min_mid]
 horizon = "10min"
 computation = "(mid_{t+10min} - mid_t) / mid_t"
-information_set = "data through t + 10min"
+information_set = "data through t + 10min for the VALUE; quote ARRIVAL TIMES through t + 10min + label_gap.max_quote_gap_seconds decide whether it exists"
 embargo = ">= 10min"
-notes = "Diagnostic only"
+notes = "Diagnostic only. mid_{t+h} is the PREVAILING mid -- the last L1 update with etime <= t+h (backward as-of, exact matches allowed; on a tie group the LAST update of that etime) -- never the first update after t+h. The next-quote convention disagrees on 0.26% of rows at h=10s (correlation 0.999907, measured 2026-09-13) and that delta is reported in the feature-tier DQ row (feature_asof_convention), not stored as a second column: an uncatalogued label column would break this catalogue's own rule. NULL -- never 0, never a carried-forward price -- when the horizon window ends past available data, spans an L1 gap longer than dq_thresholds.label_gap.max_quote_gap_seconds, or has no mid_t. Null-labelled rows are excluded from training by construction. Day D is built only once day D+1's curated manifest exists, so D's tail reads D+1's quotes and the most recent day is never built (partitions are write-once; a null tail could not be repointed). Measured 2026-09-13: std 9.53e-04, exactly zero on 0.2% of rows; end-of-partition coverage loss without the D+1 tail is 0.68% -- the largest of the four, and the reason the day-boundary rule exists."
 version = 1
 introduced = "2026-09-13"

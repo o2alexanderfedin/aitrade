@@ -66,20 +66,38 @@ starts. No Python loop over rows anywhere.
 
 from __future__ import annotations
 
+import datetime as dt
+import json
+from pathlib import Path
+
 import numpy as np
 
+from data import store
 from data.dq.checks import load_dq_thresholds
 from data.time_ns import LABEL_HORIZON_NS
+from features.event_stream import event_arrays, project_bookticker
+from features.kernel import run_kernel_checked
+from features.tier import assert_buildable
 from spec.catalogue import get_label
 
 __all__ = [
     "PRIMARY_LABEL",
     "NULL_REASONS",
     "LabelInputError",
+    "NextDayUnavailableError",
     "big_quote_gaps",
     "default_gap_threshold_ns",
     "compute_labels",
+    "next_utc_date",
+    "assert_next_day_available",
+    "append_next_day_quotes",
+    "next_day_quote_series",
 ]
+
+#: The curated stream carrying L1. Spelled once: it is both the dataset
+#: suffix and the by-date pointer's `stream` segment, and the two drifting
+#: apart would look like a missing day rather than a typo.
+_L1_STREAM: str = "bookTicker"
 
 #: The label Stage 1 trades on; the three others are diagnostic (D-04-17).
 #: Reached through the catalogue with a LITERAL name -- the rule
@@ -356,3 +374,164 @@ def compute_labels(
             _DIAGNOSTIC_ZERO_FRACTION_LABEL
         ]["zero_fraction"]
     return labels, stats
+
+
+# --------------------------------------------------------------------------
+# The day boundary (D-04-05)
+# --------------------------------------------------------------------------
+
+
+class NextDayUnavailableError(RuntimeError):
+    """Day D cannot be built yet, because day D+1 has no curated manifest.
+
+    Not an error in the data -- an error in the TIMING of the build, and
+    the difference matters: waiting a day fixes it.
+    """
+
+
+def next_utc_date(date: str) -> str:
+    """The UTC day after `date`, both as `YYYY-MM-DD`.
+
+    Calendar arithmetic on the date STRING, never on an etime: a day here
+    is the partition key `date=`, and deriving it from a timestamp would
+    reintroduce exactly the midnight/offset question the string already
+    answers.
+    """
+    return (dt.date.fromisoformat(date) + dt.timedelta(days=1)).isoformat()
+
+
+def assert_next_day_available(
+    symbol: str,
+    date: str,
+    *,
+    registry_root: Path,
+    stream: str = _L1_STREAM,
+) -> str:
+    """Return the next UTC date after checking `stream`'s curated by-date
+    pointer exists for it; raise `NextDayUnavailableError` otherwise.
+
+    THE WHOLE RULE, AND WHY IT IS A REFUSAL RATHER THAN A WARNING. Day D's
+    last ten minutes have no `mid_{t+10min}` inside D -- 0.68 % of a real
+    day's rows at h=10min, 0.0063 % at h=10s. Those rows are labelled from
+    day D+1's prevailing mids, so D is not finished until D+1 exists.
+    Feature partitions are WRITE-ONCE (D-04-07), so a partition issued
+    early with a null tail could never be corrected in place; the only
+    repair would be a new manifest repointing the by-date index, i.e. an
+    audit trail saying the same day was built twice for no reason anyone
+    recorded. Refusing is cheaper than repointing.
+
+    CONSEQUENCE, the one Plan 05 needs: the most recent captured day is
+    NEVER buildable. With curated bookTicker covering 2026-09-12..09-15,
+    the buildable feature days are 09-12, 09-13 and 09-14 only.
+
+    The POINTER is what is consulted -- `store.by_date_index_path`, the
+    registry's own index -- never a glob over the lake. A partition file
+    with no manifest is not data this pipeline can read, and a glob would
+    call it available.
+    """
+    next_date = next_utc_date(date)
+    idx = store.by_date_index_path(
+        Path(registry_root), f"{symbol}.{stream}", symbol, stream, next_date
+    )
+    if not idx.exists():
+        raise NextDayUnavailableError(
+            f"feature/label build of {date} refused: day {next_date} has no "
+            f"curated {stream} manifest ({idx} does not exist). Day {date}'s "
+            "long-horizon labels are computed from the prevailing mids of "
+            f"{next_date}, and a feature partition is write-once -- so {date} "
+            f"is built once {next_date} has been ingested, not before."
+        )
+    return next_date
+
+
+def append_next_day_quotes(
+    quote_etime: np.ndarray,
+    quote_mid: np.ndarray,
+    next_etime: np.ndarray,
+    next_mid: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Day D's quote series with day D+1's appended -- the ONE place the
+    two days meet.
+
+    D+1 extends the as-of SEARCH SPACE and contributes no decision rows:
+    the decision rows are day D's alone, which is why this function takes
+    and returns quote series only and has no way to say otherwise.
+
+    The seam is checked, not assumed. Two days handed over in the wrong
+    order produce an array `searchsorted` reads as sorted and answers
+    wrongly about, silently -- the same class of bug the per-series
+    monotonicity guard exists for.
+    """
+    quote_etime = np.asarray(quote_etime)
+    next_etime = np.asarray(next_etime)
+    _check_series(quote_etime, np.asarray(quote_mid), "append_next_day_quotes day D")
+    _check_series(next_etime, np.asarray(next_mid), "append_next_day_quotes day D+1")
+    if quote_etime.size and next_etime.size and next_etime[0] < quote_etime[-1]:
+        raise LabelInputError(
+            f"append_next_day_quotes: the seam is out of order -- day D+1 "
+            f"starts at {int(next_etime[0])} but day D ends at "
+            f"{int(quote_etime[-1])}. The two days were passed in the wrong "
+            "order, and a non-decreasing check on each day separately cannot "
+            "see it."
+        )
+    return (
+        np.concatenate([quote_etime, next_etime]),
+        np.concatenate([np.asarray(quote_mid), np.asarray(next_mid)]),
+    )
+
+
+def next_day_quote_series(
+    symbol: str,
+    date: str,
+    *,
+    registry_root: Path,
+    lake_root: Path,
+    stream: str = _L1_STREAM,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Day D+1's `(etime, mid)` arrays, for appending to day D's own.
+
+    THREE GATES COME FOR FREE, and that is the reason this goes through
+    `store.load_curated` rather than reading a parquet file:
+
+    1. the holdout refusal (`features.tier.assert_buildable`), run BEFORE
+       the load: D's long-horizon labels ARE D+1's prices, so building D
+       while D+1 is held out launders the lockbox through a neighbouring
+       day's label tail (D-04-11, T-04-18);
+    2. `resolve_manifest`'s sha256 over every partition;
+    3. D+1's OWN DQ pause -- an unacknowledged failed D+1 stops D being
+       built, instead of quietly producing a day whose tail is null
+       because its neighbour was unreadable.
+
+    `mid` comes from `features.kernel`, the one implementation of it
+    (D-04-02). A `(bid + ask) / 2` written here would be a second
+    definition of a catalogued feature, in the module least likely to be
+    checked against the first.
+
+    THE WHOLE DAY IS LOADED, not the first `max(horizon)` of it. Slicing
+    is a legitimate optimisation and is deliberately not taken: it would
+    need its own proof that the sliced and unsliced results are identical,
+    and the cost it saves is ~1.5 s of a build that runs once per day.
+    """
+    next_date = assert_next_day_available(
+        symbol, date, registry_root=registry_root, stream=stream
+    )
+    assert_buildable(symbol, date, next_date, registry_root=Path(registry_root))
+
+    dataset = f"{symbol}.{stream}"
+    idx = store.by_date_index_path(
+        Path(registry_root), dataset, symbol, stream, next_date
+    )
+    manifest_id = json.loads(idx.read_text())["manifest_id"]
+    df = store.load_curated(
+        manifest_id,
+        dataset,
+        registry_root=Path(registry_root),
+        lake_root=Path(lake_root),
+    )
+    quotes = project_bookticker(df)
+    arrays = event_arrays(quotes)
+    out = run_kernel_checked(arrays)
+    # `event_arrays` hands back READ-ONLY views of polars memory whose
+    # lifetime is `df`'s; copy the etimes out so the caller owns both
+    # arrays (`out["mid"]` is already this function's own allocation).
+    return arrays["etime"].copy(), out["mid"]
