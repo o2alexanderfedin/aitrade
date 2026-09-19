@@ -88,7 +88,7 @@ completed: 2026-09-19
 | 1 | Train-only expanding normalization as a stored artifact | `1745b64` | `features/normalize.py`, `tests/features/test_normalize.py` |
 | 2 | One entry point, three call sites, and the import tripwire | `6a2b4eb` | `features/api.py`, `tools/check_single_feature_path.py`, `tests/features/test_api_single_path.py`, `tests/tools/test_check_single_feature_path.py`, `.pre-commit-config.yaml`, `.github/workflows/ci.yml` |
 | — | The first real normalization artifact | `084d94d` | `data/lake_registry/manifests/BTCUSDT.features_norm/d1d35fbf….json` |
-| — | Review fix: the emission rule actually observed, plus the empty path | `PENDING` | `features/api.py`, `tests/features/test_api_single_path.py` |
+| — | Review fix: the emission rule actually observed, plus the empty path | `25b2bcc` | `features/api.py`, `tests/features/test_api_single_path.py` |
 
 ## The finding that makes the equality test worth having
 
