@@ -27,11 +27,11 @@ Requirements for MVP exit. Each maps to roadmap phases. Source of truth: `mvp.md
 
 ### Features & Labels
 
-- [ ] **FEAT-01**: Single feature-pipeline code path (numba streaming kernel) shared byte-identically by training, inference, and simulator; state accumulates over every row, decisions emit on last row of each `etime`
+- [x] **FEAT-01**: Single feature-pipeline code path (numba streaming kernel) shared byte-identically by training, inference, and simulator; state accumulates over every row, decisions emit on last row of each `etime`
 - [ ] **FEAT-02**: Initial L1 microstructure feature set implemented per catalogue (mid, top-of-book imbalance, OFI, trade-flow features), each with information-set entry
 - [x] **FEAT-03**: CI leakage test proves per-feature information sets (shuffle-future-data invariance)
 - [x] **FEAT-04**: Label generation for 10s midprice return (primary) + diagnostic horizons {1s, 1min, 10min}, embargo ≥ horizon
-- [ ] **FEAT-05**: Rolling/expanding normalization computed on training data only
+- [x] **FEAT-05**: Rolling/expanding normalization computed on training data only
 
 ### Evaluation Harness
 
@@ -138,11 +138,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DATA-06 | Phase 3 | Complete |
 | DATA-07 | Phase 3 | Complete |
 | DATA-08 | Phase 3 | Complete |
-| FEAT-01 | Phase 4 | Pending |
+| FEAT-01 | Phase 4 | Complete |
 | FEAT-02 | Phase 4 | Pending |
 | FEAT-03 | Phase 4 | Complete |
 | FEAT-04 | Phase 4 | Complete |
-| FEAT-05 | Phase 4 | Pending |
+| FEAT-05 | Phase 4 | Complete |
 | EVAL-01 | Phase 5 | Pending |
 | EVAL-02 | Phase 5 | Pending |
 | EVAL-03 | Phase 5 | Pending |

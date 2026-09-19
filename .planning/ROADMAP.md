@@ -105,7 +105,7 @@ Plans:
 - [x] 04-04-PLAN.md — Labels: backward as-of, null-on-gap/past-end, build-D-only-after-D+1, label catalogue + measured quantization
 - [x] 04-05-PLAN.md — The real end-to-end build of 2026-09-12..14, warm-up tagging, build stats, feature DQ rows + acknowledgements, load_features round trip
 - [x] 04-06-PLAN.md — CI leakage suite (FEAT-03): per-feature/per-label invariance + anti-vacuity sensitivity, embargo assertion, catalogue cross-check, named CI gate
-- [ ] 04-07-PLAN.md — Single code path: three call sites byte-identical (batch/chunked/per-row) + train-only normalization artifact (FEAT-05)
+- [x] 04-07-PLAN.md — Single code path: three call sites byte-identical (batch/chunked/per-row) + train-only normalization artifact (FEAT-05)
 
 ### Phase 5: Fold Harness & Overfitting Controls
 **Goal**: A fold harness that owns time — every split, look, and failure is a tracked artifact before any model trains

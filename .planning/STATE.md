@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Phase 4 Plan 05 complete -- the decision-row matrix exists on disk. 22,381,684 real rows across 2026-09-12 (4,193,137), 09-13 (6,864,853) and 09-14 (11,323,694); 287 MiB; manifests 1bf9af2e/1f10da67/fdbf58ca committed with by-date pointers; all six feature-tier DQ checks `ok` on all three days (no acknowledgement owed); load_features round trip green on real bytes. 863 tests green. Every independent 09-13 cross-check matched EXACTLY (18,576,995 events / 6,864,853 decision rows / max_window_occupancy 5,092 / empty_window_rows 784,343 / ofi null count 1 / ret_10s_mid zero fraction 43.889%). 09-15 observed refusing (needs a curated 09-16); a rebuild of 09-13 observed refusing on the write-once partition path. Plans 06-07 next. Capture daemon Run J (PID 72546) live, same PID before and after, never signalled. Open user action: sudo pmset -b disablesleep 1."
-last_updated: "2026-09-19T10:57:57.644Z"
+stopped_at: "Phase 4 COMPLETE (all 7 plans). 04-07 closed FEAT-01 and FEAT-05: one feature entry point (features/api.py) called three genuinely different ways -- one batch, 64 chunks with 45 of 63 boundaries inside an etime group, and 200,000 rows one at a time -- byte-identical on all 6,864,853 decision rows of the real 2026-09-13 day AND byte-identical to the partition features/build.py already wrote. Kernel-entry counts asserted exactly (1 / 64 / 200,000): a working delegation from the simulator to the batch path leaves every equality test green and only that count catches it. Normalization is a manifest-addressed features_norm artifact (d1d35fbf, 5,568 bytes, 4 rows) fit on 11,057,990 decision rows of 09-12+09-13; handing the fit all three days plus a boundary gives bit-identical parameters, and scoring 11.3M held-back 09-14 rows leaves its sha256 unchanged. mid's frozen z on 09-14 is +4.31 sigma with 2.85x the training dispersion -- the transform working, and the strongest signal yet that `mid` wants a differenced form as a model input (a NEW catalogue name, Phase 8). 930 tests green; 18 pre-commit hooks. Phase 5 (fold harness) next. Capture daemon Run J (PID 72546) live, same PID before and after, never signalled. Open user action: sudo pmset -b disablesleep 1."
+last_updated: "2026-09-19T12:10:00.000Z"
 last_activity: 2026-09-19
 progress:
   total_phases: 11
@@ -26,13 +26,13 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 4 of 11 (feature & label engine)
-Plan: 6 of 07 complete
+Plan: 7 of 07 complete -- phase complete
 Status: Ready to execute
 Last activity: 2026-09-19
 
 Progress: [██████████] 100%
 
-> That 100% is `state.update-progress`'s definition -- SUMMARY files over PLAN files on disk (21 over 21), and it reads 100% only because the counts coincide: 20 of the 21 plans have a summary, `04-07` does not, and the 21st summary is `03-07-GAPS-SUMMARY.md`, which has no plan of its own. It is NOT milestone completion: phases 5-11 have no plans on disk yet, and only 3 of 11 phases are complete.
+> That 100% is `state.update-progress`'s definition -- SUMMARY files over PLAN files on disk (22 summaries over 21 plans, capped at 100%). Every one of the 21 plans now has a summary; the 22nd is `03-07-GAPS-SUMMARY.md`, which has no plan of its own. It is NOT milestone completion: phases 5-11 have no plans on disk yet, and 3 of 11 phases are marked complete -- Phase 4's seven plans are all executed, and the phase closes at its verification/merge step, exactly as Phases 1-3 did.
 
 ## Performance Metrics
 
@@ -66,6 +66,7 @@ Progress: [██████████] 100%
 | Phase 04 P04 | ~2h | 2 tasks | 8 files |
 | Phase 04 P05 | ~3h | 2 tasks | 10 files |
 | Phase 4 P06 | ~2h | 2 tasks | 12 files |
+| Phase 4 P07 | ~2h | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -124,6 +125,11 @@ Recent decisions affecting current work:
 - [Phase 4]: 04-06: information_set/embargo are machine-parsed (spec/information_set.py) and compared against the measured reach; an unrecognised declaration RAISES rather than degrading to unbounded or 0. The duration table aliases data/time_ns.py's pre-multiplied constants -- no second seconds-to-ns site.
 - [Phase 4]: 04-06: every leakage invariance property has a sensitivity counterpart. Measured: a constant `mid` leaves BOTH shuffle properties GREEN -- containment is one-sided and an empty measured set satisfies every declaration.
 - [Phase 4]: 04-06: `embargo` is guarded ONLY by tests/leakage/test_embargo.py. check_spec_diff appears to catch a shortened embargo but only via spec.md render drift; re-render as its own message instructs and it is green.
+- [Phase 4]: 04-07: byte-equality between call sites is evidence ONLY when the call sites are proven different. A `for_simulation` that collects its rows and takes the batch path leaves 12 of 13 tests green; the exact kernel-entry counts (1 / n_chunks / n_rows), measured with a counting wrapper, are the only assertion that dies.
+- [Phase 4]: 04-07: `features/build.py` still drives the kernel directly instead of calling `features.api`. Proven byte-identical on the real day, but it IS a second caller and the tripwire sanctions `features/` wholesale. Rewiring it is a small follow-up whose acceptance test already exists.
+- [Phase 4]: 04-07: the `features_norm` tier has no DQ rows and its loader deliberately skips the pause gate; its partition entries carry no `date`, so the gate is not merely unnecessary but INAPPLICABLE (KeyError, measured). Adding the gate alone pauses it forever; adding a date alone gives it a `missing` verdict.
+- [Phase 4]: 04-07: a fold boundary is an inclusive int64-ns `train_end_etime` argument (`fit_training_segment`), never a date string. The artifact stores Welford `(count, mean, M2)` so an EXTENDED training segment can resume exactly rather than refit.
+- [Phase 4]: 04-07: frozen normalization of `mid` puts the very next day at z = +4.31 with 2.85x the training spread. Correct behaviour (a level moved), and the reason a per-window recomputation would look tidy and be a leak. Phase 8 should give `mid` a differenced model-input form under a NEW catalogue name.
 
 ### Pending Todos
 
