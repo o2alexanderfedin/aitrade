@@ -143,11 +143,17 @@ writes beside the source file, so CI must pin `NUMBA_CACHE_DIR` outside the repo
 
 ## D-04-17 — Label quantization is recorded, not engineered away
 97.5 % of quotes sit at a 1-tick spread, so `mid` lands on a half-tick 98.8 % of the time and the
-labels are heavily quantized: **`ret_10s_mid` is exactly zero on 29.7 % of rows, `ret_1s_mid` on
-62.5 %**. This is a property of the venue, not a defect, and Phase 4 does not smooth it. It is
+labels are heavily quantized. **Corrected 2026-09-19 after Plan 04 measured the rows this pipeline
+actually writes:** per DECISION ROW (6,864,853 on 2026-09-13 — what the feature tier stores)
+`ret_10s_mid` is exactly zero on **43.89 %** and `ret_1s_mid` on **80.8 %**. The 29.7 % / 62.5 %
+figures in the research notes are per L1 UPDATE (17,167,290 rows); per-update sampling over-weights
+busy milliseconds, where price actually moves, so it under-reports zeros and over-reports std. Both
+numbers were reproduced by the same implementation on the same day, which is how the disagreement
+resolved into two different row sets rather than a bug. Written-row std is 1.447e-04 (per-update
+1.853e-04). This is a property of the venue, not a defect, and Phase 4 does not smooth it. It is
 recorded here and in the feature-tier DQ report because it constrains Phase 5/8 choices (loss
 function, IC and Sharpe statistics must be chosen knowing the target has a 30 % point mass at zero).
-End-of-partition label coverage loss is small: 0.0063 % at 10 s, 0.68 % at 10 min.
+End-of-partition label coverage loss is small: 0.0074 % at 10 s per decision row (507 of 6,864,853).
 
 ## D-04-06 — Normalization is train-only and is an artifact
 Expanding-window z-score, parameters computed on the training segment only and stored as a
