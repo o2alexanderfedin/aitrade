@@ -91,7 +91,8 @@ completed: 2026-09-19
 |---|---|---|---|
 | 1 | A machine-readable information set, and the embargo assertion | `785f45d` | `spec/information_set.py`, `tests/spec/test_information_set.py`, `tests/leakage/test_embargo.py`, `tests/leakage/test_catalogue_information_set.py` |
 | 2 | The full leakage suite, its anti-vacuity guards, and a named CI gate | `39a887b` | `tests/leakage/test_label_information_set.py`, `tests/leakage/test_feature_information_set.py`, `tests/fixtures/leakage_streams.py`, `tests/tools/test_ci_pre_commit_parity.py`, `.pre-commit-config.yaml`, `.github/workflows/ci.yml`, scaffold deleted |
-| — | This summary + STATE/ROADMAP | (below) | `.planning/…/04-06-SUMMARY.md`, `.planning/STATE.md`, `.planning/ROADMAP.md` |
+| — | This summary + STATE/ROADMAP | `6282a56` | `.planning/…/04-06-SUMMARY.md`, `.planning/STATE.md`, `.planning/ROADMAP.md` |
+| — | FEAT-03/FEAT-04 marked complete | `45ce6e9` | `.planning/REQUIREMENTS.md` |
 
 ## The mutation that is the reason this suite exists
 
@@ -563,6 +564,15 @@ None.
 - **`tests/fixtures/leakage_streams.py` is the one home for these generators.** `horizon_probe`'s
   `exact_match` flag is load-bearing: a single-shape probe silently loses one of the two as-of
   mutations.
+- **`test_the_embargo_bound_is_tight_enough_to_bite` is a DELIBERATE over-constraint.** It asserts
+  `embargo == horizon` exactly, so lengthening `ret_10s_mid`'s embargo to `">= 1min"` — strictly
+  safer than the declared rule — fails CI. The anti-vacuity work is already done by the
+  `embargo_ns > 0` assertion beside it; the equality exists so that a change in either direction is
+  a decision someone has to make on purpose. If Phase 5's fold design wants a longer embargo than
+  the horizon, relax this one assertion and say why in its message — do not delete the file.
+- **The parity test checks one direction only:** every pre-commit `entry:` must appear verbatim as
+  a CI `run:`. A CI step with no pre-commit hook passes. That asymmetry is deliberate (CI legitimately
+  runs things pre-commit cannot, like the real-lake `--full` scan) but it is not a symmetric guard.
 
 ## Self-Check: PASSED
 
