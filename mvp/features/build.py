@@ -83,7 +83,6 @@ from features.tier import (
     LABEL_COLUMNS,
     assert_buildable,
     curated_manifest_input,
-    feature_partition_path,
     issue_feature_manifest,
     write_feature_partition,
 )
@@ -309,7 +308,8 @@ def build_features_day(
 
     Returns `{"date", "manifest", "partition_entry", "build_stats",
     "elapsed_seconds"}`. Raises before any write on: a missing D+1
-    (`NextDayUnavailableError`), a held-out D or D+1 (`HoldoutError`), an
+    (`NextDayUnavailableError`), a held-out D or D+1
+    (`QuarantinedDateError`), an
     unacknowledged DQ finding on either day (`DQPauseError`), or a merge
     whose order is not strict (`ValueError`). Raises `FileExistsError` on
     a second build of the same date -- feature partitions are write-once.
@@ -571,10 +571,3 @@ def build_features_range(
                 )
         date = next_utc_date(date)
     return results
-
-
-def features_partition_dir(lake_root: Path, symbol: str, date: str) -> Path:
-    """The date directory a build writes into -- exposed so a caller can
-    assert its ABSENCE after a refusal, which is the only way to tell a
-    gate that ran first from one that ran after the write."""
-    return feature_partition_path(Path(lake_root), symbol, date).parent
