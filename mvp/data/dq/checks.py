@@ -218,6 +218,22 @@ class LabelGapThresholds:
     max_quote_gap_seconds: float
     notes: str
 
+    @property
+    def max_quote_gap_ns(self) -> int:
+        """The same threshold on the project's one clock.
+
+        The conversion lives HERE and not in `features/labels.py` for the
+        reason `tools/check_ms_to_ns_site.py` exists: this module is
+        allowlisted for seconds -> ns (it already converts the rtime-skew
+        bounds the same way), and a second `* NS_PER_SECOND` in a Phase 4
+        module would be a new conversion site the guardrail fails on.
+        `data/time_ns.py`'s alternative -- a pre-multiplied constant --
+        does not fit a value that comes from config: the TOML is the
+        source of truth for the threshold and the constant would be a
+        second one.
+        """
+        return int(self.max_quote_gap_seconds * NS_PER_SECOND)
+
 
 @dataclass(frozen=True)
 class FeatureLabelCoverageThresholds:
