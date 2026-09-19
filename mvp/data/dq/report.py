@@ -59,6 +59,8 @@ from data.lake_paths import lake_root as default_lake_root
 from data.store import (
     CURATED_TIER,
     FEATURES_TIER,
+    ManifestHashMismatch,
+    ManifestTierError,
     by_date_index_path,
     manifest_source,
     resolve_manifest,
@@ -416,13 +418,38 @@ def build_feature_report_rows_for_date(
     idx_path = by_date_index_path(registry_root, dataset, symbol, FEATURES_TIER, date)
     if not idx_path.exists():
         return []
-    manifest = resolve_manifest(
-        json.loads(idx_path.read_text())["manifest_id"],
-        dataset,
-        registry_root=registry_root,
-        lake_root=lake_root,
-        expected_tier=FEATURES_TIER,
-    )
+    try:
+        manifest = resolve_manifest(
+            json.loads(idx_path.read_text())["manifest_id"],
+            dataset,
+            registry_root=registry_root,
+            lake_root=lake_root,
+            expected_tier=FEATURES_TIER,
+        )
+    except (ManifestHashMismatch, ManifestTierError, OSError, KeyError) as exc:
+        # CONTAINED TO THE FEATURE ROWS (04-REVIEW.md WR-06). Unguarded,
+        # this propagated out of `build_report_rows_for_date`, out of
+        # `write_report` and out of `main`'s date loop -- so a corrupt
+        # DOWNSTREAM partition stopped the UPSTREAM tier's verdict being
+        # refreshed, and the stale report left behind kept vouching for
+        # curated manifests while the operator saw a traceback naming
+        # `features`. One `failed` row is still fail-closed: it pauses
+        # `load_features` on this date, which is the correct verdict, and
+        # the curated half of the report regenerates.
+        return [
+            {
+                "date": date,
+                "symbol": symbol,
+                "stream": FEATURES_TIER,
+                "check": "feature_manifest",
+                "dq_status": "failed",
+                "reason": (
+                    f"features manifest for {date} does not resolve: "
+                    f"{exc.__class__.__name__}: {exc}"
+                ),
+                "manifest_id": None,
+            }
+        ]
 
     stats_path = feature_build_stats_path(lake_root, symbol, date)
     build_stats = json.loads(stats_path.read_text()) if stats_path.exists() else None

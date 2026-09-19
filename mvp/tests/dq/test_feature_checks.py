@@ -328,3 +328,81 @@ def test_features_is_not_in_the_curated_two_stream_loop():
     from data.dq.report import STREAMS
 
     assert STREAMS == ("trade", "bookTicker")
+
+
+def test_a_corrupt_feature_partition_does_not_take_down_the_whole_date(
+    tmp_path: Path,
+):
+    """04-REVIEW.md WR-06: the blast radius is the feature rows.
+
+    `build_feature_report_rows_for_date` called `resolve_manifest` with no
+    `try`/`except`, so a `ManifestHashMismatch` on a feature partition
+    propagated out of `build_report_rows_for_date`, out of `write_report`
+    and out of `main`'s date loop: that date's `report.parquet` was never
+    rewritten AND every later date in a `--range` run was skipped. The
+    direction of the dependency is what was new -- a downstream, fully
+    rebuildable tier could block the refresh of the upstream tier's
+    verdict, while the stale report left behind kept vouching for the
+    curated manifests and `load_curated` carried on undisturbed.
+    """
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    manifest = _build_a_feature_day(lake_root, registry_root, _stats())
+
+    path = lake_root / manifest["partitions"][0]["path"]
+    raw = bytearray(path.read_bytes())
+    raw[len(raw) // 2] ^= 0x01
+    path.write_bytes(bytes(raw))
+
+    rows = build_feature_report_rows_for_date(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+    )
+    assert [r["dq_status"] for r in rows] == ["failed"], (
+        "fail-closed: one failed row, which pauses load_features"
+    )
+    assert rows[0]["check"] == "feature_manifest"
+    assert "does not resolve" in rows[0]["reason"]
+    assert rows[0]["manifest_id"] is None, (
+        "the manifest did not resolve, so no id may be claimed for it"
+    )
+
+    # ...and the row survives normalization into REPORT_SCHEMA, which is
+    # what `write_report` does with it next.
+    from data.dq.report import normalize_row
+
+    assert normalize_row(rows[0])["dq_status"] == "failed"
+
+
+def test_the_curated_half_of_the_report_still_regenerates(tmp_path: Path):
+    """The other half of WR-06: the whole date's report is rebuilt, with
+    the curated rows intact beside the one failed features row."""
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    issue_curated_day(lake_root, registry_root, "trade", DATE)
+    issue_curated_day(lake_root, registry_root, "bookTicker", DATE)
+    features = _build_a_feature_day(lake_root, registry_root, _stats())
+
+    path = lake_root / features["partitions"][0]["path"]
+    raw = bytearray(path.read_bytes())
+    raw[len(raw) // 2] ^= 0x01
+    path.write_bytes(bytes(raw))
+
+    write_report(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=pl.DataFrame(schema=GAP_LEDGER_SCHEMA),
+    )
+    report = pl.read_parquet(dq_report_path(lake_root, DATE))
+    assert set(report["stream"].to_list()) >= {"trade", "bookTicker", "features"}
+    assert report.filter(pl.col("stream") == "features")["dq_status"].to_list() == [
+        "failed"
+    ]
+    assert report.filter(pl.col("stream") == "bookTicker").height > 0, (
+        "the curated verdict must still be refreshed -- a downstream tier "
+        "must not be able to block it"
+    )
