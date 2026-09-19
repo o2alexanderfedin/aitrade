@@ -21,7 +21,7 @@ etime rule the decision rows themselves use. Phase 3's
 `allow_exact_matches=False` ruling governs a different question (using a
 quote to classify a trade's side) and does not transfer here.
 
-THREE NULL REASONS, AND THEY PARTITION. Precedence, so the counts sum to
+FOUR NULL REASONS, AND THEY PARTITION. Precedence, so the counts sum to
 the number of nulls with no row counted twice:
 
 1. `null_no_mid`  -- `mid_t` is NaN (a decision row before the partition's
@@ -35,6 +35,16 @@ the number of nulls with no row counted twice:
    `dq_thresholds.label_gap.max_quote_gap_seconds` OVERLAPS `[t, t+h]`.
    Overlap, not containment: a gap straddling `t` leaves the first half of
    the window unknown just as thoroughly.
+4. `null_stale` -- no quote arrived in `(t, t+h]` AT ALL, so the
+   prevailing quote at `t+h` is the one that produced `mid_t` and the
+   label would be exactly `0.0` from a price differenced against itself.
+   THE STALENESS BOUND IS THE HORIZON, not a configured number: reason 3's
+   single absolute threshold is 3x the primary horizon and 30x
+   `ret_1s_mid`'s, so any silence under it used to fabricate a "no move"
+   label (04-REVIEW.md WR-02 -- 69 such primary labels on 2026-09-12).
+   This reason needs no threshold and cannot be tuned wrong; a per-horizon
+   absolute threshold would instead kill labels that DID have a quote in
+   their window.
 
 Never a zero, never a carried-forward price. Null-labelled rows are
 excluded from training by construction.
@@ -61,8 +71,9 @@ NO SECONDS ARITHMETIC. Horizons arrive pre-multiplied from
 `tools/check_ms_to_ns_site.py` would fail (D-04-13).
 
 SHAPE. Two `searchsorted` calls per horizon over the combined D + D+1
-quote array (~34M rows for a real pair of days) plus one over the gap
-starts. No Python loop over rows anywhere.
+quote array (~34M rows for a real pair of days), one over the gap starts,
+and one horizon-INDEPENDENT `searchsorted` for the prevailing quote at `t`.
+No Python loop over rows anywhere.
 """
 
 from __future__ import annotations
@@ -114,7 +125,12 @@ PRIMARY_LABEL: str = get_label("ret_10s_mid").name
 #: The reasons a label is absent, in PRECEDENCE order. See the module
 #: docstring: they partition the nulls, so the three counts sum to the
 #: number of NaNs.
-NULL_REASONS: tuple[str, ...] = ("null_no_mid", "null_past_end", "null_gap")
+NULL_REASONS: tuple[str, ...] = (
+    "null_no_mid",
+    "null_past_end",
+    "null_gap",
+    "null_stale",
+)
 
 #: The diagnostic label whose zero fraction the feature-tier DQ report
 #: carries alongside the primary one (`ret_1s_mid` is 62.5 % zeros -- the
@@ -302,6 +318,9 @@ def compute_labels(
     n = decision_etime.size
     last_quote_etime = int(quote_etime[-1])
     no_mid_t = np.isnan(decision_mid)
+    # The prevailing quote at `t` itself -- the one whose mid IS `mid_t`.
+    # Horizon-independent, so it is computed once rather than per horizon.
+    idx_at_t = np.searchsorted(quote_etime, decision_etime, side="right") - 1
 
     labels: dict[str, np.ndarray] = {}
     per_horizon: dict[str, dict] = {}
@@ -322,7 +341,15 @@ def compute_labels(
             & ~null_no_mid
             & ~null_past_end
         )
-        absent = null_no_mid | null_past_end | null_gap
+        # THE STALENESS BOUND IS THE HORIZON (04-REVIEW.md WR-02). If the
+        # prevailing quote at `t+h` is the SAME one that produced `mid_t`,
+        # no quote arrived in `(t, t+h]` at all and the "return" is a
+        # carried-forward price differenced against itself -- exactly
+        # `0.0`, finite, and indistinguishable from a real "the market did
+        # not move". Horizon-relative by construction: the window nulls
+        # itself when nothing landed in it, whatever length it is.
+        null_stale = (idx <= idx_at_t) & ~null_no_mid & ~null_past_end & ~null_gap
+        absent = null_no_mid | null_past_end | null_gap | null_stale
 
         label = np.full(n, np.nan, dtype=np.float64)
         denom = np.where(null_no_mid, 1.0, decision_mid)
@@ -351,6 +378,7 @@ def compute_labels(
             "null_no_mid": int(null_no_mid.sum()),
             "null_past_end": int(null_past_end.sum()),
             "null_gap": int(null_gap.sum()),
+            "null_stale": int(null_stale.sum()),
             "zero_fraction": (float((finite == 0.0).sum()) / n_labelled)
             if n_labelled
             else 0.0,

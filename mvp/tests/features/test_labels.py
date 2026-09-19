@@ -249,6 +249,84 @@ def test_a_gap_starting_exactly_at_t_plus_h_does_not_null_the_label():
 
 
 # --------------------------------------------------------------------------
+# Null reason: the "prevailing quote at t+h" is the one that produced mid_t
+# (04-REVIEW.md WR-02)
+# --------------------------------------------------------------------------
+
+
+def test_a_silence_shorter_than_the_gap_threshold_still_nulls_the_label():
+    """A 25 s L1 silence swallowing the whole 10 s window, under a 30 s
+    gap threshold. The price moves 37 % across it.
+
+    `searchsorted(..., "right") - 1` at `t+h` returns the SAME quote that
+    produced `mid_t`, so the arithmetic yields exactly `0.0` -- finite,
+    non-null, no null reason, and indistinguishable from a real
+    measurement of "the market did not move". One absolute threshold
+    cannot express this: 30 s is 3x the primary horizon and 30x
+    `ret_1s_mid`'s, so the fabricated zero is guaranteed for ANY silence
+    up to the threshold. The staleness bound has to be the HORIZON.
+    """
+    s = NS_PER_SECOND
+    label, stats = _one_horizon(
+        decision_etime=[105 * s],
+        decision_mid=[100.0],
+        quote_etime=[0, 100 * s, 125 * s],
+        quote_mid=[100.0, 100.0, 137.0],
+        horizon_ns=RET_10S_NS,
+        gap_threshold_ns=GAP_30S,
+    )
+    assert math.isnan(label[0]), (
+        "no quote arrived in (t, t+10s]; the only available mid_{t+h} is the "
+        "carried-forward price D-04-05 says a label must never be"
+    )
+    per = stats["per_horizon"][H10]
+    assert per["null_stale"] == 1
+    assert per["null_gap"] == 0, "the 25 s silence is under the 30 s threshold"
+
+
+def test_a_quote_inside_the_window_keeps_the_label_however_long_the_silence_before_it():
+    """The discriminating half, and the reason the fix is not
+    `min(threshold, horizon)` fed to `big_quote_gaps`.
+
+    A 5.5 s silence ends half a second INSIDE a 1 s window. A real quote
+    arrived in `(t, t+h]`, so `mid_{t+h}` is a measurement rather than a
+    carried-forward price, and the label stands. A per-horizon absolute
+    threshold would kill it.
+    """
+    s = NS_PER_SECOND
+    half = NS_PER_SECOND // 2
+    label, stats = _one_horizon(
+        decision_etime=[10 * s],
+        decision_mid=[100.0],
+        quote_etime=[0, 5 * s, 10 * s + half, 12 * s],
+        quote_mid=[100.0, 100.0, 101.0, 102.0],
+        horizon_ns=NS_PER_SECOND,
+        gap_threshold_ns=GAP_30S,
+    )
+    assert not math.isnan(label[0]), "a genuine quote landed inside the window"
+    assert label[0] == pytest.approx(0.01)
+    assert stats["per_horizon"][H10]["null_stale"] == 0
+
+
+def test_a_dense_day_is_not_over_nulled():
+    """Anti-vacuity for the two above: the rule nulls almost nothing when
+    quotes actually arrive."""
+    s = NS_PER_SECOND
+    fifth = NS_PER_SECOND // 5
+    quote_etime = [i * fifth for i in range(200)]
+    quote_mid = [100.0 + 0.01 * i for i in range(200)]
+    label, stats = _one_horizon(
+        decision_etime=[5 * s, 6 * s],
+        decision_mid=[quote_mid[25], quote_mid[30]],
+        quote_etime=quote_etime,
+        quote_mid=quote_mid,
+        horizon_ns=RET_10S_NS,
+    )
+    assert not np.isnan(label).any()
+    assert stats["per_horizon"][H10]["null_stale"] == 0
+
+
+# --------------------------------------------------------------------------
 # Null reason 3: no mid at t
 # --------------------------------------------------------------------------
 
@@ -288,7 +366,10 @@ def test_null_reasons_partition_the_nulls():
     per = stats["per_horizon"][H10]
     n_nan = int(np.isnan(label).sum())
     assert n_nan == per["null_total"]
-    assert per["null_no_mid"] + per["null_past_end"] + per["null_gap"] == n_nan
+    assert (
+        per["null_no_mid"] + per["null_past_end"] + per["null_gap"] + per["null_stale"]
+        == n_nan
+    )
     assert per["null_total"] > 0 and per["n_labelled"] > 0, (
         "a fixture with no nulls, or with nothing but nulls, would make the "
         "partition assertion vacuous"

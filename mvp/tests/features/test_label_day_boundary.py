@@ -311,14 +311,26 @@ def test_label_tail_actually_reaches_into_the_next_day():
 
 def test_the_tail_is_needed_for_every_horizon_in_the_catalogue():
     """Not just the 10-minute diagnostic: the primary 10 s label loses its
-    last rows too (0.0063 % of a real day)."""
+    last rows too (0.0063 % of a real day).
+
+    REWRITTEN 2026-09-19 (04-REVIEW.md WR-02). The fixture used to put the
+    decision row five seconds before midnight with no further day-D quote,
+    then assert that all four labels were non-null "because the tail is
+    there". Three of them were -- but `ret_1s_mid` was non-null for the
+    wrong reason: nothing arrived in `(t, t+1s]`, and the old code differenced
+    the quote that produced `mid_t` against itself and called the result
+    `0.0`. The decision row now sits half a second before midnight and the
+    tail opens 200 ms after it, so every horizon genuinely reaches a D+1
+    quote and the claim in the name is the claim being tested.
+    """
     s = NS_PER_SECOND
+    ms = NS_PER_SECOND // 1_000
     d_end = DAY_13_START + NS_PER_DAY
-    decision_etime = np.array([d_end - 5 * s], np.int64)
+    decision_etime = np.array([d_end - 500 * ms], np.int64)
     decision_mid = np.array([100.0], np.float64)
     d_etime, d_mid = decision_etime.copy(), decision_mid.copy()
-    d1_etime = np.array([d_end + 300 * s, d_end + 700 * s], np.int64)
-    d1_mid = np.array([110.0, 111.0], np.float64)
+    d1_etime = np.array([d_end + 200 * ms, d_end + 300 * s, d_end + 700 * s], np.int64)
+    d1_mid = np.array([105.0, 110.0, 111.0], np.float64)
 
     labels, _ = compute_labels(
         decision_etime,
@@ -329,6 +341,10 @@ def test_the_tail_is_needed_for_every_horizon_in_the_catalogue():
     )
     for name in LABEL_HORIZON_NS:
         assert not math.isnan(labels[name][0]), f"{name} needs the D+1 quote"
+    assert labels["ret_1s_mid"][0] == pytest.approx(0.05), (
+        "even the one-second label's prevailing mid is a D+1 quote -- 200 ms "
+        "past midnight"
+    )
     assert labels["ret_10min_mid"][0] == pytest.approx(0.1), (
         "the 10-minute label's prevailing mid is a D+1 quote, five minutes "
         "into the next day"

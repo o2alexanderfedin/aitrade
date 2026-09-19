@@ -254,6 +254,25 @@ caffeinate's PreventSystemSleep assertion is honored on AC power only).
 Those four null 38,565 of that day's 11,323,694 primary labels (0.34%)
 and 221,904 of its ret_10min_mid (1.96%). A per-row rule is what keeps
 those outages from silently producing labels that span them.
+
+THIS THRESHOLD IS NOT THE STALENESS BOUND, AND DELIBERATELY HAS NO
+PER-HORIZON TABLE (04-REVIEW.md WR-02, resolved 2026-09-19). It decides
+one thing: whether an L1 OUTAGE overlapping [t, t+h] is long enough to
+call the window unknown. It used to decide a second thing by accident --
+whether the label existed at all -- and at one absolute 30 s it decided
+that badly for every horizon under 30 s: a silence shorter than the
+threshold that entirely contained [t, t+h] left the prevailing quote at
+t+h equal to the one that produced mid_t, so the label was exactly 0.0,
+finite, with no null reason. The bound on THAT question is now the
+horizon itself (features/labels.py's null_stale: no quote arrived in
+(t, t+h] at all). It is not a tunable and there is nothing here to set:
+any value looser than the horizon re-admits a carried-forward price, and
+any value tighter nulls rows that had a real quote in their window -- a
+5 s silence ending half a second inside a 1 s window is the case a
+per-horizon threshold gets wrong. Measured over all three built days
+(22.29M decision rows), null_stale nulls 69 primary labels and 180
+ret_1s_mid, all of them previously exactly 0.0, and nothing at 1 min or
+10 min.
 """
 
 [feature_label_coverage]

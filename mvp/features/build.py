@@ -61,6 +61,7 @@ from features.event_stream import (
     merge_curated_streams,
 )
 from features.labels import (
+    NULL_REASONS,
     NextDayUnavailableError,
     append_next_day_quotes,
     assert_next_day_available,
@@ -237,10 +238,7 @@ def _build_stats(
         "post_gap_warmup_rows": int(post_gap_warmup_rows),
         # --- labels ---
         "label_null_counts": {
-            name: {
-                reason: h[reason]
-                for reason in ("null_total", "null_no_mid", "null_past_end", "null_gap")
-            }
+            name: {reason: h[reason] for reason in ("null_total", *NULL_REASONS)}
             for name, h in per_horizon.items()
         },
         "label_zero_fraction": {
