@@ -40,6 +40,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import os
 import time
 from collections.abc import Sequence
 from pathlib import Path
@@ -57,6 +59,8 @@ from data.store import (
 )
 from spec.catalogue import get_feature, get_label
 
+logger = logging.getLogger(__name__)
+
 __all__ = [
     "FEATURE_SCHEMA_VERSION",
     "FEATURE_ROW_SCHEMA",
@@ -66,6 +70,8 @@ __all__ = [
     "PRIMARY_LABEL",
     "LABEL_TAIL_ROLE",
     "feature_partition_path",
+    "staged_feature_partition_path",
+    "commit_feature_partition",
     "refused_dates_for",
     "write_feature_partition",
     "curated_manifest_input",
@@ -156,6 +162,45 @@ def feature_partition_path(lake_root: Path, symbol: str, date: str) -> Path:
     )
 
 
+#: The name a partition is written under BEFORE its manifest exists
+#: (04-REVIEW.md WR-01). Deliberately not `part-`: an unmanifested file
+#: that reads as a committed partition is what wedged a date and needed a
+#: human to delete a file from a write-once tier. A `partial-` file is
+#: never data -- the next build of that date removes it and starts over.
+STAGING_PREFIX = "partial-"
+
+
+def staged_feature_partition_path(final_path: Path) -> Path:
+    """The `partial-` sibling of a final `part-<ns>.parquet` path."""
+    return final_path.with_name(final_path.name.replace("part-", STAGING_PREFIX, 1))
+
+
+def commit_feature_partition(partition_entry: dict, *, lake_root: Path) -> Path:
+    """Rename a staged partition into its final `part-<ns>.parquet` name.
+
+    Called by the build immediately BEFORE `issue_feature_manifest`, which
+    is what keeps the manifest's own rule true -- it never names bytes that
+    are not already on disk under the path it names. The rename is
+    `os.replace`, so the sha256, size and mtime the entry already carries
+    stay correct.
+
+    The window this does NOT close is its own: a crash between this rename
+    and the manifest still leaves an unmanifested `part-` file, and that
+    date is genuinely wedged until someone looks. `build_features_range`
+    reports it as `"orphaned"` and carries on rather than aborting the
+    remaining dates.
+    """
+    final_path = Path(lake_root) / partition_entry["path"]
+    staged = staged_feature_partition_path(final_path)
+    if not staged.exists():
+        raise FileNotFoundError(
+            f"commit_feature_partition: nothing staged at {staged} -- the "
+            "partition was either already committed or never written"
+        )
+    os.replace(staged, final_path)
+    return final_path
+
+
 def _assert_schema(df: pl.DataFrame) -> None:
     if df.schema != dict(FEATURE_ROW_SCHEMA):
         raise ValueError(
@@ -198,6 +243,7 @@ def write_feature_partition(
     symbol: str,
     date: str,
     registry_root: Path | None = None,
+    commit: bool = True,
 ) -> dict:
     """Write one write-once feature partition and return the partition entry
     `issue_manifest` requires (`path` lake-root-RELATIVE, `sha256`,
@@ -215,6 +261,20 @@ def write_feature_partition(
     part file, mirroring `data/ingest/normalize.py:write_raw_partition`: a
     second write for an already-written day is an error, never a silent
     overwrite and never a silent duplicate.
+
+    `commit=False` leaves the bytes under the `partial-` staging name and
+    the caller must call `commit_feature_partition` once the rest of the
+    build has succeeded (04-REVIEW.md WR-01). `build_features_day` is the
+    only caller that needs it: it is the only one with work left to do --
+    `build_stats.json`, then the manifest -- between the write and the
+    point at which the partition becomes real. A caller that just wants a
+    written partition (every test here, and any one-off) takes the default
+    and gets today's behaviour.
+
+    EITHER WAY, ANY STALE `partial-` FILE IN THE DIRECTORY IS REMOVED
+    FIRST, loudly. An unmanifested staging file is not data: nothing in
+    the registry names it, no manifest hashes it, and leaving it would
+    turn a crashed build into a permanently wedged date.
     """
     assert_not_quarantined(
         [date],
@@ -230,12 +290,26 @@ def write_feature_partition(
     if existing:
         raise FileExistsError(
             f"feature partition {final_path.parent} already has a written part "
-            f"file: {existing[0]} -- partitions are write-once"
+            f"file: {existing[0]} -- partitions are write-once. If no manifest "
+            "names it, a previous build died between the rename and the "
+            "manifest; that file must be removed before this date can be "
+            "rebuilt."
         )
-    write_parquet_atomic(converted, final_path, compression="zstd")
+    for stale in sorted(final_path.parent.glob(f"{STAGING_PREFIX}*.parquet")):
+        logger.warning(
+            "removing a stale staged feature partition %s -- a previous build "
+            "of %s died before its manifest was issued; the file was never a "
+            "committed partition",
+            stale,
+            date,
+        )
+        stale.unlink()
 
-    on_disk = final_path.read_bytes()
-    st = final_path.stat()
+    written_path = final_path if commit else staged_feature_partition_path(final_path)
+    write_parquet_atomic(converted, written_path, compression="zstd")
+
+    on_disk = written_path.read_bytes()
+    st = written_path.stat()
     return {
         "date": date,
         "path": str(final_path.relative_to(Path(lake_root))),

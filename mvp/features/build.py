@@ -19,9 +19,11 @@ byte written:
     5. run_kernel_checked
     6. compute_labels (against D's quotes + D+1's tail)
     7. post_gap_warmup, joined from Phase 3's resync sidecar
-    8. write_feature_partition     <-- THE FIRST WRITE
+    8. write_feature_partition     <-- THE FIRST WRITE, under a
+                                    `partial-` staging name
     9. build_stats.json
-   10. issue_feature_manifest      <-- LAST
+   10. commit_feature_partition (rename partial- -> part-), then
+       issue_feature_manifest      <-- LAST
 
 Steps 1 and 2 cost nothing and refuse before a single partition byte is
 READ, so a quarantined date never spends a one-look token and never lands
@@ -75,6 +77,7 @@ from features.tier import (
     FEATURE_SCHEMA_VERSION,
     LABEL_COLUMNS,
     assert_buildable,
+    commit_feature_partition,
     curated_manifest_input,
     issue_feature_manifest,
     write_feature_partition,
@@ -405,12 +408,18 @@ def build_features_day(
     post_gap_warmup_rows = int(post_gap.sum())
     del decision, labels, post_gap, columns
 
+    # STAGED, not committed (04-REVIEW.md WR-01). The bytes land under
+    # `partial-<ns>.parquet`; step 9's stats and step 10's rename +
+    # manifest are what turn them into a partition. A crash anywhere
+    # below leaves a file no reader can mistake for a committed
+    # partition, and the next build removes it and starts over.
     partition_entry = write_feature_partition(
         frame,
         lake_root=lake_root,
         symbol=symbol,
         date=date,
         registry_root=registry_root,
+        commit=False,
     )
     del frame
 
@@ -436,8 +445,11 @@ def build_features_day(
     stats_path = feature_build_stats_path(lake_root, symbol, date)
     _atomic_write_json(stats_path, stats)
 
-    # (10) the manifest LAST: it never names bytes that are not already on
-    #      disk with their stats beside them.
+    # (10) the rename, then the manifest LAST: the manifest never names
+    #      bytes that are not already on disk, under the path it names,
+    #      with their stats beside them. The rename preserves the sha256,
+    #      size and mtime `partition_entry` already carries.
+    commit_feature_partition(partition_entry, lake_root=lake_root)
     manifest = issue_feature_manifest(
         symbol=symbol,
         date=date,
@@ -507,6 +519,13 @@ def build_features_range(
     - `"skipped"` with `reason="no next day"`: D+1 has no curated L1
       manifest yet. Expected on the most recent captured day, every day,
       by design -- so it is a status rather than a crash.
+    - `"orphaned"`: a `part-<ns>.parquet` exists for the date with no
+      manifest naming it -- a previous build died in the one remaining
+      window, between the staging rename and the manifest. That date is
+      genuinely wedged until someone looks at it, but the LATER DATES ARE
+      STILL ATTEMPTED (04-REVIEW.md WR-01): one wedged day silently
+      truncating a week of builds is the failure that looks most like
+      success.
     - `"written"`: built now.
 
     Every OTHER refusal propagates. A held-out date, an unacknowledged DQ
@@ -540,6 +559,21 @@ def build_features_range(
                         "status": "skipped",
                         "manifest_id": None,
                         "reason": "no next day",
+                        "detail": str(exc),
+                    }
+                )
+            except FileExistsError as exc:
+                results.append(
+                    {
+                        "date": date,
+                        "status": "orphaned",
+                        "manifest_id": None,
+                        "reason": (
+                            "a part file exists with no manifest -- a previous "
+                            "build died between the staging rename and the "
+                            "manifest; the file must be removed before this "
+                            "date can be rebuilt"
+                        ),
                         "detail": str(exc),
                     }
                 )

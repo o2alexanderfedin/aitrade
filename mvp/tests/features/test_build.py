@@ -548,3 +548,122 @@ def test_the_build_does_not_import_the_kernel(tmp_path: Path):
         )
         violations = scan_source((root / relative).read_text(), relative)
         assert violations == [], [str(v) for v in violations]
+
+
+# --------------------------------------------------------------------------
+# (9) a mid-build crash does not wedge the date or abort the range (WR-01)
+# --------------------------------------------------------------------------
+
+
+def _seed_three_days(lake_root: Path, registry_root: Path) -> None:
+    """D and D+1 both buildable: D+1 carries both streams and D+2 exists
+    as curated L1, so the day-boundary rule lets the first two through."""
+    from tests.fixtures.feature_build import NEXT_DAY_START, THIRD_DATE
+
+    seed_two_days(lake_root, registry_root, seed_next_day=False)
+    mids = [100.0 + 0.1 * (i % 50) for i in range(1_200)]
+    next_etimes = [NEXT_DAY_START + i * NS_PER_SECOND for i in range(1_200)]
+    seed_day(
+        lake_root,
+        registry_root,
+        NEXT_DATE,
+        quotes=quote_frame(next_etimes, mids),
+        trades=trade_frame(
+            [e + NS_PER_SECOND // 2 for e in next_etimes[:100]],
+            [100.0] * 100,
+            [(i + 1) / 1e8 for i in range(100)],
+            [1 if i % 2 else -1 for i in range(100)],
+        ),
+    )
+    third_start = NEXT_DAY_START + 86_400 * NS_PER_SECOND
+    third = [third_start + i * NS_PER_SECOND for i in range(1_200)]
+    seed_day(lake_root, registry_root, THIRD_DATE, quotes=quote_frame(third, mids))
+
+
+def test_a_crash_between_the_write_and_the_manifest_is_recovered_automatically(
+    tmp_path: Path, monkeypatch
+):
+    """A build that dies after the partition write leaves a `partial-`
+    file, not a `part-` one -- and the next build removes it and rebuilds.
+
+    The old shape wrote the final `part-<ns>.parquet` at step 8 and the
+    manifest at step 10, so anything in between (a full disk on
+    `build_stats.json`, a SIGKILL) left a valid-looking orphan with no
+    manifest. `_already_built` saw no pointer and retried;
+    `write_feature_partition`'s write-once glob then refused FOREVER, and
+    the repair was a human deleting a file from a write-once tier -- the
+    one operation the tier exists to forbid.
+    """
+    import features.build as build_module
+
+    lake_root, registry_root = _roots(tmp_path)
+    seed_two_days(lake_root, registry_root)
+
+    def die(*args, **kwargs):
+        raise AssertionError("simulated crash after the write")
+
+    monkeypatch.setattr(build_module, "_build_stats", die)
+    with pytest.raises(AssertionError, match="simulated crash"):
+        _build(lake_root, registry_root)
+
+    date_dir = _partition_dir(lake_root)
+    assert sorted(p.name[:8] for p in date_dir.glob("*.parquet")) == ["partial-"], (
+        "the orphan must be CLEARLY NAMED -- never a file a reader could "
+        "mistake for a committed partition"
+    )
+    assert not by_date_index_path(
+        registry_root, f"{SYMBOL}.features", SYMBOL, "features", DATE
+    ).exists()
+
+    monkeypatch.undo()
+    result = _build(lake_root, registry_root)
+    assert result["manifest"]["manifest_id"]
+    assert [p.name[:5] for p in sorted(date_dir.glob("*.parquet"))] == ["part-"], (
+        "exactly one committed partition, and no leftover staging file"
+    )
+
+
+def test_an_orphan_part_file_reports_the_date_and_does_not_abort_the_range(
+    tmp_path: Path, monkeypatch
+):
+    """The remaining window is the rename-to-manifest one. If a build dies
+    there, the date is genuinely wedged -- but ONE wedged day silently
+    truncating a week of builds is the failure that looks most like
+    success, so the range reports it and carries on.
+    """
+    import features.build as build_module
+    from tests.fixtures.feature_build import THIRD_DATE
+
+    lake_root, registry_root = _roots(tmp_path)
+    _seed_three_days(lake_root, registry_root)
+
+    def die(*args, **kwargs):
+        raise RuntimeError("simulated crash after the rename")
+
+    monkeypatch.setattr(build_module, "issue_feature_manifest", die)
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        _build(lake_root, registry_root)
+    monkeypatch.undo()
+
+    assert [p.name[:5] for p in _partition_dir(lake_root).glob("*.parquet")] == [
+        "part-"
+    ]
+
+    statuses = {
+        r["date"]: r
+        for r in build_features_range(
+            SYMBOL,
+            DATE,
+            THIRD_DATE,
+            lake_root=lake_root,
+            registry_root=registry_root,
+            code_hash="deadbeef",
+        )
+    }
+    assert statuses[DATE]["status"] == "orphaned"
+    assert "no manifest" in statuses[DATE]["reason"]
+    assert statuses[NEXT_DATE]["status"] == "written", (
+        "the later dates must still be attempted -- one wedged day must not "
+        "truncate the range"
+    )
+    assert statuses[THIRD_DATE]["status"] == "skipped"
