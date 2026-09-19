@@ -247,21 +247,29 @@ value matches l1_sparsity.degraded_seconds today, but it is a SEPARATE key
 on purpose: this one decides a per-ROW label's validity, l1_sparsity
 decides a per-DAY verdict, and the two will diverge the moment either is
 retuned. Measured context: the clean 2026-09-13 day has 27 inter-quote
-gaps over 1 s, while 09-14/09-15 carry multi-thousand-second battery-sleep
-outages (root cause: data/capture/power.py -- caffeinate's
-PreventSystemSleep assertion is honored on AC power only). A per-row rule
-is what keeps those outages from silently producing labels that span them.
+gaps over 1 s and NONE over 30 s, so the rule never fires there, while
+2026-09-14 carries four gaps over 30 s -- 2894.1 s, 302.4 s, 160.8 s and
+71.5 s -- of battery-sleep outage (root cause: data/capture/power.py --
+caffeinate's PreventSystemSleep assertion is honored on AC power only).
+Those four null 38,565 of that day's 11,323,694 primary labels (0.34%)
+and 221,904 of its ret_10min_mid (1.96%). A per-row rule is what keeps
+those outages from silently producing labels that span them.
 """
 
 [feature_label_coverage]
 degraded_missing_pct = 2.0
 notes = """
 Fraction of decision rows whose PRIMARY label (ret_10s_mid) is null. Read
-from build_stats.json's n_decision_rows/null_primary_label_rows. Measured
-end-of-partition loss alone is 0.0063% at 10 s and 0.68% at 10 min, so
-anything above 2% means a real gap rather than the day's own tail. On
-09-14/09-15 it legitimately will exceed this: acknowledge the day, never
-raise the threshold (same rule as gap_coverage). A features manifest is
+from build_stats.json's n_decision_rows/null_primary_label_rows. With the
+D+1 label tail present, end-of-partition loss is ZERO by construction
+(the tail is what removes it); without a tail it would be 0.0074% at 10 s
+and 0.66% at 10 min on 2026-09-13's decision rows, so anything above 2%
+means a real gap rather than the day's own tail. MEASURED on the outage
+day 2026-09-14: 38,565 of 11,323,694 decision rows (0.34%) lose the
+primary label to the null-on-gap rule -- under this threshold, and
+correctly so: the day is degraded, not unusable. A day whose outages did
+push it over would be acknowledged, never threshold-widened (same rule as
+gap_coverage). A features manifest is
 acknowledged under stream="features" -- verified 2026-09-19 that
 store.validate_dq_acknowledgement has no stream allowlist.
 """
@@ -288,12 +296,18 @@ The labels' exact-zero fractions, recorded rather than smoothed
 (04-CONTEXT.md D-04-17). Always dq_status="ok": 97.5% of quotes sit at a
 1-tick spread, so mid lands on a half-tick 98.8% of the time and the
 returns are heavily quantized -- a property of the venue, not a defect.
-Measured on 2026-09-13: ret_10s_mid is exactly zero on 29.7% of rows and
-ret_1s_mid on 62.5%. Recorded because it constrains Phase 5/8: the loss
-function and every IC/Sharpe statistic must be chosen knowing the target
-has a ~30% point mass at zero. Also carries the per-update ring-buffer
+Measured on 2026-09-13 over the 6,864,853 DECISION ROWS -- the row set
+these fractions are computed on, because it is the row set the partition
+writes: ret_10s_mid is exactly zero on 43.9% of rows and ret_1s_mid on
+80.8%. 04-RESEARCH-NOTES.md's 29.7%/62.5% are the same day measured per
+L1 UPDATE (17,167,290 rows), which oversamples busy milliseconds at 2.5
+quotes per distinct etime and therefore shows fewer zeros; both are kept
+so a reader who arrives from the research note is not silently 14 points
+out. Recorded because it constrains Phase 5/8: the loss function and
+every IC/Sharpe statistic must be chosen knowing the target has a ~44%
+point mass at zero. Also carries the per-update ring-buffer
 window occupancy and the prevailing-vs-next-quote as-of disagreement
-fraction (0.26% of rows at h=10 s) -- the latter is recorded as a DQ
+fraction (0.206% of decision rows at h=10 s; 0.263% per L1 update) -- the latter is recorded as a DQ
 number rather than as a partition column, because an uncatalogued label
 column would be a catalogue-rule violation.
 """

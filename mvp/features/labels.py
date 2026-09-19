@@ -8,8 +8,9 @@ mid (the first update at or after `t+h`). This module implements the
 prevailing one, which is `searchsorted(..., side="right") - 1`, because it
 is the same "the quote in force at a time" that
 `data/ingest/trade_side.py` already uses (`strategy="backward"`). Measured
-on 2026-09-13 at h=10 s the two disagree on 0.26 % of rows, correlation
-0.999907. Small, non-zero, and precisely the kind of unrecorded choice
+on 2026-09-13 at h=10 s the two disagree on 0.206 % of DECISION ROWS
+(0.263 % per L1 update -- the row set 04-RESEARCH-NOTES.md's 0.26 %
+figure was measured on), correlation 0.999907. Small, non-zero, and precisely the kind of unrecorded choice
 that makes two runs irreproducible -- so the delta is COUNTED and reported
 as a DQ number (`asof_convention_disagreement_rows`) rather than
 materialized as a second column, which would be an uncatalogued label.
@@ -250,8 +251,17 @@ def compute_labels(
 
     `quote_etime` is expected to already carry day D+1's quotes appended
     (`next_day_quote_series`); without them the last 10 minutes of D are
-    `null_past_end` rather than labelled -- 0.68 % of a real day at
-    h=10 min, 0.0063 % at h=10 s.
+    `null_past_end` rather than labelled -- measured on 2026-09-13's
+    6,864,853 decision rows, 45,159 rows (0.66 %) at h=10 min and 507
+    (0.0074 %) at h=10 s, and zero of either with the tail.
+
+    EVERY MEASURED LABEL STATISTIC NAMES ITS ROW SET, because the two
+    available ones differ by a lot: per DECISION ROW (what this function
+    is called with, and what the partition stores) `ret_10s_mid` is
+    exactly zero on 43.9 % of rows with std 1.447e-04, while per L1
+    UPDATE -- 04-RESEARCH-NOTES.md's row set, 17.2M rows oversampling
+    busy milliseconds at 2.5 quotes per distinct `etime` -- the same day
+    reads 29.7 % and 1.853e-04.
 
     Returns `({label_name: float64 array}, stats)`. NaN is "no label";
     `features/tier.py` converts it to null on the way to the partition.

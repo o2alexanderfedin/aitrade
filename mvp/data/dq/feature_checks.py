@@ -251,7 +251,9 @@ def check_feature_window(build_stats: dict, thresholds: DQThresholds) -> dict:
 
 def check_feature_asof_convention(build_stats: dict, thresholds: DQThresholds) -> dict:
     """How often the prevailing-mid and next-quote as-of conventions
-    disagree -- informational, 0.26 % of rows at h=10 s (measured).
+    disagree -- informational, 0.206 % of DECISION ROWS at h=10 s
+    (measured 2026-09-13; 0.263 % per L1 update, which is the row set
+    04-RESEARCH-NOTES.md's 0.26 % was measured on).
 
     Recorded as a DQ NUMBER rather than as a partition column on purpose:
     D-04-05 locks the prevailing-mid convention, and a second column
