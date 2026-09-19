@@ -214,6 +214,28 @@ class ResyncWarmupConfig:
 
 
 @dataclass(frozen=True)
+class LabelGapThresholds:
+    max_quote_gap_seconds: float
+    notes: str
+
+
+@dataclass(frozen=True)
+class FeatureLabelCoverageThresholds:
+    degraded_missing_pct: float
+    notes: str
+
+
+@dataclass(frozen=True)
+class FeatureRowFiltersThresholds:
+    notes: str
+
+
+@dataclass(frozen=True)
+class FeatureQuantizationThresholds:
+    notes: str
+
+
+@dataclass(frozen=True)
 class DQThresholds:
     gap_coverage: GapCoverageThresholds
     reconciliation: ReconciliationThresholds
@@ -225,6 +247,13 @@ class DQThresholds:
     event_time_plausibility: EtimePlausibilityThresholds
     rtime_plausibility: RtimePlausibilityThresholds
     resync_warmup: ResyncWarmupConfig
+    # Phase 4's feature-tier checks. They live on the same frozen object
+    # and are loaded by the same `load_dq_thresholds`, so there is exactly
+    # one TOML reader in the codebase and no second one to drift from it.
+    label_gap: LabelGapThresholds
+    feature_label_coverage: FeatureLabelCoverageThresholds
+    feature_row_filters: FeatureRowFiltersThresholds
+    feature_quantization: FeatureQuantizationThresholds
 
 
 def _load_toml(path: Path) -> dict[str, dict]:
@@ -252,6 +281,16 @@ def load_dq_thresholds(path: Path = DQ_THRESHOLDS_TOML) -> DQThresholds:
             ),
             rtime_plausibility=RtimePlausibilityThresholds(**raw["rtime_plausibility"]),
             resync_warmup=ResyncWarmupConfig(**raw["resync_warmup"]),
+            label_gap=LabelGapThresholds(**raw["label_gap"]),
+            feature_label_coverage=FeatureLabelCoverageThresholds(
+                **raw["feature_label_coverage"]
+            ),
+            feature_row_filters=FeatureRowFiltersThresholds(
+                **raw["feature_row_filters"]
+            ),
+            feature_quantization=FeatureQuantizationThresholds(
+                **raw["feature_quantization"]
+            ),
         )
     except (KeyError, TypeError) as exc:
         raise DQConfigError(f"malformed dq_thresholds.toml: {exc}") from None

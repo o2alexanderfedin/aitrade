@@ -228,3 +228,72 @@ Read seconds=60 as "60 curated-etime seconds after an APPROXIMATELY
 located boundary", not etime-exact. Full transcript:
 03-07-GAPS-SUMMARY.md.
 """
+
+# --------------------------------------------------------------------------
+# Phase 4 (feature/label engine) -- the feature TIER's own checks. These
+# judge lake/features/ partitions, never curated ones, and are computed
+# from the build's own build_stats.json rather than re-scanned from the
+# written artifact (same reason as reconciliation/na_placeholder above: the
+# artifact structurally cannot answer questions about rows that were
+# filtered out before it was written).
+# --------------------------------------------------------------------------
+
+[label_gap]
+max_quote_gap_seconds = 30
+notes = """
+A label whose [t, t+h] window contains an L1 inter-quote gap longer than
+this is NULL, never a carried-forward price (04-CONTEXT.md D-04-05). The
+value matches l1_sparsity.degraded_seconds today, but it is a SEPARATE key
+on purpose: this one decides a per-ROW label's validity, l1_sparsity
+decides a per-DAY verdict, and the two will diverge the moment either is
+retuned. Measured context: the clean 2026-09-13 day has 27 inter-quote
+gaps over 1 s, while 09-14/09-15 carry multi-thousand-second battery-sleep
+outages (root cause: data/capture/power.py -- caffeinate's
+PreventSystemSleep assertion is honored on AC power only). A per-row rule
+is what keeps those outages from silently producing labels that span them.
+"""
+
+[feature_label_coverage]
+degraded_missing_pct = 2.0
+notes = """
+Fraction of decision rows whose PRIMARY label (ret_10s_mid) is null. Read
+from build_stats.json's n_decision_rows/null_primary_label_rows. Measured
+end-of-partition loss alone is 0.0063% at 10 s and 0.68% at 10 min, so
+anything above 2% means a real gap rather than the day's own tail. On
+09-14/09-15 it legitimately will exceed this: acknowledge the day, never
+raise the threshold (same rule as gap_coverage). A features manifest is
+acknowledged under stream="features" -- verified 2026-09-19 that
+store.validate_dq_acknowledgement has no stream allowlist.
+"""
+
+[feature_row_filters]
+notes = """
+Informational per-filter drop count on the feature tier, always
+dq_status="ok" when the counts are present -- no numeric threshold, mirroring
+crossed_locked_book. This is what DATA-07's "dropped-event counts per
+filter" asks for on this tier (04-CONTEXT.md D-04-12): X="NA" placeholder
+trades (price 0, qty 0) are excluded from trade_flow, and trades whose
+side_method is "unknown" contribute 0 to signed flow. Both counts AND both
+rates are reported so the two are distinguishable. FAIL-CLOSED on a
+missing key (the WR-02 pattern): a stats dict that cannot answer the
+question reports "failed", never "ok". Measured on 2026-09-13:
+na_placeholder_excluded=0 and unknown_side_rows=0 of 1,409,705 trade rows
+-- Phase 3's curated build already filtered the placeholders, so the
+filter is the uniform no-op its docstring predicts on an already-clean day.
+"""
+
+[feature_quantization]
+notes = """
+The labels' exact-zero fractions, recorded rather than smoothed
+(04-CONTEXT.md D-04-17). Always dq_status="ok": 97.5% of quotes sit at a
+1-tick spread, so mid lands on a half-tick 98.8% of the time and the
+returns are heavily quantized -- a property of the venue, not a defect.
+Measured on 2026-09-13: ret_10s_mid is exactly zero on 29.7% of rows and
+ret_1s_mid on 62.5%. Recorded because it constrains Phase 5/8: the loss
+function and every IC/Sharpe statistic must be chosen knowing the target
+has a ~30% point mass at zero. Also carries the per-update ring-buffer
+window occupancy and the prevailing-vs-next-quote as-of disagreement
+fraction (0.26% of rows at h=10 s) -- the latter is recorded as a DQ
+number rather than as a partition column, because an uncatalogued label
+column would be a catalogue-rule violation.
+"""
