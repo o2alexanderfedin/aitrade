@@ -75,6 +75,12 @@ repos:
         language: system
         pass_filenames: false
 
+      - id: single-feature-path
+        name: check_single_feature_path
+        entry: uv run --locked --directory mvp python -m tools.check_single_feature_path
+        language: system
+        pass_filenames: false
+
       - id: numba-globals
         name: check_numba_globals
         entry: uv run --locked --directory mvp python -m tools.check_numba_globals

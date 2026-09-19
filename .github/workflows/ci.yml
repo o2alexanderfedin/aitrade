@@ -54,6 +54,9 @@ jobs:
       - name: check_lockbox_containment
         run: uv run --locked --directory mvp python -m tools.check_lockbox_containment
 
+      - name: check_single_feature_path
+        run: uv run --locked --directory mvp python -m tools.check_single_feature_path
+
       - name: check_numba_globals
         run: uv run --locked --directory mvp python -m tools.check_numba_globals
 
