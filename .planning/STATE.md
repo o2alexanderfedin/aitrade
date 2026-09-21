@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Phase 4 (Feature & Label Engine) complete -- 7 plans, 953 tests, CI green, verification 5/5 (both human items resolved), review 1 critical + 7 warnings all fixed and re-proved. Merged to develop. The decision-row matrix exists on the real lake: features/date=2026-09-12/13/14, 22,381,684 rows, manifest-addressed with provenance chaining to curated. CARRY FORWARD INTO PHASE 5: (a) a held-out day's feature BYTES stay readable by a bare read_parquet -- load_features is one barrier where Phase 3's lockbox had two, and Phase 5's declaration step must move or delete the partition for the day BEFORE the declared date, since that is the one carrying the label tail; (b) 249 labels on disk are fabricated zeros from the pre-fix staleness rule (180 ret_1s, 69 ret_10s) -- partitions are write-once, so a rebuild under a new manifest is Phase 5's call; (c) every row inside an L1 outage is a real trade wearing a frozen book (29,058 inside one 2894s gap) with both warm-up flags false -- Phase 5 needs a lake-derived staleness flag; (d) the primary label is exactly zero on 43.89% of written decision rows, so loss and IC/Sharpe choices must account for a point mass at zero; (e) test_the_embargo_bound_is_tight_enough_to_bite asserts embargo == horizon, so LENGTHENING an embargo fails CI by design. Next: `/gsd-autonomous --from 5` (Fold Harness & Overfitting Controls). Work ONLY from /Volumes/ProjectsSSD/aihedgefund/repo. Capture daemon Run J (PID 72546) still carries the OLD power probe and segment stamp -- a restart is pending user approval. Battery sleep is now held by /Library/LaunchDaemons/com.aihedgefund.disablebatterysleep.plist (proved: flipped to 0, restored after 195s)."
-last_updated: "2026-09-21T03:45:55.922Z"
-last_activity: 2026-09-21 -- Phase 5 execution started
+stopped_at: "Phase 5 Plan 0 (widen curated pool 2026-09-16..19) complete. Curated tier widened to 8 days for bookTicker/trade; feature tier stays at 3 days pending user DQ acknowledgement (ACK NEEDED, see 05-00-SUMMARY.md and STATE.md blockers). Next: /gsd-execute-phase for Plan 1 (05-01)."
+last_updated: "2026-09-21T04:22:40.816Z"
+last_activity: 2026-09-21
 progress:
   total_phases: 11
   completed_phases: 4
   total_plans: 29
-  completed_plans: 22
-  percent: 76
+  completed_plans: 23
+  percent: 79
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 5 (Fold Harness & Overfitting Controls) — EXECUTING
-Plan: 1 of 8
-Status: Executing Phase 5
-Last activity: 2026-09-21 -- Phase 5 execution started
+Plan: 2 of 8
+Status: Ready to execute
+Last activity: 2026-09-21
 
-Progress: [██████████] 100%
+Progress: [████████░░] 79%
 
 > That 100% is `state.update-progress`'s definition -- SUMMARY files over PLAN files on disk (22 summaries over 21 plans, capped at 100%). Every one of the 21 plans now has a summary; the 22nd is `03-07-GAPS-SUMMARY.md`, which has no plan of its own. It is NOT milestone completion: phases 5-11 have no plans on disk yet, and 3 of 11 phases are marked complete -- Phase 4's seven plans are all executed, and the phase closes at its verification/merge step, exactly as Phases 1-3 did.
 
@@ -68,6 +68,7 @@ Progress: [██████████] 100%
 | Phase 04 P05 | ~3h | 2 tasks | 10 files |
 | Phase 4 P06 | ~2h | 2 tasks | 12 files |
 | Phase 4 P07 | ~2h | 2 tasks | 9 files |
+| Phase 05 P00 | 50min | 2 tasks | 23 files |
 
 ## Accumulated Context
 
@@ -131,6 +132,9 @@ Recent decisions affecting current work:
 - [Phase 4]: 04-07: the `features_norm` tier has no DQ rows and its loader deliberately skips the pause gate; its partition entries carry no `date`, so the gate is not merely unnecessary but INAPPLICABLE (KeyError, measured). Adding the gate alone pauses it forever; adding a date alone gives it a `missing` verdict.
 - [Phase 4]: 04-07: a fold boundary is an inclusive int64-ns `train_end_etime` argument (`fit_training_segment`), never a date string. The artifact stores Welford `(count, mean, M2)` so an EXTENDED training segment can resume exactly rather than refit.
 - [Phase 4]: 04-07: frozen normalization of `mid` puts the very next day at z = +4.31 with 2.85x the training spread. Correct behaviour (a level moved), and the reason a per-window recomputation would look tidy and be a leak. Phase 8 should give `mid` a differenced model-input form under a NEW catalogue name.
+- [Phase 05]: [Phase 5, Plan 0]: A capture-sourced curated day may carry a content-identical redelivered row (BoundedDedup TTL-eviction tradeoff); data.ingest.curated_build now drops it before materialize_seq, gated on chosen_source=='capture', keeping the earliest arrival -- a content-differing duplicate id still raises.
+- [Phase 05]: [Phase 5, Plan 0]: build_curated_day never reaches the network; archive precedence for a newly-published trade day requires running data.backfill.downloader before build_curated_range, then re-running build_curated_range to supersede a capture-sourced first pass.
+- [Phase 05]: [Phase 5, Plan 0]: The curated tier widened to 2026-09-12..19 (8 new by-date pointers), but the FEATURE tier stayed at 3 days -- all eight new curated partitions are DQ degraded/failed (multi-hour real capture outages) and no acknowledgement was written (constraint 11); ACK NEEDED FROM USER before 2026-09-15..18 can build.
 
 ### Pending Todos
 
@@ -154,6 +158,7 @@ Recent decisions affecting current work:
 - [Phase 4, 2026-09-19]: **A green test can be green for the wrong reason, and only mutating the code it claims to cover finds that.** Plan 04-03's tie-order test drew `etime`s from a grid so fine that 4,000 rows shared 3 distinct values -- with no ties the two merge orders were literally the same stream, so the float64-accumulator mutation survived a passing test. Generalises the phase's guardrails-runtime-first lesson: mutate the code behind a test that already passes, not only the code behind a new one.
 - [Phase 8]: Q3 (GPU spec & training budget) unresolved — blocks transformer track; mvp.md says needed before v0
 - [Phase 11]: Q5 (2nd-tier symbol choice) — check tick-size/filter re-tick history of candidates first
+- [OPS, ACK NEEDED FROM USER, 2026-09-20]: Phase 5 Plan 0 widened curated bookTicker/trade to 2026-09-16..19 but found all 8 new curated partitions DQ degraded/failed (multi-hour capture outages, up to 17816s on 2026-09-19). No acknowledgement was written (executor is forbidden from writing one). Until 2026-09-16 (bookTicker+trade) and 2026-09-19 (bookTicker+trade) are acknowledged with a reason citing the measured outage numbers (05-00-SUMMARY.md), the feature tier stays at 3 days (2026-09-12..14) -- 2026-09-15..18 all refuse with DQPauseError.
 
 ## Deferred Items
 
@@ -165,7 +170,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-19
-Stopped at: Phase 4 (Feature & Label Engine) complete -- 7 plans, 953 tests, CI green, verification 5/5 (both human items resolved), review 1 critical + 7 warnings all fixed and re-proved. Merged to develop. The decision-row matrix exists on the real lake: features/date=2026-09-12/13/14, 22,381,684 rows, manifest-addressed with provenance chaining to curated. CARRY FORWARD INTO PHASE 5: (a) a held-out day's feature BYTES stay readable by a bare read_parquet -- load_features is one barrier where Phase 3's lockbox had two, and Phase 5's declaration step must move or delete the partition for the day BEFORE the declared date, since that is the one carrying the label tail; (b) 249 labels on disk are fabricated zeros from the pre-fix staleness rule (180 ret_1s, 69 ret_10s) -- partitions are write-once, so a rebuild under a new manifest is Phase 5's call; (c) every row inside an L1 outage is a real trade wearing a frozen book (29,058 inside one 2894s gap) with both warm-up flags false -- Phase 5 needs a lake-derived staleness flag; (d) the primary label is exactly zero on 43.89% of written decision rows, so loss and IC/Sharpe choices must account for a point mass at zero; (e) test_the_embargo_bound_is_tight_enough_to_bite asserts embargo == horizon, so LENGTHENING an embargo fails CI by design. Next: `/gsd-autonomous --from 5` (Fold Harness & Overfitting Controls). Work ONLY from /Volumes/ProjectsSSD/aihedgefund/repo. Capture daemon Run J (PID 72546) still carries the OLD power probe and segment stamp -- a restart is pending user approval. Battery sleep is now held by /Library/LaunchDaemons/com.aihedgefund.disablebatterysleep.plist (proved: flipped to 0, restored after 195s).
-Resume file: .planning/phases/04-feature-label-engine/04-REVIEW-FIX.md
+Last session: 2026-09-21T04:22:40.811Z
+Stopped at: Phase 5 Plan 0 (widen curated pool 2026-09-16..19) complete. Curated tier widened to 8 days for bookTicker/trade; feature tier stays at 3 days pending user DQ acknowledgement (ACK NEEDED, see 05-00-SUMMARY.md and STATE.md blockers). Next: /gsd-execute-phase for Plan 1 (05-01).
+Resume file: None
 Resumed: 2026-09-19 -- session restored at the Phase 4/5 boundary. Verified live, not read: develop at 9898e4d clean and level with origin, no PLAN without a SUMMARY, capture daemon PID 72546 alive at 2d14h, SleepDisabled=1 (the LaunchDaemon is holding), 844 GiB free. HANDOFF.json kept until Phase 5 actually starts.
