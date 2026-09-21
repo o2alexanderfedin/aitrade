@@ -60,9 +60,24 @@ def _build_fixture(lake_root, registry_root, *, rows: int = 4_500):
         step_ns=NS_PER_SECOND,
         rows=rows,
     )
+    segments = _five_seg_segments()
+    # Anti-vacuity (absolute rule): the fixture's own physical span must be
+    # asserted to actually cover all five declared segments BEFORE any
+    # behavioural test relies on it -- otherwise a too-short `rows` would
+    # still pass every `df.height > 0` check while several segments
+    # silently receive zero rows.
+    assert span["etime_min"] <= segments[0]["start_ns"], (
+        f"fixture span starts at {span['etime_min']} but train_s1 starts at "
+        f"{segments[0]['start_ns']} -- the fixture does not cover the first segment"
+    )
+    assert span["etime_max"] >= segments[-1]["end_ns"] - NS_PER_SECOND, (
+        f"fixture span ends at {span['etime_max']} but held_out ends at "
+        f"{segments[-1]['end_ns']} -- the fixture does not cover the last segment"
+    )
+
     manifest = issue_segment_manifest(
         layout="5seg",
-        segments=_five_seg_segments(),
+        segments=segments,
         upstream_feature_manifest_ids=[span["manifest_id"]],
         admission=ADMISSION_DEFAULT,
         errata_id=None,
