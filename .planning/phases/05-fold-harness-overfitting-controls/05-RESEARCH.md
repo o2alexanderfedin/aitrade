@@ -502,22 +502,25 @@ Not applicable in the conventional sense — this phase has no external library 
 | A4 | López de Prado's *Advances in Financial Machine Learning* Ch. 7 is the correct citation for purge/embargo definitions (not re-opened/re-verified this session; matched from training knowledge against the codebase's own already-precise description) | Q8 | Low risk — the mechanism itself is independently specified by D-05-04 in exact, testable terms regardless of the citation's precision; only the academic framing in a docstring/spec.md reference could be imprecise |
 | A5 | In-memory errata recomputation (no partition write) costs meaningfully less than the full build times (10.3/23.6/40.0 s) reported in 04-05-SUMMARY, since no write/manifest/DQ-report step is needed | Q5 | If wrong, Q5's cost estimate for D-05-20 undercounts; low risk since even the full build times are small (≤40 s/day, ≤2 min total) |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Does the compressed 3-segment fallback's shared "Train" segment get its OWN segment manifest entry distinct from the 5-segment layout's `train_s1`/`train_s2`, or is `fold_config` alone enough to disambiguate a single `"train"`-named entry?**
    - What we know: D-05-08 says segments are named entries inside one manifest per layout; D-05-06 names the compressed layout's segments as `train | val | held_out`.
    - What's unclear: whether the k-fold OOF blocks (Q8) get their own named entries inside the same manifest (`oof_block_0`, `oof_block_1`, ...) or are computed on-the-fly from the single `train` entry's interval at accessor time.
    - Recommendation: given D-05-09 lists `oof_block` as a valid `role`, the cleanest reading is that OOF blocks ARE named entries — the planner should confirm this shapes the manifest schema before writing `segments.py`.
+   - **RESOLVED:** OOF blocks ARE named manifest entries (`oof_block_0`..`oof_block_{k-1}`, role `oof_block`), computed once at issuance by `harness.kfold.purged_embargoed_blocks` and written into the manifest's `segments` list. Implemented in `05-02-PLAN.md` (`harness/kfold.py` + `harness/segments.py`'s `compressed_3seg` branch).
 
 2. **What exact dataset name does a lockbox-tier feature manifest use?**
    - What we know: `resolve_manifest` requires `(manifest_id, dataset)`; `data.store.BY_DATE_INDEXED_TIERS` currently only contains `curated`/`features`, deliberately excluding the lockbox tier from by-date indexing (D-04-11's own note: "the quarantined tier stays outside it").
    - What's unclear: whether the moved partition keeps the SAME dataset name (`BTCUSDT.features`) under `tier="lockbox"`, or gets a distinct dataset name.
    - Recommendation: read `mvp/tests/lockbox/test_token_one_look.py` (a sanctioned test file, per Q6) directly at plan time — it "builds a readable synthetic lockbox segment," which almost certainly already answers this by example.
+   - **RESOLVED:** the moved partition keeps the SAME dataset name pattern, `dataset=f"{symbol}.{FEATURES_TIER}"` (= `"BTCUSDT.features"`), with only `tier="lockbox"` differing — taken directly from `tests/lockbox/test_token_one_look.py:_build_segment`'s existing convention for a trade partition (`dataset="BTCUSDT.trade"`, only `tier` changes) and extrapolated to features. Implemented in `05-05-PLAN.md` (`data/lockbox.py:quarantine_feature_partition`).
 
 3. **Where does the errata registry live — nested inside each segment manifest, or a sibling `lake_registry/errata/` directory?**
    - What we know: D-05-09 says "the errata list id it applies" is a segment-manifest field (implying a separate id, referenced not embedded); D-05-20 says "commit the keys... The harness masks listed cells to null at load and the segment manifest names the errata id."
    - What's unclear: the exact storage shape of the errata artifact itself.
    - Recommendation: treat as a small sibling registry (`errata/<id>.json`, same guardrail treatment as `segments/`, per Q1's recommendation) — simplest reading consistent with "the segment manifest names the errata id" (an id reference, not embedded content).
+   - **RESOLVED:** a sibling registry, `mvp/data/lake_registry/errata/<id>.json`, same content-addressing and guardrail treatment as `segments/` (covered by `check_manifest_append_only`/`check_manifest_id_integrity`, not `check_no_manifest_rewrite`). The segment manifest's `errata_id` field references it by id. Computed in `05-04-PLAN.md` (`harness/errata.py:compute_errata_cells`), committed for real in `05-07-PLAN.md` (Task 2, same commit as the guardrail extension).
 
 ## Environment Availability
 
