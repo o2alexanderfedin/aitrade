@@ -4,11 +4,17 @@ Task 2: idempotent multi-day orchestration over both streams, with
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import polars as pl
+import pytest
 
-from data.ingest.curated_build import build_curated_day, build_curated_range
+from data.ingest.curated_build import (
+    _curated_build_stats_path,
+    build_curated_day,
+    build_curated_range,
+)
 from data.store import by_date_index_path
 
 
@@ -68,6 +74,134 @@ def _write_capture_bookticker_partition(
         }
     )
     df.write_parquet(date_dir / "part-1.parquet")
+
+
+def _write_capture_bookticker_rows(
+    capture_root_dir: Path, date: str, rows: list[dict]
+) -> None:
+    """Write an explicit, fully-specified set of bookTicker capture rows --
+    used where a test needs per-row control over `seq`/`rtime`/`etime`
+    (05-00-PLAN.md's capture-redelivery-duplicate and
+    real-anomaly-duplicate cases), which
+    `_write_capture_bookticker_partition`'s one-row-per-update_id
+    convenience cannot express."""
+    date_dir = (
+        capture_root_dir / "symbol=BTCUSDT" / "stream=bookTicker" / f"date={date}"
+    )
+    date_dir.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame(rows).write_parquet(date_dir / "part-1.parquet")
+
+
+def _bookticker_row(
+    *, update_id: int, etime: int, seq: int, rtime: int, bid_price: float = 100.0
+) -> dict:
+    return {
+        "symbol": "BTCUSDT",
+        "stream": "bookTicker",
+        "update_id": update_id,
+        "etime": etime,
+        "event_time": etime,
+        "bid_price": bid_price,
+        "bid_qty": 1.0,
+        "ask_price": bid_price + 0.1,
+        "ask_qty": 1.0,
+        "seq": seq,
+        "rtime": rtime,
+        "source": "capture",
+        "schema_version": 2,
+    }
+
+
+def test_capture_redelivery_duplicate_is_dropped_keeping_lowest_seq(tmp_path: Path):
+    """The real 2026-09-16 case (05-00-PLAN.md): one `update_id` delivered
+    twice by the daemon's redundant connection, content-identical except
+    `seq`/`rtime` (STATE.md's BoundedDedup TTL tradeoff -- a duplicate
+    delivered later than the dedup TTL is not deduped by the daemon).
+    `build_curated_day` must drop the later redelivery and keep the
+    earliest arrival, not raise."""
+    lake_root_dir = tmp_path / "lake"
+    registry_root = tmp_path / "registry"
+    capture_root = tmp_path / "capture"
+    rows = [
+        _bookticker_row(update_id=1, etime=1_000, seq=0, rtime=100),
+        _bookticker_row(update_id=2, etime=2_000, seq=1, rtime=200),
+        # the redelivered duplicate of update_id=2: identical content,
+        # later seq (arrival order) and much later rtime (arrival clock).
+        _bookticker_row(update_id=2, etime=2_000, seq=2, rtime=147_300),
+        _bookticker_row(update_id=3, etime=3_000, seq=3, rtime=300),
+    ]
+    _write_capture_bookticker_rows(capture_root, "2026-09-16", rows)
+
+    manifest = build_curated_day(
+        "BTCUSDT",
+        "bookTicker",
+        "2026-09-16",
+        lake_root_dir,
+        capture_root,
+        registry_root=registry_root,
+        code_hash="test",
+    )
+    written = pl.read_parquet(lake_root_dir / manifest["partitions"][0]["path"])
+    assert written.height == 3, "one of the two update_id=2 rows must be dropped"
+    assert sorted(written["update_id"].to_list()) == [1, 2, 3]
+    kept = written.filter(pl.col("update_id") == 2)
+    assert kept["rtime"].item() == 200, "must keep the EARLIEST arrival (lowest seq)"
+
+    stats_path = _curated_build_stats_path(
+        lake_root_dir, "BTCUSDT", "bookTicker", "2026-09-16"
+    )
+    stats = json.loads(stats_path.read_text())
+    assert stats["capture_redelivery_rows_dropped"] == 1
+
+
+def test_non_identical_duplicate_update_id_still_raises(tmp_path: Path):
+    """Two rows sharing an `update_id` that DISAGREE on a real exchange
+    field (not just `seq`/`rtime`) are a genuine anomaly, not a
+    redundant-connection redelivery -- the redelivery-dedup must leave
+    them untouched and `materialize_seq`'s uniqueness assertion must still
+    raise."""
+    lake_root_dir = tmp_path / "lake"
+    registry_root = tmp_path / "registry"
+    capture_root = tmp_path / "capture"
+    rows = [
+        _bookticker_row(update_id=1, etime=1_000, seq=0, rtime=100),
+        _bookticker_row(update_id=2, etime=2_000, seq=1, rtime=200, bid_price=100.0),
+        # same update_id, DIFFERENT bid_price -- a real anomaly.
+        _bookticker_row(update_id=2, etime=2_000, seq=2, rtime=250, bid_price=101.0),
+    ]
+    _write_capture_bookticker_rows(capture_root, "2026-09-16", rows)
+
+    with pytest.raises(ValueError, match="duplicate value"):
+        build_curated_day(
+            "BTCUSDT",
+            "bookTicker",
+            "2026-09-16",
+            lake_root_dir,
+            capture_root,
+            registry_root=registry_root,
+            code_hash="test",
+        )
+
+
+def test_archive_sourced_duplicate_trade_id_still_raises(tmp_path: Path):
+    """The capture-redelivery dedup is gated on `chosen_source == "capture"`
+    -- an archive-sourced day (no redundant-connection concept) with a
+    duplicate `trade_id` must still raise, unaffected by this plan's fix."""
+    lake_root_dir = tmp_path / "lake"
+    registry_root = tmp_path / "registry"
+    capture_root = tmp_path / "capture"
+    _write_archive_trade_partition(lake_root_dir, "2026-09-13", [1, 2, 2])
+
+    with pytest.raises(ValueError, match="duplicate value"):
+        build_curated_day(
+            "BTCUSDT",
+            "trade",
+            "2026-09-13",
+            lake_root_dir,
+            capture_root,
+            registry_root=registry_root,
+            code_hash="test",
+        )
 
 
 def test_build_curated_range_trade_writes_each_missing_day_once(tmp_path: Path):
