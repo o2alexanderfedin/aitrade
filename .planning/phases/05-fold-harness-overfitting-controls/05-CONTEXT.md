@@ -3,6 +3,7 @@ phase: 5
 phase_name: Fold Harness & Overfitting Controls
 created: 2026-09-20
 mode: smart discuss (autonomous run; five grey areas proposed as tables, the user accepted every recommended answer and the Plan-0 data-pool expansion)
+amended: 2026-09-20 after 05-RESEARCH.md — D-05-04/05/07/08/18 made concrete (two-sided purge, FOLD_EMBARGO_NS as a declared constant, registry guardrail wiring, OOF blocks as named entries, lockbox move inside data/lockbox.py)
 ---
 
 # Phase 5 Context: Fold Harness & Overfitting Controls
@@ -99,18 +100,31 @@ Row membership is `start_ns <= etime < end_ns` on the decision-row `etime`. A ro
 cannot honour an embargo or a purge, and would silently shift with every rebuild.
 
 ### D-05-04 — Purge and embargo are two mechanisms, applied separately
-- **Purge** drops a TRAIN row whose label window `[t, t + h]` crosses the next boundary, with `h`
-  the LONGEST label horizon in the frame (`ret_10min_mid`, 600 s) — per row, per label column in
-  scope, derived from `get_label(...).horizon`.
-- **Embargo** is a gap AFTER a validation segment before the next training segment starts, sized by
-  the feature look-back (1 s `trade_flow` window plus exactly one stale `ofi`), derived from the
-  catalogue's per-label `embargo` strings and the feature windows pinned in `features.toml` notes.
+- **Purge** (López de Prado, AFML ch. 7) drops a TRAIN row whose label interval `[t, t + h_max]`
+  OVERLAPS any validation or held-out row's label interval — TWO-SIDED: rows just BEFORE a
+  validation segment (their window reaches into it) and rows just AFTER it (their window overlaps
+  the validation tail's windows), i.e. every train row with `t` in
+  `(val_start − h_max, val_end + h_max)`. `h_max` is the longest label horizon in the frame
+  (`ret_10min_mid`, 600 s), taken from `data/time_ns.py:LABEL_HORIZON_NS` — never re-parsed from
+  the catalogue (research Q2: the parsing happened once, by design).
+- **Embargo** is an additional gap AFTER the purge zone of a validation segment before the next
+  training segment may start, sized by the FEATURE look-back. `trade_flow`'s window is a hard 1 s
+  (`TRADE_FLOW_WINDOW_NS`); `ofi`'s look-back is event-bounded (`[prev_l1_update, t]`), not
+  time-bounded, so it cannot be derived as a duration. The harness therefore declares
+  `FOLD_EMBARGO_NS = TRADE_FLOW_WINDOW_NS` (imported, not a new seconds→ns site) as a POLICY
+  constant, pinned by a test that (a) asserts `ofi`'s catalogue `information_set` is still
+  `"[prev_l1_update, t]"` — so changing that text forces a human to revisit the constant — and
+  (b) asserts the equality. The "one stale `ofi` across a silence" case is not an embargo matter:
+  such a row is a frozen-book row and D-05-21's admission policy excludes it.
 Folding the two into one "gap = max horizon" would set a 600 s embargo, which collides with D-05-05.
 
-### D-05-05 — Embargo length comes from the catalogue and cannot be lengthened
-`get_label(...).embargo` is the single source; the harness parses it and asserts the parsed value
-satisfies `>= horizon`. `test_the_embargo_bound_is_tight_enough_to_bite` asserts catalogue embargo
-== horizon, so the 10-minute leak is closed by PURGE (D-05-04), never by widening any embargo.
+### D-05-05 — The catalogue embargo is a label invariant, not the fold gap, and cannot be lengthened
+The catalogue's per-label `embargo` (`spec/information_set.py:parse_embargo`, existing parser) is
+the label-validity bound Phase 4 mechanized; `test_the_embargo_bound_is_tight_enough_to_bite`
+asserts it EQUALS that label's horizon for every label. The harness reads it only to assert
+`parse_embargo(label.embargo) >= LABEL_HORIZON_NS[label]` as a consistency check. The 10-minute
+leak is closed by PURGE (D-05-04), never by widening any catalogue embargo — that fails CI by design.
+The fold-boundary gap is `FOLD_EMBARGO_NS` (D-05-04), a different, smaller quantity.
 
 ### D-05-06 — Default configuration is the compressed 3-segment fallback, and the choice is logged
 On a 3–7 day pool the 5-segment layout is implementable but starves every segment; the compressed
@@ -125,14 +139,27 @@ have enough span to fill five segments, and selectable by name.
 Segment manifests live in a new git-committed registry `mvp/data/lake_registry/segments/<id>.json`
 with `id = sha256(canonicalize_manifest(body))` — `canonicalize_manifest` and `compute_manifest_id`
 are reused, `issue_manifest` is NOT (it refuses a manifest naming no partitions, and a segment
-names no bytes of its own). The append-only and no-rewrite guardrails must cover the new registry
-directory (`check_manifest_append_only`'s `NON_REGISTRY_COMPONENTS` list and the realm logic apply).
+names no bytes of its own). The body OMITS the `partitions` key entirely (not an empty list), so
+nothing downstream mistakes it for a zero-partition manifest. The errata list (D-05-20) is its own
+small registry `mvp/data/lake_registry/errata/<id>.json`, same rule.
+Guardrail coverage, per research Q1 (verified against the tools' code):
+- `check_manifest_append_only`: generalize `MANIFESTS_DIR_NAME` to a set
+  `{"manifests", "segments", "errata"}`; the realm / `NON_REGISTRY_COMPONENTS` logic is reused as is.
+  Its Rule 5 refuses a vacuous pass on a protected-but-empty directory, so the guardrail extension
+  and the FIRST committed segment (and errata) manifest must land in the SAME commit.
+- `check_manifest_id_integrity`: add the two directories to its glob roots.
+- `check_no_manifest_rewrite`: NOT extended — it flags any manifest without partitions by design
+  (IN-15); a segment manifest verifies referential integrity via `resolve_manifest` on its upstream
+  feature manifest ids, not byte integrity of its own.
 
 ### D-05-08 — One manifest per fold layout; segments are named inside it
 A fold configuration is ONE manifest; its segments are named entries (`train_s1`, `val_s1`, …, or
-`train`, `val`, `held_out`). The mandatory MLflow tag `segment_manifest_id` carries that id;
-`fold_config` carries the layout name. A run that consumes one segment names it by
-`<manifest_id>` + segment name in a run param, not a second manifest.
+`train`, `val`, `held_out`). In the compressed layout the inner k-fold OOF blocks are ALSO named
+entries inside the same manifest, with role `oof_block` and their own `[start_ns, end_ns)` that
+partition the `train` entry — computed once at issuance, not on the fly at access time, so the
+blocks a run trained on are readable from the manifest alone. The mandatory MLflow tag
+`segment_manifest_id` carries the manifest id; `fold_config` carries the layout name. A run that
+consumes one segment names it by `<manifest_id>` + segment name in a run param, not a second manifest.
 
 ### D-05-09 — What a segment manifest records
 Per segment: name, `[start_ns, end_ns)`, role (train / val / held_out / oof_block). Whole-manifest:
@@ -195,7 +222,14 @@ Phase 8's act (EVAL-06). Locking one of four L1 days away now would starve train
 The tool moves the feature partition for `D_lock − 1` into the lockbox tier alongside `D_lock`'s
 (if built) — `D_lock − 1`'s label tail carries the held-out prices — then writes `holdout.json`
 with the declared dates, `locked_at` (int64 ns) and `reason`. It refuses if `D_lock − 1`'s partition
-cannot be moved, and it never rewrites bytes. Consequence for the gate: Sharpe > 5 needs ≥ 30
+cannot be moved, and it never rewrites bytes. Mechanics per research Q6: the orchestration lives in
+`mvp/harness/` and may import `data.lockbox`'s sanctioned public names; the ONE operation that
+joins a path under `lake/lockbox/` — moving the partition and issuing its lockbox-tier manifest —
+is a new public function INSIDE `data/lockbox.py`, the only file `check_lockbox_containment`
+permits to do so. The tool never lifts or re-applies the `chmod 0000` barrier (policy: human,
+out-of-band); `--dry-run` needs no write access and works with the barrier in place. The lockbox
+dataset name for a moved feature partition is settled by the planner against
+`tests/lockbox/test_token_one_look.py`'s existing synthetic segment. Consequence for the gate: Sharpe > 5 needs ≥ 30
 held-out daily observations, so the gate is evaluable no earlier than `D_lock + 30 d` — recorded as
 a fact, not a task.
 
