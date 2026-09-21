@@ -122,7 +122,7 @@ Plans:
 Plans:
 **Wave 1**
 - [x] 05-00-PLAN.md — widen the built-day pool from 3 to 7 days (D-05-19), independent of every other plan
-- [ ] 05-01-PLAN.md — thin vertical slice: harness package, purge/embargo constants, 5seg manifest schema, minimal accessor + budget, the walking-skeleton proof
+- [x] 05-01-PLAN.md — thin vertical slice: harness package, purge/embargo constants, 5seg manifest schema, minimal accessor + budget, the walking-skeleton proof
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 05-02-PLAN.md — D-05-02 geometric refusals, purged+embargoed inner k-fold OOF (kfold.py), compressed_3seg issuance

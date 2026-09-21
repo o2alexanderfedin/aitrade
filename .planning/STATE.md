@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Phase 5 Plan 0 (widen curated pool 2026-09-16..19) complete. Curated tier widened to 8 days for bookTicker/trade; feature tier stays at 3 days pending user DQ acknowledgement (ACK NEEDED, see 05-00-SUMMARY.md and STATE.md blockers). Next: /gsd-execute-phase for Plan 1 (05-01)."
-last_updated: "2026-09-21T04:22:40.816Z"
+stopped_at: "Phase 5 Plan 1 (05-01, thin vertical slice: 5seg segment manifest, purge/embargo, budgeted accessor) complete. mvp/harness/ is a real package with a passing end-to-end walking-skeleton test. Next: /gsd-execute-phase for Plan 2 (05-02)."
+last_updated: "2026-09-21T05:12:29.796Z"
 last_activity: 2026-09-21
 progress:
   total_phases: 11
   completed_phases: 4
   total_plans: 29
-  completed_plans: 23
-  percent: 79
+  completed_plans: 24
+  percent: 83
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 5 (Fold Harness & Overfitting Controls) — EXECUTING
-Plan: 2 of 8
+Plan: 3 of 8
 Status: Ready to execute
 Last activity: 2026-09-21
 
-Progress: [████████░░] 79%
+Progress: [████████░░] 83%
 
 > That 100% is `state.update-progress`'s definition -- SUMMARY files over PLAN files on disk (22 summaries over 21 plans, capped at 100%). Every one of the 21 plans now has a summary; the 22nd is `03-07-GAPS-SUMMARY.md`, which has no plan of its own. It is NOT milestone completion: phases 5-11 have no plans on disk yet, and 3 of 11 phases are marked complete -- Phase 4's seven plans are all executed, and the phase closes at its verification/merge step, exactly as Phases 1-3 did.
 
@@ -69,6 +69,7 @@ Progress: [████████░░] 79%
 | Phase 4 P06 | ~2h | 2 tasks | 12 files |
 | Phase 4 P07 | ~2h | 2 tasks | 9 files |
 | Phase 05 P00 | 50min | 2 tasks | 23 files |
+| Phase 05 P01 | 50min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -135,6 +136,9 @@ Recent decisions affecting current work:
 - [Phase 05]: [Phase 5, Plan 0]: A capture-sourced curated day may carry a content-identical redelivered row (BoundedDedup TTL-eviction tradeoff); data.ingest.curated_build now drops it before materialize_seq, gated on chosen_source=='capture', keeping the earliest arrival -- a content-differing duplicate id still raises.
 - [Phase 05]: [Phase 5, Plan 0]: build_curated_day never reaches the network; archive precedence for a newly-published trade day requires running data.backfill.downloader before build_curated_range, then re-running build_curated_range to supersede a capture-sourced first pass.
 - [Phase 05]: [Phase 5, Plan 0]: The curated tier widened to 2026-09-12..19 (8 new by-date pointers), but the FEATURE tier stayed at 3 days -- all eight new curated partitions are DQ degraded/failed (multi-hour real capture outages) and no acknowledgement was written (constraint 11); ACK NEEDED FROM USER before 2026-09-15..18 can build.
+- [Phase 05]: harness.accessor.materialize filters purge/embargo other_entries to role in (val, held_out, oof_block), never another train segment, per D-05-04 -- resolved over the plan's more terse action-text phrasing (geometrically indistinguishable for this plan's own contiguous-segment fixture, will matter once 05-02 adds oof_block entries).
+- [Phase 05]: The purge zone's own left boundary (start_ns - purge_ns) is treated as INCLUSIVE in the excluded band (a row exactly there is excluded), matching the plan's own exact-tuple test for effective_train_intervals over a stricter reading of D-05-04's open-interval prose.
+- [Phase 05]: tests/fixtures/harness_span.py:build_span_partition also writes an 'ok' DQ report row for the features-tier manifest it issues (Rule 3 fix) -- features.tier.load_features unconditionally requires one via store._enforce_dq_pause; discovered when Task 2's accessor tests raised DQPauseError against an otherwise-healthy synthetic fixture.
 
 ### Pending Todos
 
@@ -170,7 +174,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-21T04:22:40.811Z
-Stopped at: Phase 5 Plan 0 (widen curated pool 2026-09-16..19) complete. Curated tier widened to 8 days for bookTicker/trade; feature tier stays at 3 days pending user DQ acknowledgement (ACK NEEDED, see 05-00-SUMMARY.md and STATE.md blockers). Next: /gsd-execute-phase for Plan 1 (05-01).
+Last session: 2026-09-21T05:12:29.778Z
+Stopped at: Phase 5 Plan 1 (05-01, thin vertical slice: 5seg segment manifest, purge/embargo, budgeted accessor) complete. mvp/harness/ is a real package with a passing end-to-end walking-skeleton test. Next: /gsd-execute-phase for Plan 2 (05-02).
 Resume file: None
 Resumed: 2026-09-19 -- session restored at the Phase 4/5 boundary. Verified live, not read: develop at 9898e4d clean and level with origin, no PLAN without a SUMMARY, capture daemon PID 72546 alive at 2d14h, SleepDisabled=1 (the LaunchDaemon is holding), 844 GiB free. HANDOFF.json kept until Phase 5 actually starts.
