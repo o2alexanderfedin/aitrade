@@ -36,14 +36,16 @@ key-files:
 
 key-decisions:
   - "Content-identical capture-redelivery duplicates (same id, differing only in the daemon's own seq/rtime bookkeeping) are dropped before materialize_seq, keeping the earliest arrival; a duplicate id that disagrees on any real field is left untouched and still raises. Classified Rule 1 (materialize_seq's 'this is impossible' premise was empirically false for capture-sourced data, per STATE.md's own BoundedDedup TTL note) after an advisor consult, not Rule 4 -- the fix is source-gated and narrow, not structural."
-  - "Ran data.backfill.downloader for 2026-09-16..19 before the plan's literal build_curated_range(stream='trade') call, then re-ran build_curated_range to supersede all four trade days from capture-sourced to archive-sourced. The plan's <action> text named only the two build_curated_range calls; 05-RESEARCH.md Q4(b) and the project's own archive-is-authoritative-for-trades design make the download step a Rule 3 blocking-issue completion, not scope creep -- omitting it would have left all four trade days on the less-authoritative source with no supersede ever triggered later (nothing re-checks a day once its by-date pointer already resolves)."
+  - "Ran data.backfill.downloader for 2026-09-16..19 before the plan's literal build_curated_range(stream='trade') call, then re-ran build_curated_range to supersede all four trade days from capture-sourced to archive-sourced. The plan's <action> text named only the two build_curated_range calls; 05-RESEARCH.md Q4(b) and the project's own archive-is-authoritative-for-trades design make the download step a Rule 3 blocking-issue completion, not scope creep -- omitting it would have left all four trade days capture-sourced until someone independently ran the downloader and re-ran `build_curated_range` -- nothing in this codebase schedules or triggers that automatically."
   - "No DQ acknowledgement written for any of the eight new curated partitions, all eight are non-ok. Per constraint 11 this is the user's decision; see ACK NEEDED FROM USER below."
   - "Reused the single code_hash (039d7c394720043b382ec15d363f9c1c6386c178, computed once after the redelivery-dedup fix landed at commit 039d7c3) for every build_curated_range and build_features_day call in this plan, per the plan's explicit instruction not to recompute mid-plan. HEAD moved twice more after that (the manifest-commit fdd124c, and this SUMMARY) -- neither touched pipeline code, only registry JSON and a test file, so the hash still accurately names the code that ran."
 
 patterns-established:
   - "A one-shot ingest script that finds a real data anomaly (a duplicate row, an unexpectedly large outage) should stop, investigate with the tools the anomaly itself provides (read_capture_partition, the gap ledger), and consult before writing a fix -- the row-level dedup fix in this plan came from that sequence, not from guessing."
 
-requirements-completed: [EVAL-01]
+requirements-completed: []
+requirements-partial:
+  - "EVAL-01: this plan contributed a wider curated data pool (2026-09-12..19) toward the eventual walk-forward split, but built no fold-harness code and no feature day beyond the pre-existing 2026-09-12..14 -- EVAL-01 stays unchecked in REQUIREMENTS.md, deliberately, pending 05-01+."
 
 # Metrics
 duration: ~50min
@@ -220,7 +222,18 @@ The plan's own embedded `assert len(built) >= 4` fails, because zero new days bu
 
 ## ACK NEEDED FROM USER
 
-Eight curated partitions across four dates carry a non-ok DQ verdict. No acknowledgement was written by this plan (constraint 11 -- a DQ acknowledgement is a human decision). Until at least 2026-09-16's bookTicker and trade (and, separately, 2026-09-19's, since 2026-09-18's own build also needs 2026-09-19 as its D+1) are acknowledged, none of 2026-09-15..18 can build as feature days.
+Eight curated partitions across four dates carry a non-ok DQ verdict. No acknowledgement was written by this plan (constraint 11 -- a DQ acknowledgement is a human decision).
+
+**Building ALL of 2026-09-15..18 needs 7 of these 8 acknowledgements, not just two.** Traced against the actual load order (`_load_curated_day` loads BOTH streams for a day's own build; `next_day_quote_series` loads BOOKTICKER ONLY for the D+1 label tail, default `stream=L1_STREAM`):
+
+| feature day | needs its own-day acks | needs D+1 bookTicker ack |
+|---|---|---|
+| 2026-09-15 | already acknowledged (both streams, pre-existing) | 2026-09-16 bookTicker |
+| 2026-09-16 | 2026-09-16 bookTicker + trade | 2026-09-17 bookTicker |
+| 2026-09-17 | 2026-09-17 bookTicker + trade | 2026-09-18 bookTicker |
+| 2026-09-18 | 2026-09-18 bookTicker + trade | 2026-09-19 bookTicker |
+
+Union: 2026-09-16 (both streams), 2026-09-17 (both streams), 2026-09-18 (both streams), 2026-09-19 (bookTicker only) -- **7 acknowledgement files**. **2026-09-19's trade verdict is on no path any of these four builds take** and does not need acknowledging for this chain. Acknowledging only 2026-09-16 and 2026-09-19 (an earlier draft of this SUMMARY said exactly this, incorrectly) builds 2026-09-15 alone: 2026-09-16 then still fails at its own-day trade load (unacknowledged), and 2026-09-17/18 fail at their own-day loads regardless.
 
 | date | stream | verdict | findings (check=status) | key numbers |
 |---|---|---|---|---|
@@ -285,7 +298,7 @@ None. `data.backfill.downloader` against `data.binance.vision` is the project's 
 - **The feature-tier pool is UNCHANGED at 3 days (2026-09-12..14, 22,381,684 rows)** -- this plan's stated objective ("give Phase 7+ a 7-day training pool") is not yet achieved; it is blocked on the ACK NEEDED FROM USER decision above, not on any remaining engineering work in this plan.
 - Per the plan's own objective, no other Phase 5 plan reads this plan's output -- P1-P7 use either the original three built days or `tmp_path` synthetic fixtures. This is confirmed unaffected by Task 2's zero-new-days outcome.
 - The `_drop_capture_redelivery_duplicates` fix is now load-bearing for any FUTURE capture-sourced curated build (this project's capture-sourced ingest has run for months and this is the first time this exact redelivery pattern was hit; it will very likely recur, since the BoundedDedup TTL tradeoff is structural, not a one-off).
-- If the user acknowledges 2026-09-16's and 2026-09-19's DQ findings (the two dates whose own-day or D+1-tail status blocks the chain), a follow-up run of Task 2's per-date `build_features_day` loop (same code, same code_hash if HEAD hasn't moved on pipeline files) would very likely build 2026-09-15..18 in one pass -- no re-investigation needed, just re-running the already-written loop after the acknowledgement files land.
+- If the user acknowledges all 7 of the DQ findings the ACK NEEDED FROM USER block names (2026-09-16 bookTicker+trade, 2026-09-17 bookTicker+trade, 2026-09-18 bookTicker+trade, 2026-09-19 bookTicker -- NOT just 2 of the 8), a follow-up run of Task 2's per-date `build_features_day` loop (same code, same code_hash if HEAD hasn't moved on pipeline files) would very likely build 2026-09-15..18 in one pass -- no re-investigation needed, just re-running the already-written loop after the acknowledgement files land. Acknowledging fewer than all 7 builds only a strict prefix of 2026-09-15..18 (e.g. acking only 09-16's two plus 09-19's bookTicker builds 2026-09-15 alone).
 
 ## Self-Check: PASSED
 
@@ -298,3 +311,11 @@ None. `data.backfill.downloader` against `data.binance.vision` is the project's 
 - No file exists under `mvp/data/lake_registry/dq_acknowledgements/` for any of the eight new dates -- confirmed via `ls`.
 - No `lake/features/date=2026-09-1{5,6,7,8}/` partition exists -- confirmed via `find`.
 - Full suite: 956 passed (953 baseline + 3 new), 0 failed, both times it was run in this plan.
+
+---
+
+## ACK NEEDED FROM USER (repeated, per constraint 11)
+
+**Not done in this plan: the feature tier is still 3 days (2026-09-12..14, 22,381,684 rows). Zero of 2026-09-15..18 built.**
+
+8 curated partitions (2026-09-16..19, both streams) are DQ degraded/failed on real multi-hour capture outages (see the full table above). No acknowledgement was written -- that decision belongs to the user. Building all four candidate feature days needs **7** acknowledgements (not 4, and not just 09-16+09-19): 2026-09-16 bookTicker+trade, 2026-09-17 bookTicker+trade, 2026-09-18 bookTicker+trade, 2026-09-19 bookTicker. Each acknowledgement's reason must cite the measured numbers in the ACK table above -- never a threshold edit.
