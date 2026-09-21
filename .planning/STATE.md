@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: "Phase 4 (Feature & Label Engine) complete -- 7 plans, 953 tests, CI green, verification 5/5 (both human items resolved), review 1 critical + 7 warnings all fixed and re-proved. Merged to develop. The decision-row matrix exists on the real lake: features/date=2026-09-12/13/14, 22,381,684 rows, manifest-addressed with provenance chaining to curated. CARRY FORWARD INTO PHASE 5: (a) a held-out day's feature BYTES stay readable by a bare read_parquet -- load_features is one barrier where Phase 3's lockbox had two, and Phase 5's declaration step must move or delete the partition for the day BEFORE the declared date, since that is the one carrying the label tail; (b) 249 labels on disk are fabricated zeros from the pre-fix staleness rule (180 ret_1s, 69 ret_10s) -- partitions are write-once, so a rebuild under a new manifest is Phase 5's call; (c) every row inside an L1 outage is a real trade wearing a frozen book (29,058 inside one 2894s gap) with both warm-up flags false -- Phase 5 needs a lake-derived staleness flag; (d) the primary label is exactly zero on 43.89% of written decision rows, so loss and IC/Sharpe choices must account for a point mass at zero; (e) test_the_embargo_bound_is_tight_enough_to_bite asserts embargo == horizon, so LENGTHENING an embargo fails CI by design. Next: `/gsd-autonomous --from 5` (Fold Harness & Overfitting Controls). Work ONLY from /Volumes/ProjectsSSD/aihedgefund/repo. Capture daemon Run J (PID 72546) still carries the OLD power probe and segment stamp -- a restart is pending user approval. Battery sleep is now held by /Library/LaunchDaemons/com.aihedgefund.disablebatterysleep.plist (proved: flipped to 0, restored after 195s)."
-last_updated: "2026-09-21T03:30:25.429Z"
-last_activity: 2026-09-21 -- Phase 5 planning complete
+last_updated: "2026-09-21T03:45:55.922Z"
+last_activity: 2026-09-21 -- Phase 5 execution started
 progress:
   total_phases: 11
   completed_phases: 4
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-10)
 
 **Core value:** A reproducible, leakage-proof two-stage pipeline achieving Net P&L > 0 and annualized Sharpe > 5 on a locked held-out walk-forward window under stated simplifications — produced by a workflow where agentic iteration verifiably improves the model.
-**Current focus:** Phase 4 — Feature & Label Engine
+**Current focus:** Phase 5 — Fold Harness & Overfitting Controls
 
 ## Current Position
 
-Phase: 5 of 11 (fold harness & overfitting controls)
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-09-21 -- Phase 5 planning complete
+Phase: 5 (Fold Harness & Overfitting Controls) — EXECUTING
+Plan: 1 of 8
+Status: Executing Phase 5
+Last activity: 2026-09-21 -- Phase 5 execution started
 
 Progress: [██████████] 100%
 
