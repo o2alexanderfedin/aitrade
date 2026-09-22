@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 import polars as pl
+import pytest
 from data.time_ns import LABEL_HORIZON_NS, NS_PER_SECOND
 from features.tier import load_features
 from harness.accessor import materialize
@@ -368,3 +369,130 @@ def test_materialize_train_on_compressed_3seg_is_never_empty(
         look_count(manifest["manifest_id"], "train", tracking_root=str(tracking_root))
         == 0
     )
+
+
+# --------------------------------------------------------------------------
+# 05-REVIEW.md WR-03: a starved individual oof_block must be refused at
+# issuance, exactly like a starved train (D-05-14's remedy path).
+# --------------------------------------------------------------------------
+
+#: A train narrow enough that block 0's own purge+embargo band
+#: ([start_0 - purge_ns, end_0 + purge_ns + embargo_ns)) covers the WHOLE
+#: train range: with k=5 and this width, block width is 140s, so
+#: (k-1)*block_width = 560s <= purge_ns + embargo_ns (601s) -- block 0's
+#: band starts at start_0 - purge_ns <= 0 (always true for the first
+#: block) and ends at end_0 + purge_ns + embargo_ns = 140 + 601 = 741s,
+#: past the train's own end at 700s. This is DELIBERATELY independent of
+#: the top-level train-vs-val/held_out starvation check
+#: (_train_effective_intervals): that check only ever sees val/held_out as
+#: "other" entries, never a train's own oof_block children, so this
+#: fixture's train entry is NOT starved at the top level (asserted below)
+#: -- only the internal oof_block split is.
+_STARVED_TRAIN_WIDTH_NS = 700 * S
+
+
+def _starved_oof_segments():
+    return [
+        {
+            "name": "train",
+            "role": "train",
+            "start_ns": 0,
+            "end_ns": _STARVED_TRAIN_WIDTH_NS,
+        },
+        {
+            "name": "val",
+            "role": "val",
+            "start_ns": _STARVED_TRAIN_WIDTH_NS,
+            "end_ns": _STARVED_TRAIN_WIDTH_NS + 600 * S,
+        },
+        {
+            "name": "held_out",
+            "role": "held_out",
+            "start_ns": _STARVED_TRAIN_WIDTH_NS + 600 * S,
+            "end_ns": _STARVED_TRAIN_WIDTH_NS + 1_200 * S,
+        },
+    ]
+
+
+def test_refuses_issuance_when_an_oof_block_is_starved(
+    lake_root, registry_root, tracking_root
+):
+    segments = _starved_oof_segments()
+    train, val, held_out = segments
+
+    # Anti-vacuity half 1: the TOP-LEVEL train (against val/held_out only)
+    # is NOT starved under this fixture -- proves the refusal below fires
+    # because of the internal oof_block split, not because the whole
+    # manifest would have been refused anyway for an unrelated reason.
+    top_level_intervals = effective_train_intervals(
+        train["start_ns"],
+        train["end_ns"],
+        [val, held_out],
+        purge_ns=PURGE_HORIZON_NS,
+        embargo_ns=FOLD_EMBARGO_NS,
+    )
+    assert top_level_intervals, (
+        "fixture bug: the top-level train must not be starved -- this test "
+        "is specifically about oof_block-level starvation"
+    )
+
+    # Anti-vacuity half 2: block 0's OWN candidate training range really is
+    # fully covered by its own purge+embargo band -- computed directly via
+    # the same geometry issue_segment_manifest itself calls
+    # (effective_train_intervals, via training_rows_for_block), independent
+    # of the function under test, so this fixture's premise is proven, not
+    # assumed.
+    blocks = purged_embargoed_blocks(0, _STARVED_TRAIN_WIDTH_NS, BLOCK_COUNT)
+    geometric_check = effective_train_intervals(
+        blocks[0]["start_ns"],
+        blocks[-1]["end_ns"],
+        [blocks[0]],
+        purge_ns=PURGE_HORIZON_NS,
+        embargo_ns=FOLD_EMBARGO_NS,
+    )
+    assert geometric_check == [], (
+        "fixture bug: block 0's own purge+embargo band must cover the "
+        "entire candidate training range -- this test is specifically "
+        "about that starved case"
+    )
+
+    rows = int((_STARVED_TRAIN_WIDTH_NS + 1_200 * S) // S) + 100
+    span = build_span_partition(
+        lake_root, registry_root, date="2026-09-13", start_ns=0, step_ns=S, rows=rows
+    )
+
+    with pytest.raises(ValueError, match=r"oof_block.*starved"):
+        issue_segment_manifest(
+            layout="compressed_3seg",
+            segments=segments,
+            upstream_feature_manifest_ids=[span["manifest_id"]],
+            admission=ADMISSION_DEFAULT,
+            errata_id=None,
+            budget_allowance=1,
+            fold_config_reason="test fixture: starved oof_block (WR-03)",
+            symbol="BTCUSDT",
+            version=1,
+            code_hash="deadbeef",
+            registry_root=registry_root,
+            lake_root=lake_root,
+            tracking_root=str(tracking_root),
+            k=BLOCK_COUNT,
+        )
+
+    # -- and no manifest was written for the refused candidate --
+    assert list((registry_root / "segments").glob("*.json")) == []
+
+
+def test_anti_vacuity_the_wide_kfold_fixture_has_no_starved_oof_block(
+    lake_root, registry_root, tracking_root
+):
+    """The existing wide fixture (`_build_compressed_3seg_fixture`,
+    TRAIN_WIDTH_NS=3000s, block width 600s) must still issue successfully
+    -- proving the WR-03 refusal is scoped to genuinely starved blocks,
+    never firing on ordinary, non-degenerate geometry."""
+    manifest, _span = _build_compressed_3seg_fixture(
+        lake_root, registry_root, tracking_root
+    )
+    counts = manifest["oof_training_row_counts"]
+    assert len(counts) == BLOCK_COUNT
+    assert all(count > 0 for count in counts.values()), counts

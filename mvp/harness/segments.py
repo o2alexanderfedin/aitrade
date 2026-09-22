@@ -188,6 +188,37 @@ def _derive_oof_training_row_counts(
     }
 
 
+def _refuse_starved_oof_blocks(
+    oof_training_row_counts: dict[str, int], *, k: int
+) -> None:
+    """D-05-14's remedy path, extended to `oof_block` entries (05-REVIEW.md
+    WR-03): `_train_effective_intervals` already refuses a `train` entry
+    whose own effective range is fully purged/embargoed away by its
+    `val`/`held_out` neighbours -- but nothing refused the analogous
+    starvation one level down, an individual `oof_block` whose training
+    -row set is empty after purge+embargo against its sibling blocks. A
+    `0`-row block is a layout defect exactly like a starved train: it
+    manifests, silently, as a block that trains on nothing, discoverable
+    only by a caller who happens to check `oof_training_row_counts[name] >
+    0` before materializing -- nothing at issuance time told them to.
+
+    Raises `ValueError` naming every starved block and the remedy (a
+    smaller `k`, so each block is wider relative to the fixed
+    purge+embargo band, or a wider `train` entry, so the same `k` blocks
+    each get more room) -- the same two knobs `harness.kfold.
+    purged_embargoed_blocks`'s caller already controls.
+    """
+    starved = [name for name, count in oof_training_row_counts.items() if count == 0]
+    if starved:
+        raise ValueError(
+            f"issue_segment_manifest: oof_block(s) {starved} of {k} are "
+            "starved -- every row of their own training-row set is purged "
+            "or embargoed by a neighbouring block (D-05-14's remedy: a "
+            "smaller k, so each block is wider relative to the fixed "
+            "purge+embargo band, or a wider train entry)"
+        )
+
+
 def _derive_admission_counts(
     segments: list[dict], df_with_age: pl.DataFrame, admission: dict
 ) -> dict[str, dict]:
@@ -633,9 +664,9 @@ def issue_segment_manifest(
 
     derived = _derive_purge_embargo_fields(segments, df)
     if layout == "compressed_3seg":
-        derived["oof_training_row_counts"] = _derive_oof_training_row_counts(
-            oof_blocks, df
-        )
+        oof_training_row_counts = _derive_oof_training_row_counts(oof_blocks, df)
+        derived["oof_training_row_counts"] = oof_training_row_counts
+        _refuse_starved_oof_blocks(oof_training_row_counts, k=k)
 
     # Admission's per-entry counts (D-05-21) are DERIVED here, never
     # caller-supplied (checker iteration 1 blocker 3) -- stale-book age
