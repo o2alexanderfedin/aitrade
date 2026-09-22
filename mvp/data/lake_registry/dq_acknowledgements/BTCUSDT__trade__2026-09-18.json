@@ -1,0 +1,14 @@
+{
+  "acknowledged": [
+    {
+      "check": "reconciliation",
+      "dq_status": "degraded"
+    }
+  ],
+  "date": "2026-09-18",
+  "reason": "reconciliation degraded: missing_from_capture_pct=15.543947% (archive trade ids capture never received, over the archive/capture trade_id overlap range, X=\"NA\" placeholders excluded from both sides); missing_from_archive_pct=0.0000%. The curated trade partition for 2026-09-18 is ARCHIVE-sourced and complete (chosen_source=archive, via data.backfill.downloader + build_curated_range's supersede path) -- the degradation describes gaps in the CAPTURE stream's overlap coverage during that day's outages, not the written bytes. Cause: the host sleeps on battery -- caffeinate's PreventSystemSleep assertion is honored on AC power only (data/capture/power.py; STATE.md's ongoing battery-sleep blocker, mitigated by /Library/LaunchDaemons/com.aihedgefund.disablebatterysleep.plist, pmset history recorded in STATE.md). No threshold changed.",
+  "stream": "trade",
+  "symbol": "BTCUSDT",
+  "when": "2026-09-22T05:48:43Z",
+  "who": "alexanderfedin (approved 2026-09-21 in Claude session session_01RCuyRej4LNRLXQnszUC9Ho; file written by gsd-execute-phase Plan 05-00)"
+}
