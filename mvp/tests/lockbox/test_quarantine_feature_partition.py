@@ -26,7 +26,11 @@ from pathlib import Path
 
 import pytest
 
-from data.holdout import quarantined_dates, write_holdout_registry
+from data.holdout import (
+    holdout_registry_path,
+    quarantined_dates,
+    write_holdout_registry,
+)
 from data.lockbox import QuarantineError, quarantine_feature_partition
 from data.store import ManifestHashMismatch, resolve_manifest
 from tests.fixtures.harness_span import build_span_partition
@@ -262,3 +266,55 @@ def test_holdout_writer_never_calls_chmod():
 
     identifiers = _names_and_attrs(holdout_module.write_holdout_registry)
     assert "chmod" not in identifiers
+
+
+# --------------------------------------------------------------------------
+# 05-REVIEW.md WR-02: write_holdout_registry's write-once guarantee under
+# real concurrency
+# --------------------------------------------------------------------------
+
+
+def test_holdout_writer_write_once_guarantee_is_race_safe(tmp_path: Path):
+    """Reproduces WR-02's own scenario: N concurrent callers (e.g. a Phase
+    8 declaration retried after an apparent timeout while the first
+    attempt is still finishing) all race `write_holdout_registry` against
+    the SAME registry path. Exactly one must win; every other caller must
+    raise -- not silently lose its own `dates`/`reason` with no error."""
+    import threading
+
+    registry_root = tmp_path / "registry"
+    n_threads = 8
+    barrier = threading.Barrier(n_threads)
+    successes: list[str] = []
+    failures: list[Exception] = []
+    lock = threading.Lock()
+
+    def _worker(i: int) -> None:
+        barrier.wait()  # every thread calls write_holdout_registry at once
+        try:
+            write_holdout_registry(
+                [f"2026-01-{i + 1:02d}"],
+                reason=f"racer-{i}",
+                symbol=SYMBOL,
+                registry_root=registry_root,
+            )
+            with lock:
+                successes.append(f"racer-{i}")
+        except ValueError as exc:
+            with lock:
+                failures.append(exc)
+
+    threads = [threading.Thread(target=_worker, args=(i,)) for i in range(n_threads)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+
+    assert len(successes) == 1, f"expected exactly 1 winner, got {successes}"
+    assert len(failures) == n_threads - 1
+    assert all("already exists" in str(exc) for exc in failures)
+
+    # The registry on disk names the SAME winner every failure's own
+    # message pointed at -- no silently-lost declaration, no split brain.
+    on_disk = json.loads(holdout_registry_path(registry_root).read_text())
+    assert on_disk["reason"] == successes[0]

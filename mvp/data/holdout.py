@@ -33,7 +33,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import threading
 import time
 from collections.abc import Iterable
 from pathlib import Path
@@ -213,15 +215,42 @@ def assert_not_quarantined(
         )
 
 
-def _atomic_write_json(path: Path, body: dict) -> None:
-    """Duplicated (never imported) from `data/lockbox.py` -- the same
-    5-line pattern `data/store.py` and `harness/segments.py` each keep
-    their own copy of, rather than this dependence-free module reaching
-    across a module boundary for five lines."""
+class _AlreadyExistsError(Exception):
+    """Internal signal from `_exclusive_write_json`: `path` already exists.
+    Never escapes this module -- `write_holdout_registry` catches it and
+    raises its own, message-compatible `ValueError` naming what the
+    existing file declares."""
+
+
+def _exclusive_write_json(path: Path, body: dict) -> None:
+    """Create `path` for the first time ONLY -- atomically, at the
+    filesystem level, so "does a file already exist here" and "create it"
+    can never be two separate steps two concurrent callers each observe
+    differently (05-REVIEW.md WR-02).
+
+    `path.exists()` then `_atomic_write_json` (the check-then-act this
+    replaces) has a window: two concurrent callers can both observe
+    `False`, both pass the write-once refusal, and one `tmp_path.replace`
+    silently wins over the other -- the loser's `dates`/`reason` vanish
+    with no error to either caller. This closes it with `os.link`, which
+    POSIX guarantees is atomic and raises `FileExistsError` if the target
+    already exists: write the body to a per-call-unique temp file (unique
+    per PID and thread, so two concurrent callers never share, and thus
+    never race on, the SAME temp path), then `os.link` that temp file onto
+    `path` -- whichever caller's `os.link` lands first wins `path`; every
+    other caller's `os.link` raises `FileExistsError`, translated here to
+    `_AlreadyExistsError` so the caller can build its own message from the
+    file that actually won.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path = path.parent / f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp"
     tmp_path.write_text(json.dumps(body, sort_keys=True, indent=2))
-    tmp_path.replace(path)
+    try:
+        os.link(tmp_path, path)
+    except FileExistsError:
+        raise _AlreadyExistsError() from None
+    finally:
+        tmp_path.unlink(missing_ok=True)
 
 
 def write_holdout_registry(
@@ -245,6 +274,19 @@ def write_holdout_registry(
     to change a declared window are a later phase's design problem, not a
     silent overwrite here.
 
+    THE REFUSAL ITSELF IS ATOMIC (05-REVIEW.md WR-02): the write goes
+    through `_exclusive_write_json`, an `os.link`-based create that the
+    filesystem itself refuses if `path` already exists -- never a Python
+    -level `path.exists()` check followed by a separate write. The
+    previous shape (check, THEN write) had a window: two concurrent
+    callers (e.g. a retried declaration attempt racing the first one still
+    finishing) could both observe `path.exists() is False`, both pass the
+    refusal, and one write would silently win over the other with no error
+    to either caller -- exactly the quiet-failure direction this module's
+    own fail-closed doctrine forbids. On a losing race, the existing file
+    is read fresh (not the pre-race body) so the error message always
+    names whichever declaration actually won.
+
     VALIDATES `dates` BEFORE WRITING (fail-closed cuts both ways, per the
     module docstring above): every entry must match `_DATE_RE`, the same
     shape `_registry_problem` requires on READ. A malformed write here would
@@ -267,14 +309,6 @@ def write_holdout_registry(
     part in.
     """
     path = holdout_registry_path(registry_root)
-    if path.exists():
-        existing = json.loads(path.read_text())
-        raise ValueError(
-            f"write_holdout_registry: {path} already exists (declares "
-            f"{existing.get('dates')!r} for {existing.get('symbol')!r}, "
-            f"locked_at={existing.get('locked_at')!r}) -- this writer is "
-            "write-once; a re-declaration is out of scope"
-        )
     bad = [d for d in dates if not (isinstance(d, str) and _DATE_RE.match(d))]
     if bad:
         raise ValueError(
@@ -289,5 +323,14 @@ def write_holdout_registry(
         "locked_at": locked_at_ns if locked_at_ns is not None else time.time_ns(),
         "reason": reason,
     }
-    _atomic_write_json(path, body)
+    try:
+        _exclusive_write_json(path, body)
+    except _AlreadyExistsError:
+        existing = json.loads(path.read_text())
+        raise ValueError(
+            f"write_holdout_registry: {path} already exists (declares "
+            f"{existing.get('dates')!r} for {existing.get('symbol')!r}, "
+            f"locked_at={existing.get('locked_at')!r}) -- this writer is "
+            "write-once; a re-declaration is out of scope"
+        ) from None
     return path
