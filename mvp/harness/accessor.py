@@ -11,7 +11,7 @@ from pathlib import Path
 import polars as pl
 
 from features.tier import load_features
-from harness import budget
+from harness import budget, errata, row_admission
 from harness.purge_embargo import filter_train_rows
 from harness.segments import read_segment_manifest
 
@@ -42,6 +42,7 @@ def materialize(
     lake_root: Path,
     tracking_root: str,
     run_tags: dict,
+    errata_cells: list[dict] | None = None,
 ) -> pl.DataFrame:
     """Return `segment_name`'s rows from the fold layout named by
     `segment_manifest_id`, through the ordered gates D-05-11..15 require:
@@ -68,12 +69,33 @@ def materialize(
        gate to zero rows for every `compressed_3seg` train by
        construction. See `harness.purge_embargo`'s module docstring for
        the full D-05-04 citation of this scoping rule.
-    6. Row-admission exclusion (D-05-21) and errata null-masking (D-05-20)
-       are NOT YET WIRED for `val`/`oof_block` rows -- pass through
-       unchanged; a later plan wires both.
+    6. Row-admission exclusion (D-05-21) and errata null-masking (D-05-20),
+       for `val`/`oof_block` roles ONLY -- real gates (05-04-PLAN.md),
+       replacing P1's honest pass-through. `train` rows are never
+       admission/errata-gated: they already got their purge/embargo
+       treatment in gate 5, and D-05-21/D-05-20 are look-QUALITY concerns
+       (is this validation read trustworthy?), not training-eligibility
+       ones. Admission runs BEFORE errata (D-05-21 excludes rows; D-05-20
+       nulls cells of rows that remain) -- see the gate-order note below
+       for why the STALE-BOOK AGE ITSELF is computed earlier, on the full
+       upstream frame, in step 3.5, not here.
     7. For `val`/`oof_block` roles: `harness.budget.record_look` BEFORE
        returning (D-05-11) -- the gate is written against the ROLE, not
-       the layout.
+       the layout, and runs on the FINAL frame the caller receives (after
+       admission exclusion and errata masking), so the look is counted on
+       what the caller actually sees.
+
+    GATE-ORDER NOTE (05-04-PLAN.md Task 2 finding). Gate 4 slices the
+    upstream frame to `[start_ns, end_ns)` BEFORE gate 6 would otherwise
+    run. Computing `row_admission.stale_book_age_ns` on that ALREADY-
+    SLICED frame would misread a segment's own first rows as "no prior
+    quote in this partition" whenever the true prior quote sits just
+    outside the segment's window -- a segment boundary is not a book
+    reset. So the age is computed on the FULL, pre-slice, concatenated
+    upstream frame (step 3.5, only for `val`/`oof_block` roles, since
+    `train` never needs it), attached as a real column, and simply
+    persists correctly through the slice; `row_admission.
+    apply_admission_policy` reuses that column instead of recomputing it.
     """
     manifest = read_segment_manifest(registry_root, segment_manifest_id)
     entry = _find_entry(manifest, segment_name)
@@ -85,6 +107,8 @@ def materialize(
             "unconditionally, regardless of holdout.json (D-05-10)"
         )
 
+    is_look = entry["role"] in _LOOK_ROLES
+
     dataset = f"{manifest['symbol']}.features"
     frames = [
         load_features(
@@ -93,6 +117,15 @@ def materialize(
         for upstream_id in manifest["upstream_feature_manifest_ids"]
     ]
     df = pl.concat(frames, how="vertical")
+
+    if is_look:
+        # Step 3.5 (gate-order note above): computed on the FULL frame,
+        # before the [start_ns, end_ns) slice below.
+        df = df.with_columns(
+            row_admission.stale_book_age_ns(df).alias(
+                row_admission.STALE_BOOK_AGE_COLUMN
+            )
+        )
 
     df = df.filter(
         (pl.col("etime") >= entry["start_ns"]) & (pl.col("etime") < entry["end_ns"])
@@ -121,7 +154,22 @@ def materialize(
             embargo_ns=manifest["embargo_ns"],
         )
 
-    if entry["role"] in _LOOK_ROLES:
+    if is_look:
+        # Gate 6: admission (D-05-21) THEN errata (D-05-20), val/oof_block
+        # only. `row_admission.apply_admission_policy` reuses the
+        # STALE_BOOK_AGE_COLUMN attached at step 3.5 above, dropped again
+        # here so the frame the caller receives carries no accessor-
+        # internal bookkeeping column.
+        df, _admission_counts = row_admission.apply_admission_policy(
+            df, manifest["admission"]
+        )
+        df = errata.mask_errata_cells(df, errata_cells or [])
+        df = df.drop(row_admission.STALE_BOOK_AGE_COLUMN)
+
+    if is_look:
+        # Gate 7: the look is counted on the FINAL frame the caller
+        # receives -- AFTER admission exclusion and errata masking (D-05-
+        # 11), never before.
         tags = dict(run_tags)
         tags["fold_config"] = manifest["layout"]
         budget.record_look(
