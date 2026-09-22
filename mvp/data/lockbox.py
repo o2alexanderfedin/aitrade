@@ -219,7 +219,7 @@ def _require_filter_safe(value: str, label: str) -> None:
     MLflow `filter_string` via raw f-string interpolation -- see
     `harness.budget._require_filter_safe`'s identically named function for
     the full rationale. Checked BEFORE any MLflow client is constructed."""
-    if not _FILTER_SAFE_RE.match(value):
+    if not _FILTER_SAFE_RE.fullmatch(value):
         raise LockboxTokenError(
             f"{label} {value!r} contains a character outside "
             f"{_FILTER_SAFE_RE.pattern} -- refusing to splice it into an "

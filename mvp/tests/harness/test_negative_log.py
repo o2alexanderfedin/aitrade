@@ -233,3 +233,15 @@ def test_query_negative_results_refuses_a_hostile_config_fingerprint(tracking_ro
         query_negative_results(
             tracking_root=str(tracking_root), config_fingerprint=hostile
         )
+
+
+def test_query_negative_results_refuses_a_fingerprint_with_a_trailing_newline(
+    tracking_root,
+):
+    """`.fullmatch`, not `.match`: Python's `$` matches before a trailing
+    newline, so a bare `.match` against `^...+$` would accept
+    `"fp123\\n"` and silently under-count (zero matching runs)."""
+    with pytest.raises(NegativeLogError, match="filter_string"):
+        query_negative_results(
+            tracking_root=str(tracking_root), config_fingerprint="fp123\n"
+        )

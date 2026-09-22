@@ -705,3 +705,19 @@ def test_mlflow_has_consumed_refuses_a_hostile_token_id_before_any_query(
     hostile = "lb-wr04' or tags.lockbox_token_id != 'x"
     with pytest.raises(LockboxTokenError, match="filter_string"):
         _mlflow_has_consumed(hostile, str(tracking_root))
+
+
+def test_mlflow_has_consumed_refuses_a_token_id_with_a_trailing_newline(
+    tmp_path: Path,
+):
+    """`.fullmatch`, not `.match`: Python's `$` matches before a trailing
+    newline, so a bare `.match` against `^...+$` would accept
+    `"lb-wr04\\n"` and silently under-count (zero matching runs -- a
+    consumed token would read as never-consumed)."""
+    from data.lockbox import _mlflow_has_consumed
+
+    _registry_root, _lake_root, tracking_root, _m, _t = _build_segment(
+        tmp_path, token_id="lb-wr04-nl"
+    )
+    with pytest.raises(LockboxTokenError, match="filter_string"):
+        _mlflow_has_consumed("lb-wr04-nl\n", str(tracking_root))

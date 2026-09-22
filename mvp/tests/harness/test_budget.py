@@ -294,3 +294,39 @@ def test_look_count_refuses_a_hostile_segment_manifest_id_before_any_query(
     hostile = "mid' or '1'='1"
     with pytest.raises(BudgetError, match="filter_string"):
         look_count(hostile, "val_s1", tracking_root=str(tracking_root))
+
+
+def test_look_count_refuses_a_segment_name_with_a_trailing_newline(tracking_root):
+    """A bare `.match` (not `.fullmatch`) against `^...+$` would accept
+    `"val_s1\\n"` -- Python's `$` matches at the end of the string OR
+    immediately before a trailing newline. A caller that forgot to
+    `.strip()` a value would then splice `'val_s1\\n'` into the filter,
+    match zero runs, and silently return `look_count == 0` -- the exact
+    under-count this validation exists to prevent."""
+    with pytest.raises(BudgetError, match="filter_string"):
+        look_count("mid-1", "val_s1\n", tracking_root=str(tracking_root))
+
+
+# --------------------------------------------------------------------------
+# 05-REVIEW.md CR-01 (post-fix hardening): a rejected tracking_root must be
+# refused BEFORE _look_lock touches the filesystem (mkdir .locks/)
+# --------------------------------------------------------------------------
+
+
+def test_record_look_refuses_a_non_canonical_root_without_creating_a_lock_dir(
+    tmp_path,
+):
+    other_root = tmp_path / "not_canonical"
+    other_root.mkdir()
+    with pytest.raises(BudgetError, match="canonical MLflow store"):
+        record_look(
+            "mid-1",
+            "val_s1",
+            tracking_root=str(other_root),
+            run_tags=dict(BASE_RUN_TAGS),
+            budget_allowance=UNLIMITED_ALLOWANCE,
+        )
+    assert not (other_root / ".locks").exists(), (
+        "a rejected tracking_root must be refused before _look_lock's own "
+        "mkdir(parents=True) ever runs against it"
+    )

@@ -137,7 +137,7 @@ def _require_filter_safe(value: str, label: str) -> None:
     silently reports the wrong `look_count` -- under- or over-counting a
     budget. Checked BEFORE any MLflow client is constructed, so a rejected
     value never even reaches a query."""
-    if not _FILTER_SAFE_RE.match(value):
+    if not _FILTER_SAFE_RE.fullmatch(value):
         raise BudgetError(
             f"look_count: {label} {value!r} contains a character outside "
             f"{_FILTER_SAFE_RE.pattern} -- refusing to splice it into an "
@@ -226,7 +226,16 @@ def _look_lock(tracking_root: str, segment_manifest_id: str, segment_name: str):
     processes. The lock is released by the kernel the moment this
     process's fd closes (the `finally` below, or a crash), so a dead
     holder can never wedge a future caller -- unlike an `O_CREAT |
-    O_EXCL` lock file, which would."""
+    O_EXCL` lock file, which would.
+
+    The lock directory lives under `tracking_root` itself (a sibling of
+    `mlflow.db`), which is the MLflow tracking root -- outside the git
+    tree by default (`DEFAULT_MLFLOW_TRACKING_ROOT`,
+    `tracking.mlflow_utils`), so `.locks/` is never committed. `record_look`
+    (the only caller) refuses a non-canonical or nonexistent
+    `tracking_root` BEFORE this function is ever entered -- see
+    `record_look`'s own docstring -- so this `mkdir` never runs against a
+    root that was about to be rejected anyway."""
     lock_path = _look_lock_path(tracking_root, segment_manifest_id, segment_name)
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
@@ -381,12 +390,32 @@ def record_look(
     and its scope. A concurrent caller for the SAME pair blocks until this
     one either raises `BudgetExhaustedError` or finishes creating its run;
     a caller for a DIFFERENT pair is never blocked by this one.
+
+    THE LOCK ITSELF MUST NOT BE THE FIRST TOUCH OF A BAD `tracking_root`.
+    `_look_lock` creates `<tracking_root>/.locks/` (`mkdir(parents=True)`)
+    before acquiring anything -- a non-canonical or nonexistent
+    `tracking_root` would otherwise get a real directory tree created
+    inside it and only THEN be refused, breaking `look_count`'s own
+    documented "refuse before constructing any client" posture (which
+    implicitly means before touching the filesystem at all, the same
+    fail-closed direction `data.lockbox` was built on). So the canonical
+    -root and store-exists checks run FIRST, before `_look_lock` is even
+    entered -- redundant with `look_count`'s own checks moments later, but
+    that redundancy is what keeps a rejected `tracking_root` untouched.
     """
     if "fold_config" not in run_tags:
         raise BudgetError(
             "record_look: run_tags must already include 'fold_config' -- "
             "the caller (harness.accessor) sets it from the segment "
             "manifest's own layout name before calling record_look"
+        )
+    _require_canonical_tracking_root(
+        tracking_root, lake_paths.mlflow_tracking_root(None)
+    )
+    if not (Path(tracking_root).resolve() / "mlflow.db").exists():
+        raise BudgetError(
+            f"tracking root {tracking_root} has no existing mlflow.db -- "
+            "refusing to create a fresh store and treat the budget as unspent"
         )
     with _look_lock(tracking_root, segment_manifest_id, segment_name):
         spent = look_count(
