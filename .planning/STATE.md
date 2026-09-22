@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 05-04-PLAN.md
-last_updated: "2026-09-22T08:11:13.139Z"
+stopped_at: Completed 05-05-PLAN.md
+last_updated: "2026-09-22T08:49:50.415Z"
 last_activity: 2026-09-22
 progress:
   total_phases: 11
   completed_phases: 4
   total_plans: 29
-  completed_plans: 26
-  percent: 90
+  completed_plans: 27
+  percent: 93
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 5 (Fold Harness & Overfitting Controls) — EXECUTING
-Plan: 5 of 8
+Plan: 6 of 8
 Status: Ready to execute
 Last activity: 2026-09-22
 
-Progress: [█████████░] 90%
+Progress: [█████████░] 93%
 
 > That 100% is `state.update-progress`'s definition -- SUMMARY files over PLAN files on disk (22 summaries over 21 plans, capped at 100%). Every one of the 21 plans now has a summary; the 22nd is `03-07-GAPS-SUMMARY.md`, which has no plan of its own. It is NOT milestone completion: phases 5-11 have no plans on disk yet, and 3 of 11 phases are marked complete -- Phase 4's seven plans are all executed, and the phase closes at its verification/merge step, exactly as Phases 1-3 did.
 
@@ -72,6 +72,7 @@ Progress: [█████████░] 90%
 | Phase 05 P01 | 50min | 2 tasks | 11 files |
 | Phase 05 P02 | 65min | 2 tasks | 7 files |
 | Phase 05 P04 | 55min | 2 tasks | 8 files |
+| Phase 05 P05 | 50min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -146,6 +147,9 @@ Recent decisions affecting current work:
 - [Phase 05]: issue_segment_manifest gains a new required keyword-only lake_root parameter (no optional/opt-out variant) -- D-05-09's derived purged_row_count/embargoed_row_count/effective_intervals cannot exist without reading real upstream partitions; a gap in the plan's own 'interfaces unchanged' note.
 - [Phase 05]: row_admission.py's decided 5s threshold (5 * NS_PER_SECOND) required allowlisting the file in check_ms_to_ns_site.py -- NS_PER_SECOND itself resolves to the checker's target value — Rule 3 fix; guardrail scans by resolved value, not literal spelling
 - [Phase 05]: Stale-book age must be computed on the full upstream frame before the segment time-slice, never after -- a segment boundary is not a book reset — Gate-order finding caught by advisor review before accessor code shipped
+- [Phase 05]: quarantine_feature_partition re-cites the original features manifest's own inputs verbatim for lockbox-tier provenance, rather than an empty list
+- [Phase 05]: data/dates.py gained prev_utc_date (Rule 3 deviation) -- the D-1 mirror next_utc_date was missing
+- [Phase 05]: declare()'s holdout.json dates field stays the caller's original list, never the expanded D/D-1 candidate set
 
 ### Pending Todos
 
@@ -180,7 +184,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-22T08:11:13.121Z
-Stopped at: Completed 05-04-PLAN.md
+Last session: 2026-09-22T08:49:50.405Z
+Stopped at: Completed 05-05-PLAN.md
 Resume file: None
 Resumed: 2026-09-19 -- session restored at the Phase 4/5 boundary. Verified live, not read: develop at 9898e4d clean and level with origin, no PLAN without a SUMMARY, capture daemon PID 72546 alive at 2d14h, SleepDisabled=1 (the LaunchDaemon is holding), 844 GiB free. HANDOFF.json kept until Phase 5 actually starts.
