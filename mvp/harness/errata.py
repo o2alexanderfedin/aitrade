@@ -33,7 +33,7 @@ import polars as pl
 
 from data import store
 from data.dq.checks import load_dq_thresholds
-from data.store import FEATURES_TIER, by_date_index_path
+from data.store import FEATURES_TIER, by_date_index_path, compute_manifest_id
 from features.api import for_build
 from features.event_stream import assert_strict_total_order, merge_curated_streams
 from features.labels import (
@@ -43,10 +43,28 @@ from features.labels import (
 )
 from features.tier import LABEL_COLUMNS
 
-__all__ = ["compute_errata_cells", "mask_errata_cells"]
+__all__ = [
+    "ErrataManifestError",
+    "compute_errata_cells",
+    "errata_manifest_path",
+    "mask_errata_cells",
+    "read_errata_manifest",
+]
 
 _L1_STREAM = "bookTicker"
 _TRADE_STREAM = "trade"
+
+
+class ErrataManifestError(ValueError):
+    """Raised by `read_errata_manifest` for an errata-manifest protocol
+    violation: named-but-missing, tampered (self-hash mismatch), or a
+    `symbol`/`version` that disagrees with the segment manifest naming it.
+
+    A dedicated class (not a bare `ValueError`, unlike this module's other
+    raises) so `harness.accessor.materialize`'s fail-closed contract can be
+    asserted against precisely -- a bare `ValueError` would also match
+    `_find_entry`'s or `read_segment_manifest`'s own unrelated raises,
+    silently passing a test for the wrong reason."""
 
 
 def _load_curated(
@@ -273,3 +291,87 @@ def mask_errata_cells(df: pl.DataFrame, cells: list[dict]) -> pl.DataFrame:
             .alias(label_column)
         ).drop("_errata_hit")
     return out
+
+
+def errata_manifest_path(registry_root: Path, errata_id: str) -> Path:
+    """Single source of truth for an errata manifest JSON's on-disk path --
+    `registry_root/errata/<errata_id>.json`, flat, mirroring
+    `harness.segments.segment_manifest_path`'s own shape (D-05-07: a
+    sibling content-addressed registry, same rule)."""
+    return Path(registry_root) / "errata" / f"{errata_id}.json"
+
+
+def read_errata_manifest(
+    registry_root: Path,
+    errata_id: str,
+    *,
+    symbol: str,
+    version: int,
+) -> list[dict]:
+    """Return the `cells` a segment manifest's own `errata_id` names --
+    05-VERIFICATION-FIX.md Gap 2: the read-time resolution D-05-20 and
+    spec.md's "Fold harness" section both promise ("the harness masks
+    exactly those cells to null at read time") but `harness.accessor.
+    materialize` never performed until this fix.
+
+    Mirrors `harness.segments.read_segment_manifest`'s self-hash-on-read
+    shape, scaled up with two more checks an errata manifest's caller
+    needs that a segment manifest's caller does not (it is resolved BY a
+    segment manifest, not the other way around):
+
+    1. The file must exist. A named-but-missing errata manifest FAILS
+       CLOSED (raises `ErrataManifestError`) -- it never silently degrades
+       to "mask nothing", the exact failure direction `data.holdout`'s own
+       fail-closed doctrine forbids (an unreadable registry entry must
+       never read as "nothing to apply").
+    2. The body's self-hash is re-verified `compute_manifest_id(manifest)
+       == errata_id` -- against BOTH the value this function was called
+       with (which the caller derived from the segment manifest's own
+       `errata_id` field, i.e. effectively the filename stem) AND the
+       body's own `manifest_id` field, so a hand-edited body whose
+       `manifest_id` field was "helpfully" kept in sync with a corrupted
+       `cells` list is caught exactly as a body left honestly stale is.
+    3. `symbol`/`version` must match the caller's segment manifest exactly
+       -- an errata list computed for a different symbol or catalogue
+       version names cells that mean nothing against this read.
+
+    Any of the three raises `ErrataManifestError` -- a dedicated class, so
+    the caller's fail-closed contract can be asserted against precisely,
+    never conflated with `_find_entry`'s or `read_segment_manifest`'s own
+    unrelated `ValueError`s.
+
+    `errata_id=None` is NOT a valid call here -- the caller
+    (`harness.accessor.materialize`) is the one that decides "no errata
+    applies" and skips calling this function entirely; `errata_id: null`
+    in the segment manifest is the ONLY way to mask nothing (never an
+    empty-but-present errata id reaching this far).
+    """
+    registry_root = Path(registry_root)
+    path = errata_manifest_path(registry_root, errata_id)
+    if not path.exists():
+        raise ErrataManifestError(
+            f"errata manifest {errata_id!r}, named by the segment manifest, "
+            f"is missing at {path} -- refusing to mask nothing when an "
+            "errata id was explicitly named (fail-closed, D-05-20)"
+        )
+    manifest = json.loads(path.read_text())
+    body_manifest_id = manifest.get("manifest_id")
+    recomputed = compute_manifest_id(manifest)
+    if recomputed != errata_id or body_manifest_id != errata_id:
+        raise ErrataManifestError(
+            f"{path}: errata manifest hash mismatch -- named id {errata_id}, "
+            f"body's own manifest_id field {body_manifest_id!r}, recomputed "
+            f"{recomputed} from its own body -- refusing to trust a "
+            "tampered or mismatched errata manifest"
+        )
+    if manifest.get("symbol") != symbol:
+        raise ErrataManifestError(
+            f"{path}: errata manifest symbol {manifest.get('symbol')!r} "
+            f"does not match the segment manifest's own symbol {symbol!r}"
+        )
+    if manifest.get("version") != version:
+        raise ErrataManifestError(
+            f"{path}: errata manifest version {manifest.get('version')!r} "
+            f"does not match the segment manifest's own version {version!r}"
+        )
+    return manifest["cells"]

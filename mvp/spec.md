@@ -431,7 +431,12 @@ unbounded-carry rule — 180 `ret_1s_mid` (153 on 09-12, 27 on 09-13) + 69 `ret_
 means a human moving directories and every existing feature manifest failing
 `resolve_manifest`), the harness masks exactly those `(date, etime, decision_seq,
 label_column)` cells to null at read time, and every segment manifest names the errata
-list id it applies.
+list id it applies. The accessor resolves this itself, from the segment manifest's own
+`errata_id` — never caller-supplied: the named errata manifest is self-hash re-verified
+and `symbol`/`version` cross-checked against the segment manifest naming it, and FAILS
+CLOSED (raises, never silently masks nothing) if that errata manifest is missing or
+tampered. `errata_id: null` is the only way a segment genuinely applies no errata
+(05-VERIFICATION-FIX.md Gap 2).
 
 **The held-out window (D-05-16..18).** A future date `D_lock` is declared at Phase 8's
 v0 gate, forward in time — never carved out of the three original built days (09-13's

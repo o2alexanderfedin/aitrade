@@ -42,7 +42,6 @@ def materialize(
     lake_root: Path,
     tracking_root: str,
     run_tags: dict,
-    errata_cells: list[dict] | None = None,
 ) -> pl.DataFrame:
     """Return `segment_name`'s rows from the fold layout named by
     `segment_manifest_id`, through the ordered gates D-05-11..15 require:
@@ -79,6 +78,18 @@ def materialize(
        nulls cells of rows that remain) -- see the gate-order note below
        for why the STALE-BOOK AGE ITSELF is computed earlier, on the full
        upstream frame, in step 3.5, not here.
+
+       ERRATA IS RESOLVED FROM THE MANIFEST, NEVER CALLER-SUPPLIED
+       (05-VERIFICATION-FIX.md Gap 2): the manifest's own `errata_id` is
+       read through `harness.errata.read_errata_manifest` -- self-hash
+       re-verified, `symbol`/`version` cross-checked against this
+       manifest, FAILS CLOSED (raises `harness.errata.ErrataManifestError`,
+       never returns "mask nothing") if the named errata manifest is
+       missing or tampered. `errata_id: null` is the only way a segment
+       genuinely applies no errata; there is no caller-supplied override
+       of any kind -- a caller can never see unmasked rows the manifest
+       itself says are contaminated, and can never inject a mask the
+       manifest does not name either.
     7. For `val`/`oof_block` roles: `harness.budget.record_look` BEFORE
        returning (D-05-11) -- the gate is written against the ROLE, not
        the layout, and runs on the FINAL frame the caller receives (after
@@ -170,7 +181,18 @@ def materialize(
         df, _admission_counts = row_admission.apply_admission_policy(
             df, manifest["admission"]
         )
-        df = errata.mask_errata_cells(df, errata_cells or [])
+        errata_id = manifest["errata_id"]
+        resolved_errata_cells = (
+            errata.read_errata_manifest(
+                registry_root,
+                errata_id,
+                symbol=manifest["symbol"],
+                version=manifest["version"],
+            )
+            if errata_id is not None
+            else []
+        )
+        df = errata.mask_errata_cells(df, resolved_errata_cells)
         df = df.drop(row_admission.STALE_BOOK_AGE_COLUMN)
 
     if is_look:

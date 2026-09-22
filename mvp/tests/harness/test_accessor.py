@@ -22,6 +22,7 @@ from harness import accessor as accessor_module
 from harness import row_admission
 from harness.accessor import materialize
 from harness.budget import look_count
+from harness.errata import ErrataManifestError, errata_manifest_path
 from harness.purge_embargo import (
     FOLD_EMBARGO_NS,
     PURGE_HORIZON_NS,
@@ -422,7 +423,9 @@ def _build_admission_errata_fixture(
     }
 
 
-def _write_probe_manifest(registry_root, partition, *, admission: dict) -> dict:
+def _write_probe_manifest(
+    registry_root, partition, *, admission: dict, errata_id: str | None = None
+) -> dict:
     """A minimal, HAND-BUILT segment manifest (one `val` entry spanning
     the whole probe partition), written directly via
     `segment_manifest_path` -- the same pattern
@@ -442,7 +445,7 @@ def _write_probe_manifest(registry_root, partition, *, admission: dict) -> dict:
         "segments": [entry],
         "upstream_feature_manifest_ids": [partition["manifest_id"]],
         "admission": admission,
-        "errata_id": None,
+        "errata_id": errata_id,
         "budget_allowance": 10,
         "symbol": "BTCUSDT",
         "version": 1,
@@ -458,9 +461,35 @@ def _write_probe_manifest(registry_root, partition, *, admission: dict) -> dict:
     return manifest
 
 
+def _write_errata_manifest(
+    registry_root, *, symbol: str, version: int, cells: list[dict]
+) -> str:
+    """Write a real, hash-verifiable `registry_root/errata/<id>.json` --
+    05-VERIFICATION-FIX.md Gap 2's own test fixture, mirroring
+    `harness.segments.issue_segment_manifest`'s content-addressing (never
+    a second canonicalizer). Returns the errata id (the filename stem)."""
+    body = {
+        "symbol": symbol,
+        "version": version,
+        "computed_from_dates": [],
+        "cells": cells,
+    }
+    errata_id = compute_manifest_id(body)
+    manifest = {"manifest_id": errata_id, **body}
+    path = errata_manifest_path(registry_root, errata_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, sort_keys=True, indent=2))
+    return errata_id
+
+
 def test_accessor_applies_admission_and_errata_gates(
     lake_root, registry_root, tracking_root
 ):
+    """05-VERIFICATION-FIX.md Gap 2's own regression test: the errata
+    manifest is named by `manifest["errata_id"]` and resolved by
+    `materialize` ITSELF -- `errata_cells` is no longer a parameter of
+    `materialize` at all (removed by this fix), so this test's success is
+    proof the auto-resolve path works with nothing caller-supplied."""
     partition = _build_admission_errata_fixture(lake_root, registry_root)
     admission = {
         "policy": "stale_book",
@@ -468,7 +497,6 @@ def test_accessor_applies_admission_and_errata_gates(
         "exclude_undefined_age": True,
         "counts": {},
     }
-    manifest = _write_probe_manifest(registry_root, partition, admission=admission)
 
     excluded_seqs = {
         i
@@ -477,17 +505,28 @@ def test_accessor_applies_admission_and_errata_gates(
     }
     assert excluded_seqs, "fixture must have real stale rows -- vacuous otherwise"
 
-    masked_seq = 1
-    assert masked_seq not in excluded_seqs
-    masked_etime = partition["etimes"][masked_seq]
+    # Three cells, across BOTH label columns, on rows admission does NOT
+    # exclude -- an admission-excluded cell would be masked away for a
+    # different reason and the two gates' effects would be unverifiable
+    # in isolation.
+    masked_seqs_by_column = {1: "ret_1s_mid", 2: "ret_10s_mid", 3: "ret_1s_mid"}
+    for seq in masked_seqs_by_column:
+        assert seq not in excluded_seqs
     errata_cells = [
         {
             "date": "2026-09-13",
-            "etime": masked_etime,
-            "decision_seq": masked_seq,
-            "label_column": "ret_1s_mid",
+            "etime": partition["etimes"][seq],
+            "decision_seq": seq,
+            "label_column": column,
         }
+        for seq, column in masked_seqs_by_column.items()
     ]
+    errata_id = _write_errata_manifest(
+        registry_root, symbol="BTCUSDT", version=1, cells=errata_cells
+    )
+    manifest = _write_probe_manifest(
+        registry_root, partition, admission=admission, errata_id=errata_id
+    )
 
     df = materialize(
         manifest["manifest_id"],
@@ -496,7 +535,6 @@ def test_accessor_applies_admission_and_errata_gates(
         lake_root=lake_root,
         tracking_root=str(tracking_root),
         run_tags=dict(RUN_TAGS),
-        errata_cells=errata_cells,
     )
 
     # Admission (D-05-21): exactly the stale (age > 5s) rows are gone --
@@ -506,18 +544,37 @@ def test_accessor_applies_admission_and_errata_gates(
     assert kept_seqs.isdisjoint(excluded_seqs)
     assert kept_seqs == set(range(partition["rows"])) - excluded_seqs
 
-    # Errata (D-05-20): exactly the named cell is null; the same row's
-    # OTHER label column, and every other row's ret_1s_mid, survive
-    # untouched.
-    masked_row = df.filter(pl.col("decision_seq") == masked_seq)
-    assert masked_row["ret_1s_mid"].to_list() == [None]
-    assert masked_row["ret_10s_mid"].to_list() == [0.0001 * (masked_seq + 1)]
+    # Errata (D-05-20), auto-resolved from `manifest["errata_id"]`: exactly
+    # the 3 named cells are null -- counted BOTH directions (nulled and
+    # untouched), so a masking bug that nulls too much or too little
+    # cannot pass silently.
+    null_count = sum(df[col].null_count() for col in LABEL_COLUMNS)
+    assert null_count == len(errata_cells)
+    non_null_count = sum(df[col].len() - df[col].null_count() for col in LABEL_COLUMNS)
+    assert non_null_count == df.height * len(LABEL_COLUMNS) - len(errata_cells)
 
-    other_row = df.filter(pl.col("decision_seq") == 2)
-    assert other_row["ret_1s_mid"].to_list() == [0.0001 * (2 + 1)]
+    for seq, column in masked_seqs_by_column.items():
+        row = df.filter(pl.col("decision_seq") == seq)
+        assert row[column].to_list() == [None]
+        other_column = next(c for c in LABEL_COLUMNS if c != column)
+        assert row[other_column].to_list() == [0.0001 * (seq + 1)]
+
+    untouched_row = df.filter(pl.col("decision_seq") == 10)
+    assert untouched_row["ret_1s_mid"].to_list() == [0.0001 * (10 + 1)]
+    assert untouched_row["ret_10s_mid"].to_list() == [0.0001 * (10 + 1)]
 
     # The accessor-internal stale-age bookkeeping column never leaks out.
     assert row_admission.STALE_BOOK_AGE_COLUMN not in df.columns
+
+    # Gate 7 (budget) still ran on the successful materialization -- this
+    # test's own baseline for the "a refusal must not spend a look"
+    # anti-vacuity tests below.
+    assert (
+        look_count(
+            manifest["manifest_id"], "val_probe", tracking_root=str(tracking_root)
+        )
+        == 1
+    )
 
 
 def test_accessor_gate_order_is_admission_then_errata_then_budget(
@@ -564,7 +621,164 @@ def test_accessor_gate_order_is_admission_then_errata_then_budget(
         lake_root=lake_root,
         tracking_root=str(tracking_root),
         run_tags=dict(RUN_TAGS),
-        errata_cells=[],
     )
 
     assert order == ["admission", "errata", "budget"]
+
+
+# --------------------------------------------------------------------------
+# 05-VERIFICATION-FIX.md Gap 2: anti-vacuity + fail-closed proofs for the
+# auto-resolve path above -- `errata_id=None` masks nothing, and a named-
+# but-missing/tampered errata manifest RAISES, never silently masks
+# nothing (the exact failure direction `data.holdout`'s own doctrine
+# forbids).
+# --------------------------------------------------------------------------
+
+
+def _probe_admission() -> dict:
+    return {
+        "policy": "stale_book",
+        "max_age_ns": row_admission.STALE_BOOK_MAX_AGE_NS,
+        "exclude_undefined_age": True,
+        "counts": {},
+    }
+
+
+def test_materialize_errata_id_null_masks_nothing(
+    lake_root, registry_root, tracking_root
+):
+    partition = _build_admission_errata_fixture(lake_root, registry_root)
+    # errata_id defaults to None in _write_probe_manifest -- the only way a
+    # segment manifest genuinely applies no errata (D-05-20).
+    manifest = _write_probe_manifest(
+        registry_root, partition, admission=_probe_admission()
+    )
+
+    df = materialize(
+        manifest["manifest_id"],
+        "val_probe",
+        registry_root=registry_root,
+        lake_root=lake_root,
+        tracking_root=str(tracking_root),
+        run_tags=dict(RUN_TAGS),
+    )
+
+    null_count = sum(df[col].null_count() for col in LABEL_COLUMNS)
+    assert null_count == 0, "errata_id=None must mask nothing -- anti-vacuity"
+
+
+def test_materialize_refuses_missing_errata_manifest(
+    lake_root, registry_root, tracking_root
+):
+    partition = _build_admission_errata_fixture(lake_root, registry_root)
+    # A syntactically plausible id that names no file on disk.
+    manifest = _write_probe_manifest(
+        registry_root,
+        partition,
+        admission=_probe_admission(),
+        errata_id="deadbeef" * 8,
+    )
+
+    with pytest.raises(ErrataManifestError, match="missing"):
+        materialize(
+            manifest["manifest_id"],
+            "val_probe",
+            registry_root=registry_root,
+            lake_root=lake_root,
+            tracking_root=str(tracking_root),
+            run_tags=dict(RUN_TAGS),
+        )
+
+    # Fail-closed means the refused read never spends a look either.
+    assert (
+        look_count(
+            manifest["manifest_id"], "val_probe", tracking_root=str(tracking_root)
+        )
+        == 0
+    )
+
+
+def test_materialize_refuses_tampered_errata_manifest(
+    lake_root, registry_root, tracking_root
+):
+    partition = _build_admission_errata_fixture(lake_root, registry_root)
+    errata_id = _write_errata_manifest(
+        registry_root,
+        symbol="BTCUSDT",
+        version=1,
+        cells=[
+            {
+                "date": "2026-09-13",
+                "etime": partition["etimes"][1],
+                "decision_seq": 1,
+                "label_column": "ret_1s_mid",
+            }
+        ],
+    )
+    # Tamper the body IN PLACE, after its id is already computed and named
+    # by the segment manifest below -- recomputing the hash from the
+    # tampered body must no longer equal the filename stem/named id.
+    path = errata_manifest_path(registry_root, errata_id)
+    body = json.loads(path.read_text())
+    body["cells"].append(
+        {
+            "date": "2026-09-13",
+            "etime": partition["etimes"][2],
+            "decision_seq": 2,
+            "label_column": "ret_10s_mid",
+        }
+    )
+    path.write_text(json.dumps(body, sort_keys=True, indent=2))
+
+    manifest = _write_probe_manifest(
+        registry_root, partition, admission=_probe_admission(), errata_id=errata_id
+    )
+
+    with pytest.raises(ErrataManifestError, match="hash mismatch"):
+        materialize(
+            manifest["manifest_id"],
+            "val_probe",
+            registry_root=registry_root,
+            lake_root=lake_root,
+            tracking_root=str(tracking_root),
+            run_tags=dict(RUN_TAGS),
+        )
+
+    assert (
+        look_count(
+            manifest["manifest_id"], "val_probe", tracking_root=str(tracking_root)
+        )
+        == 0
+    )
+
+
+def test_materialize_refuses_errata_manifest_with_wrong_symbol(
+    lake_root, registry_root, tracking_root
+):
+    partition = _build_admission_errata_fixture(lake_root, registry_root)
+    errata_id = _write_errata_manifest(
+        registry_root,
+        symbol="ETHUSDT",
+        version=1,
+        cells=[
+            {
+                "date": "2026-09-13",
+                "etime": partition["etimes"][1],
+                "decision_seq": 1,
+                "label_column": "ret_1s_mid",
+            }
+        ],
+    )
+    manifest = _write_probe_manifest(
+        registry_root, partition, admission=_probe_admission(), errata_id=errata_id
+    )
+
+    with pytest.raises(ErrataManifestError, match="symbol"):
+        materialize(
+            manifest["manifest_id"],
+            "val_probe",
+            registry_root=registry_root,
+            lake_root=lake_root,
+            tracking_root=str(tracking_root),
+            run_tags=dict(RUN_TAGS),
+        )
