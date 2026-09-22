@@ -11,9 +11,22 @@ it. The filter below is intentionally NOT keyed on `model_class` -- a
 per-model-class budget would let three model classes spend three budgets
 on one window.
 
-NO EXHAUSTION CHECK YET. `record_look` counts a look; refusing a look once
-a segment's `budget_allowance` is spent is a later plan's job (D-05-14),
-not this one's -- this module only makes the count durable and queryable.
+EXHAUSTION (D-05-14, 05-03-PLAN.md): `record_look` now REFUSES a look once
+`look_count(...) >= budget_allowance` -- `budget_allowance` is a REQUIRED
+keyword-only argument on `record_look`, never optional, so a caller cannot
+skip the check by omitting it. `exhausted_segments` answers the same
+question in bulk, over a list of already-issued manifests, for
+`harness.segments.issue_segment_manifest`'s own unconditional issuance-time
+overlap refusal (D-05-14's other half: a NEW manifest whose validation
+interval overlaps an already-exhausted one is refused at issuance, not
+merely at the next look).
+
+THE GUARANTEE, STATED HONESTLY (D-05-15, unchanged by this addition): the
+budget counts looks that pass through `record_look` -- which only
+`harness.accessor.materialize` calls. A bare `features.tier.load_features`
+plus a hand-rolled `etime` filter bypasses this module entirely, exactly as
+it bypasses `harness.accessor`; `tools/check_harness_accessor_only.py` is
+the static tripwire that catches such a caller, not this module.
 """
 
 from __future__ import annotations
@@ -29,13 +42,25 @@ from data import lake_paths
 from data.capture.config import DEFAULT_MIN_FREE_GB
 from tracking.mlflow_utils import build_tracking_uri, start_tracked_run
 
-__all__ = ["BudgetError", "look_count", "record_look"]
+__all__ = [
+    "BudgetError",
+    "BudgetExhaustedError",
+    "exhausted_segments",
+    "look_count",
+    "record_look",
+]
 
 
 class BudgetError(ValueError):
     """Raised for a budget-counter protocol violation: an uninitialised or
     non-canonical MLflow store, or (from `record_look`) a caller whose
     `run_tags` has not already set `fold_config`."""
+
+
+class BudgetExhaustedError(BudgetError):
+    """Raised by `record_look` (D-05-14) when a segment's `budget_allowance`
+    is already spent -- names the segment, the looks spent, the allowance,
+    and the remedy (a new, non-overlapping segment manifest)."""
 
 
 #: Duplicated from `data.lockbox` (05-PATTERNS.md: a private helper with a
@@ -152,12 +177,68 @@ def look_count(
     return len(runs)
 
 
+#: Roles `exhausted_segments` (and `harness.segments.issue_segment_manifest`'s
+#: overlap check) look at -- the same `_LOOK_ROLES` set `harness.accessor`
+#: uses (D-05-11: only `val`/`oof_block` materializations are looks).
+_LOOK_ROLES: frozenset[str] = frozenset({"val", "oof_block"})
+
+
+def exhausted_segments(
+    manifests: list[dict],
+    *,
+    tracking_root: str,
+    allowed_root: str | None = None,
+) -> list[dict]:
+    """Return one entry per `(manifest, val/oof_block segment)` pair whose
+    `look_count(...) >= manifest["budget_allowance"]` (D-05-14), as
+    `{"manifest_id", "segment_name", "start_ns", "end_ns"}` dicts --
+    `harness.segments.issue_segment_manifest`'s self-discovery calls this,
+    unconditionally, over every manifest it globs from
+    `registry_root/segments/`, to refuse a new issuance whose validation
+    interval overlaps one of these.
+
+    `manifests=[]` (the common case for every `tmp_path`-fresh registry
+    this phase's tests use) means the loop below never executes, so
+    `look_count` -- and therefore any MLflow query at all -- is never
+    reached. This is not a special case written into this function: it is
+    what "nothing to check" looks like when there is nothing to iterate.
+    A non-empty `manifests` list with a genuinely fresh/uninitialised
+    `tracking_root`, by contrast, DOES reach `look_count`, and that
+    `BudgetError` propagates unmodified (D-05-12): a manifest exists to
+    check, and its tracking root could not be asked.
+    """
+    exhausted: list[dict] = []
+    for manifest in manifests:
+        manifest_id = manifest["manifest_id"]
+        allowance = manifest["budget_allowance"]
+        for entry in manifest["segments"]:
+            if entry["role"] not in _LOOK_ROLES:
+                continue
+            spent = look_count(
+                manifest_id,
+                entry["name"],
+                tracking_root=tracking_root,
+                allowed_root=allowed_root,
+            )
+            if spent >= allowance:
+                exhausted.append(
+                    {
+                        "manifest_id": manifest_id,
+                        "segment_name": entry["name"],
+                        "start_ns": entry["start_ns"],
+                        "end_ns": entry["end_ns"],
+                    }
+                )
+    return exhausted
+
+
 def record_look(
     segment_manifest_id: str,
     segment_name: str,
     *,
     tracking_root: str,
     run_tags: dict,
+    budget_allowance: int,
     experiment_name: str = "harness-looks",
     min_free_gb: float = DEFAULT_MIN_FREE_GB,
 ) -> str:
@@ -174,12 +255,29 @@ def record_look(
     `seed`, `env_hash`, `model_class`). `segment_manifest_id` and `stage`
     are filled here, never by the caller, so they cannot drift from what
     `look_count` filters on.
+
+    `budget_allowance` (D-05-14) is a REQUIRED keyword-only argument, no
+    default -- `harness.accessor.materialize` passes the segment
+    manifest's own `budget_allowance` field. BEFORE `start_tracked_run` is
+    ever called, this queries `look_count` for the pair; a count already
+    `>= budget_allowance` raises `BudgetExhaustedError`, naming the
+    segment, how many looks were spent, the allowance, and the remedy (a
+    new segment manifest whose validation interval does not overlap this
+    one) -- no run is logged for a refused look.
     """
     if "fold_config" not in run_tags:
         raise BudgetError(
             "record_look: run_tags must already include 'fold_config' -- "
             "the caller (harness.accessor) sets it from the segment "
             "manifest's own layout name before calling record_look"
+        )
+    spent = look_count(segment_manifest_id, segment_name, tracking_root=tracking_root)
+    if spent >= budget_allowance:
+        raise BudgetExhaustedError(
+            f"record_look: segment {segment_name!r} of manifest "
+            f"{segment_manifest_id!r} is exhausted -- {spent} looks spent "
+            f"of {budget_allowance} allowed; issue a new segment manifest "
+            "whose validation interval does not overlap this one (D-05-14)"
         )
     tags = dict(run_tags)
     tags["segment_manifest_id"] = segment_manifest_id

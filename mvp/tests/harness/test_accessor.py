@@ -93,7 +93,7 @@ def _five_seg_segments(start_ns: int = 0) -> list[dict]:
     ]
 
 
-def _build_fixture(lake_root, registry_root, *, rows: int = 6_000):
+def _build_fixture(lake_root, registry_root, tracking_root, *, rows: int = 6_000):
     span = build_span_partition(
         lake_root,
         registry_root,
@@ -149,6 +149,7 @@ def _build_fixture(lake_root, registry_root, *, rows: int = 6_000):
         code_hash="deadbeef",
         registry_root=registry_root,
         lake_root=lake_root,
+        tracking_root=str(tracking_root),
     )
     return manifest, span
 
@@ -156,7 +157,7 @@ def _build_fixture(lake_root, registry_root, *, rows: int = 6_000):
 def test_materialize_refuses_held_out_unconditionally(
     lake_root, registry_root, tracking_root
 ):
-    manifest, _span = _build_fixture(lake_root, registry_root)
+    manifest, _span = _build_fixture(lake_root, registry_root, tracking_root)
     with pytest.raises(ValueError, match="held_out"):
         materialize(
             manifest["manifest_id"],
@@ -171,7 +172,7 @@ def test_materialize_refuses_held_out_unconditionally(
 def test_materialize_filters_by_half_open_time_window(
     lake_root, registry_root, tracking_root
 ):
-    manifest, _span = _build_fixture(lake_root, registry_root)
+    manifest, _span = _build_fixture(lake_root, registry_root, tracking_root)
     entry = next(s for s in manifest["segments"] if s["name"] == "val_s1")
     df = materialize(
         manifest["manifest_id"],
@@ -190,7 +191,7 @@ def test_materialize_filters_by_half_open_time_window(
 def test_materialize_excludes_purge_and_embargo_zones_for_a_train_entry(
     lake_root, registry_root, tracking_root
 ):
-    manifest, _span = _build_fixture(lake_root, registry_root)
+    manifest, _span = _build_fixture(lake_root, registry_root, tracking_root)
     train_entry = next(s for s in manifest["segments"] if s["name"] == "train_s1")
     others = [
         s
@@ -232,7 +233,7 @@ def test_materialize_excludes_purge_and_embargo_zones_for_a_train_entry(
 def test_materialize_counts_val_and_oof_block_but_not_train_as_a_look(
     lake_root, registry_root, tracking_root
 ):
-    manifest, _span = _build_fixture(lake_root, registry_root)
+    manifest, _span = _build_fixture(lake_root, registry_root, tracking_root)
     mid = manifest["manifest_id"]
 
     materialize(
@@ -287,7 +288,7 @@ def test_materialize_counts_val_and_oof_block_but_not_train_as_a_look(
 
 
 def test_the_walking_skeleton_end_to_end(lake_root, registry_root, tracking_root):
-    manifest, _span = _build_fixture(lake_root, registry_root)
+    manifest, _span = _build_fixture(lake_root, registry_root, tracking_root)
     mid = manifest["manifest_id"]
 
     train_df = materialize(

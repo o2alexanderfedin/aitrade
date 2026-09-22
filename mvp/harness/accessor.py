@@ -83,7 +83,10 @@ def materialize(
        returning (D-05-11) -- the gate is written against the ROLE, not
        the layout, and runs on the FINAL frame the caller receives (after
        admission exclusion and errata masking), so the look is counted on
-       what the caller actually sees.
+       what the caller actually sees. `record_look` is passed the
+       manifest's own `budget_allowance` (05-03-PLAN.md, D-05-14) and
+       raises `harness.budget.BudgetExhaustedError` -- refusing to return
+       any rows -- once that segment's allowance is already spent.
 
     GATE-ORDER NOTE (05-04-PLAN.md Task 2 finding). Gate 4 slices the
     upstream frame to `[start_ns, end_ns)` BEFORE gate 6 would otherwise
@@ -177,6 +180,7 @@ def materialize(
             segment_name,
             tracking_root=tracking_root,
             run_tags=tags,
+            budget_allowance=manifest["budget_allowance"],
         )
 
     return df

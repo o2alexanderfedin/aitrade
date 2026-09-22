@@ -47,7 +47,7 @@ import polars as pl
 from data import store
 from data.store import FEATURES_TIER, compute_manifest_id
 from features.tier import load_features
-from harness import kfold
+from harness import budget, kfold
 from harness.purge_embargo import (
     FOLD_EMBARGO_NS,
     PURGE_HORIZON_NS,
@@ -180,6 +180,61 @@ def _derive_oof_training_row_counts(
 
 def _intervals_overlap(a: dict, b: dict) -> bool:
     return a["start_ns"] < b["end_ns"] and b["start_ns"] < a["end_ns"]
+
+
+def _discover_existing_manifests(registry_root: Path) -> list[dict]:
+    """Every already-issued segment manifest under `registry_root/segments/`,
+    self-discovered by globbing -- no caller-supplied list, no opt-out
+    (05-03-PLAN.md, checker iteration 1 blocker 4). An empty or
+    non-existent `segments/` directory yields `[]` without error: this is
+    exactly the shape every `tmp_path`-fresh registry this phase's tests
+    use, and `[]` is a real, non-special answer to "what already exists
+    here" -- not an escape hatch.
+
+    Each discovered file is read through `read_segment_manifest` (self-hash
+    re-verified, T-05-04) so a corrupted or hand-edited manifest is caught
+    here, before it can silently fail to protect an exhausted window."""
+    segments_dir = Path(registry_root) / "segments"
+    return [
+        read_segment_manifest(registry_root, path.stem)
+        for path in sorted(segments_dir.glob("*.json"))
+    ]
+
+
+def _refuse_overlap_with_exhausted_segments(
+    segments: list[dict], *, registry_root: Path, tracking_root: str
+) -> None:
+    """D-05-14's issuance-time half: UNCONDITIONALLY (no opt-out parameter
+    exists on this function or on `issue_segment_manifest`) self-discover
+    every existing manifest, ask `harness.budget.exhausted_segments` which
+    of their `val`/`oof_block` windows are already spent, and refuse a new
+    candidate manifest whose own `val`/`oof_block` entry overlaps any of
+    them.
+
+    Zero discovered manifests (the common case for a fresh `tmp_path`
+    registry) means `budget.exhausted_segments` iterates nothing and never
+    queries `tracking_root` at all -- see that function's own docstring.
+    A non-empty discovery, by contrast, genuinely queries MLflow, and any
+    exception that query raises propagates unmodified (D-05-12): it is
+    never collapsed to "nothing is exhausted"."""
+    existing = _discover_existing_manifests(registry_root)
+    exhausted = budget.exhausted_segments(existing, tracking_root=tracking_root)
+    if not exhausted:
+        return
+    candidates = [s for s in segments if s["role"] in ("val", "oof_block")]
+    for candidate in candidates:
+        for spent in exhausted:
+            if _intervals_overlap(candidate, spent):
+                raise ValueError(
+                    f"issue_segment_manifest: candidate segment "
+                    f"{candidate['name']!r} [{candidate['start_ns']}, "
+                    f"{candidate['end_ns']}) overlaps already-exhausted "
+                    f"segment {spent['segment_name']!r} of manifest "
+                    f"{spent['manifest_id']!r} [{spent['start_ns']}, "
+                    f"{spent['end_ns']}) -- issue a new segment manifest "
+                    "whose validation interval does not overlap any "
+                    "exhausted one (D-05-14)"
+                )
 
 
 def _validate_segments(
@@ -448,6 +503,7 @@ def issue_segment_manifest(
     code_hash: str,
     registry_root: Path,
     lake_root: Path,
+    tracking_root: str,
     k: int = 5,
 ) -> dict:
     """Issue a segment manifest for one fold layout (D-05-07..09).
@@ -480,6 +536,17 @@ def issue_segment_manifest(
     downstream `manifest.get("partitions", [])` mistakes this for a
     zero-partition manifest `data.store.issue_manifest` would have
     refused.
+
+    `tracking_root` is a NEW required keyword-only parameter (05-03-
+    PLAN.md, checker iteration 1 blocker 4): UNCONDITIONALLY, before the
+    new manifest is written, this function self-discovers every existing
+    manifest under `registry_root/segments/` (globbing -- no caller-
+    supplied `existing_manifests` list, and no such parameter exists on
+    this signature) and refuses a candidate `val`/`oof_block` segment that
+    overlaps an already-exhausted validation window (D-05-14). There is no
+    opt-out: a caller cannot omit two keyword arguments to skip the check,
+    because there is only one keyword to omit, and omitting it is a
+    `TypeError`, not a silently-skipped check.
     """
     oof_blocks: list[dict] = []
     if layout == "5seg":
@@ -518,6 +585,10 @@ def issue_segment_manifest(
             registry_root=registry_root,
             lake_root=lake_root,
         )
+
+    _refuse_overlap_with_exhausted_segments(
+        segments, registry_root=registry_root, tracking_root=tracking_root
+    )
 
     body = {
         "layout": layout,

@@ -12,6 +12,8 @@ import inspect
 
 import pytest
 from data.time_ns import NS_PER_SECOND
+from harness import segments as segments_module
+from harness.budget import record_look
 from harness.purge_embargo import (
     FOLD_EMBARGO_NS,
     PURGE_HORIZON_NS,
@@ -28,6 +30,15 @@ from harness.segments import (
     segment_manifest_path,
 )
 from tests.fixtures.harness_span import build_span_partition
+
+RUN_TAGS = {
+    "code_hash": "a" * 40,
+    "data_hash": "none",
+    "seed": "0",
+    "env_hash": "b" * 64,
+    "model_class": "none (harness probe, no model in this phase)",
+    "fold_config": "5seg",
+}
 
 S = NS_PER_SECOND
 
@@ -85,16 +96,33 @@ def _other_entries(segments: list[dict], entry_name: str) -> list[dict]:
 
 
 def _build_fixture(
-    lake_root, registry_root, *, rows: int = 6_000, segments=None, **overrides
+    lake_root,
+    registry_root,
+    tracking_root,
+    *,
+    rows: int = 6_000,
+    segments=None,
+    date: str = "2026-09-13",
+    **overrides,
 ):
     """Real span (through the actual writer/manifest-issuer path) plus a
     real 5seg issuance -- `segments` defaults to the widened, non-starved
     geometry (`five_seg_segments()`) but may be overridden with a
-    deliberately malformed layout for a negative test."""
+    deliberately malformed layout for a negative test.
+
+    `tracking_root` (05-03-PLAN.md: `issue_segment_manifest`'s new
+    required keyword) is a REQUIRED positional here too, not defaulted --
+    every call site names its own tmp tracking root explicitly. `date`
+    defaults to P1/P2's own fixed calendar date; a caller issuing a SECOND
+    manifest against the same `lake_root`/`registry_root` in one test
+    (05-03-PLAN.md's overlap tests) must pass a different `date` -- a
+    features-tier partition is write-once per date (features.tier's own
+    guarantee), independent of anything this segment-manifest overlap
+    check is about."""
     span = build_span_partition(
         lake_root,
         registry_root,
-        date="2026-09-13",
+        date=date,
         start_ns=0,
         step_ns=S,
         rows=rows,
@@ -111,6 +139,7 @@ def _build_fixture(
         code_hash="deadbeef",
         registry_root=registry_root,
         lake_root=lake_root,
+        tracking_root=str(tracking_root),
     )
     kwargs.update(overrides)
     manifest = issue_segment_manifest(**kwargs)
@@ -247,9 +276,9 @@ def test_refuses_a_starved_train_entry():
 
 
 def test_records_effective_intervals_and_derived_purge_embargo(
-    lake_root, registry_root
+    lake_root, registry_root, tracking_root
 ):
-    manifest, _span = _build_fixture(lake_root, registry_root)
+    manifest, _span = _build_fixture(lake_root, registry_root, tracking_root)
     segments = manifest["segments"]
     train_names = [s["name"] for s in segments if s["role"] == "train"]
     assert train_names == ["train_s1", "train_s2"]
@@ -270,8 +299,10 @@ def test_records_effective_intervals_and_derived_purge_embargo(
     assert manifest["embargo_ns"] == FOLD_EMBARGO_NS
 
 
-def test_records_real_purged_and_embargoed_row_counts(lake_root, registry_root):
-    manifest, span = _build_fixture(lake_root, registry_root)
+def test_records_real_purged_and_embargoed_row_counts(
+    lake_root, registry_root, tracking_root
+):
+    manifest, span = _build_fixture(lake_root, registry_root, tracking_root)
     segments = manifest["segments"]
     all_etimes = list(range(span["etime_min"], span["etime_max"] + 1, S))
 
@@ -317,13 +348,17 @@ def test_records_real_purged_and_embargoed_row_counts(lake_root, registry_root):
 # --------------------------------------------------------------------------
 
 
-def test_issue_segment_manifest_omits_partitions_key(lake_root, registry_root):
-    manifest, _span = _build_fixture(lake_root, registry_root)
+def test_issue_segment_manifest_omits_partitions_key(
+    lake_root, registry_root, tracking_root
+):
+    manifest, _span = _build_fixture(lake_root, registry_root, tracking_root)
     assert "partitions" not in manifest
 
 
-def test_issue_segment_manifest_records_every_d05_09_field(lake_root, registry_root):
-    manifest, span = _build_fixture(lake_root, registry_root)
+def test_issue_segment_manifest_records_every_d05_09_field(
+    lake_root, registry_root, tracking_root
+):
+    manifest, span = _build_fixture(lake_root, registry_root, tracking_root)
     assert [s["name"] for s in manifest["segments"]] == list(FIVE_SEG_NAMES)
     assert len(manifest["segments"]) == 5
     assert manifest["purge_ns"] == PURGE_HORIZON_NS
@@ -342,7 +377,9 @@ def test_issue_segment_manifest_records_every_d05_09_field(lake_root, registry_r
         assert name in manifest["embargoed_row_count"]
 
 
-def test_compressed_3seg_refuses_a_malformed_top_level_shape(lake_root, registry_root):
+def test_compressed_3seg_refuses_a_malformed_top_level_shape(
+    lake_root, registry_root, tracking_root
+):
     # Task 2 (05-02-PLAN.md) implements compressed_3seg for real -- this
     # supersedes P1's own "raises NotImplementedError" test (the NEW
     # behaviour under the same layout name is that a malformed top-level
@@ -362,18 +399,21 @@ def test_compressed_3seg_refuses_a_malformed_top_level_shape(lake_root, registry
             code_hash="deadbeef",
             registry_root=registry_root,
             lake_root=lake_root,
+            tracking_root=str(tracking_root),
         )
 
 
-def test_5seg_refuses_wrong_names_or_roles(lake_root, registry_root):
+def test_5seg_refuses_wrong_names_or_roles(lake_root, registry_root, tracking_root):
     bad = five_seg_segments()
     bad[0]["role"] = "val"
     with pytest.raises(ValueError, match="requires segments named"):
-        _build_fixture(lake_root, registry_root, segments=bad)
+        _build_fixture(lake_root, registry_root, tracking_root, segments=bad)
 
 
-def test_read_segment_manifest_self_hash_verified(lake_root, registry_root):
-    manifest, _span = _build_fixture(lake_root, registry_root)
+def test_read_segment_manifest_self_hash_verified(
+    lake_root, registry_root, tracking_root
+):
+    manifest, _span = _build_fixture(lake_root, registry_root, tracking_root)
     reread = read_segment_manifest(registry_root, manifest["manifest_id"])
     assert reread == manifest
 
@@ -389,3 +429,124 @@ def test_covered_range_refuses_empty_upstream_ids(lake_root, registry_root):
         _covered_range(
             [], symbol="BTCUSDT", registry_root=registry_root, lake_root=lake_root
         )
+
+
+# --------------------------------------------------------------------------
+# D-05-14 (05-03-PLAN.md Task 1): the UNCONDITIONAL issuance-time overlap
+# refusal -- `issue_segment_manifest` self-discovers existing manifests
+# under `registry_root/segments/` and refuses a new `val`/`oof_block`
+# window that overlaps an already-exhausted one.
+# --------------------------------------------------------------------------
+
+
+def test_tracking_root_is_a_required_keyword_argument():
+    params = inspect.signature(issue_segment_manifest).parameters
+    assert params["tracking_root"].default is inspect.Parameter.empty
+    assert params["tracking_root"].kind is inspect.Parameter.KEYWORD_ONLY
+
+
+def test_no_existing_manifests_opt_out_parameter_exists():
+    assert (
+        "existing_manifests" not in inspect.signature(issue_segment_manifest).parameters
+    )
+
+
+def test_a_tmp_registry_and_tmp_tracking_root_get_no_special_treatment(
+    lake_root, registry_root, tracking_root, monkeypatch
+):
+    """A fresh, empty `tmp_path` registry/tracking root -- the shape every
+    test in this phase uses -- still runs the self-discovery + exhaustion
+    query. It achieves "nothing to refuse against" by genuinely finding
+    nothing (`budget.exhausted_segments` called with `[]`), never by an
+    escape hatch inside `issue_segment_manifest` itself."""
+    calls: list[tuple[list[dict], str]] = []
+    real_exhausted_segments = segments_module.budget.exhausted_segments
+
+    def _spy(manifests, **kwargs):
+        calls.append((list(manifests), kwargs.get("tracking_root")))
+        return real_exhausted_segments(manifests, **kwargs)
+
+    monkeypatch.setattr(segments_module.budget, "exhausted_segments", _spy)
+
+    _build_fixture(lake_root, registry_root, tracking_root)
+
+    assert calls == [([], str(tracking_root))]
+
+
+def test_issuance_self_discovers_existing_manifests_and_refuses_overlap(
+    lake_root, registry_root, tracking_root
+):
+    manifest1, _span = _build_fixture(
+        lake_root, registry_root, tracking_root, budget_allowance=1
+    )
+    val_s1 = next(s for s in manifest1["segments"] if s["name"] == "val_s1")
+
+    # Spend the whole allowance (1) -- val_s1 is now exhausted.
+    record_look(
+        manifest1["manifest_id"],
+        "val_s1",
+        tracking_root=str(tracking_root),
+        run_tags=dict(RUN_TAGS),
+        budget_allowance=1,
+    )
+
+    # A second issuance whose candidate val_s1 is IDENTICAL (same
+    # geometry) overlaps manifest1's now-exhausted val_s1 -- refused,
+    # WITHOUT this test passing any list of existing manifests: the
+    # function found manifest1 itself by globbing registry_root/segments/.
+    with pytest.raises(ValueError, match=r"val_s1.*overlaps.*exhausted"):
+        _build_fixture(
+            lake_root,
+            registry_root,
+            tracking_root,
+            date="2026-09-14",
+            budget_allowance=1,
+        )
+
+    # Anti-vacuity: the refused candidate's own val_s1 window really does
+    # overlap the exhausted one (same geometry, by construction of this
+    # test) -- not a coincidental match on name alone.
+    candidate_val_s1 = next(s for s in five_seg_segments() if s["name"] == "val_s1")
+    assert candidate_val_s1["start_ns"] < val_s1["end_ns"]
+    assert val_s1["start_ns"] < candidate_val_s1["end_ns"]
+
+
+def test_issuance_allows_a_non_overlapping_fresh_window(
+    lake_root, registry_root, tracking_root
+):
+    manifest1, _span = _build_fixture(
+        lake_root, registry_root, tracking_root, budget_allowance=1
+    )
+    record_look(
+        manifest1["manifest_id"],
+        "val_s1",
+        tracking_root=str(tracking_root),
+        run_tags=dict(RUN_TAGS),
+        budget_allowance=1,
+    )
+
+    # Shifted forward exactly to manifest1's exhausted val_s1's own end_ns
+    # (2400s): the candidate's val_s1 becomes [2400s, 3000s) -- half-open
+    # adjacent to, never overlapping, the exhausted [1800s, 2400s) window.
+    # Same relative geometry as the default fixture (just shifted), so it
+    # is neither starved nor out-of-coverage (rows=6_000 still covers the
+    # shifted held_out's own start_ns of 5_400s; held_out itself is exempt
+    # from the upper coverage bound, D-05-16).
+    shifted_start_ns = 600 * S
+    val_s1_end = next(s for s in manifest1["segments"] if s["name"] == "val_s1")[
+        "end_ns"
+    ]
+    candidate_segments = five_seg_segments(start_ns=shifted_start_ns)
+    candidate_val_s1 = next(s for s in candidate_segments if s["name"] == "val_s1")
+    assert candidate_val_s1["start_ns"] == val_s1_end  # adjacent, not overlapping
+
+    manifest2, _span2 = _build_fixture(
+        lake_root,
+        registry_root,
+        tracking_root,
+        segments=candidate_segments,
+        date="2026-09-14",
+        version=2,
+        budget_allowance=1,
+    )
+    assert manifest2["manifest_id"] != manifest1["manifest_id"]

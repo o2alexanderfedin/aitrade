@@ -231,7 +231,7 @@ def _compressed_3seg_segments():
 
 
 def _build_compressed_3seg_fixture(
-    lake_root, registry_root, *, rows: int = 4_500, **overrides
+    lake_root, registry_root, tracking_root, *, rows: int = 4_500, **overrides
 ):
     span = build_span_partition(
         lake_root, registry_root, date="2026-09-13", start_ns=0, step_ns=S, rows=rows
@@ -263,6 +263,7 @@ def _build_compressed_3seg_fixture(
         code_hash="deadbeef",
         registry_root=registry_root,
         lake_root=lake_root,
+        tracking_root=str(tracking_root),
         k=BLOCK_COUNT,
     )
     kwargs.update(overrides)
@@ -270,8 +271,12 @@ def _build_compressed_3seg_fixture(
     return manifest, span
 
 
-def test_compressed_3seg_issues_with_oof_blocks(lake_root, registry_root):
-    manifest, _span = _build_compressed_3seg_fixture(lake_root, registry_root)
+def test_compressed_3seg_issues_with_oof_blocks(
+    lake_root, registry_root, tracking_root
+):
+    manifest, _span = _build_compressed_3seg_fixture(
+        lake_root, registry_root, tracking_root
+    )
     oof_entries = [s for s in manifest["segments"] if s["role"] == "oof_block"]
     assert [s["name"] for s in oof_entries] == [
         f"oof_block_{i}" for i in range(BLOCK_COUNT)
@@ -286,7 +291,14 @@ def test_compressed_3seg_issues_with_oof_blocks(lake_root, registry_root):
 def test_materializing_an_oof_block_counts_as_a_look(
     lake_root, registry_root, tracking_root
 ):
-    manifest, _span = _build_compressed_3seg_fixture(lake_root, registry_root)
+    # budget_allowance=2 (not the fixture's default 1): this test
+    # materializes oof_block_0 TWICE on purpose, to prove look_count keeps
+    # incrementing across repeated materializations of the same segment
+    # (05-03-PLAN.md's exhaustion enforcement would otherwise refuse the
+    # second call at the default allowance of 1).
+    manifest, _span = _build_compressed_3seg_fixture(
+        lake_root, registry_root, tracking_root, budget_allowance=2
+    )
     mid = manifest["manifest_id"]
 
     assert look_count(mid, "oof_block_0", tracking_root=str(tracking_root)) == 0
@@ -325,7 +337,9 @@ def test_materialize_train_on_compressed_3seg_is_never_empty(
     rows by construction (every row is inside SOME block's own purge
     zone). Also cross-checks the manifest's own recorded
     effective_intervals['train'] against materialize()'s actual etimes."""
-    manifest, _span = _build_compressed_3seg_fixture(lake_root, registry_root)
+    manifest, _span = _build_compressed_3seg_fixture(
+        lake_root, registry_root, tracking_root
+    )
     train_df = materialize(
         manifest["manifest_id"],
         "train",
