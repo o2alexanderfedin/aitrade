@@ -37,7 +37,7 @@ key-files:
 key-decisions:
   - "Content-identical capture-redelivery duplicates (same id, differing only in the daemon's own seq/rtime bookkeeping) are dropped before materialize_seq, keeping the earliest arrival; a duplicate id that disagrees on any real field is left untouched and still raises. Classified Rule 1 (materialize_seq's 'this is impossible' premise was empirically false for capture-sourced data, per STATE.md's own BoundedDedup TTL note) after an advisor consult, not Rule 4 -- the fix is source-gated and narrow, not structural."
   - "Ran data.backfill.downloader for 2026-09-16..19 before the plan's literal build_curated_range(stream='trade') call, then re-ran build_curated_range to supersede all four trade days from capture-sourced to archive-sourced. The plan's <action> text named only the two build_curated_range calls; 05-RESEARCH.md Q4(b) and the project's own archive-is-authoritative-for-trades design make the download step a Rule 3 blocking-issue completion, not scope creep -- omitting it would have left all four trade days capture-sourced until someone independently ran the downloader and re-ran `build_curated_range` -- nothing in this codebase schedules or triggers that automatically."
-  - "No DQ acknowledgement written for any of the eight new curated partitions, all eight are non-ok. Per constraint 11 this is the user's decision; see ACK NEEDED FROM USER below."
+  - "No DQ acknowledgement written for any of the eight new curated partitions in this plan's first pass (constraint 11 -- a human decision). The user subsequently approved exactly 7 of the 8 non-ok findings; this plan wrote, validated and committed them (commit 812a264) and completed Task 2 -- see Task 2 completion below."
   - "Reused the single code_hash (039d7c394720043b382ec15d363f9c1c6386c178, computed once after the redelivery-dedup fix landed at commit 039d7c3) for every build_curated_range and build_features_day call in this plan, per the plan's explicit instruction not to recompute mid-plan. HEAD moved twice more after that (the manifest-commit fdd124c, and this SUMMARY) -- neither touched pipeline code, only registry JSON and a test file, so the hash still accurately names the code that ran."
 
 patterns-established:
@@ -45,7 +45,7 @@ patterns-established:
 
 requirements-completed: []
 requirements-partial:
-  - "EVAL-01: this plan contributed a wider curated data pool (2026-09-12..19) toward the eventual walk-forward split, but built no fold-harness code and no feature day beyond the pre-existing 2026-09-12..14 -- EVAL-01 stays unchecked in REQUIREMENTS.md, deliberately, pending 05-01+."
+  - "EVAL-01: this plan delivered the full 7-day feature pool it set out to build (2026-09-12..18, 60,926,503 decision rows), after the user approved and this plan wrote/committed the 7 DQ acknowledgements the widened pool needed -- but it built no fold-harness code (no segment manifests, no 5-segment split). EVAL-01 stays unchecked in REQUIREMENTS.md, deliberately, pending 05-01+."
 
 # Metrics
 duration: ~50min
@@ -54,20 +54,22 @@ completed: 2026-09-20
 
 # Phase 5 Plan 0: Widen the Curated Pool (2026-09-16..19) Summary
 
-**Ingested four more days of BTCUSDT bookTicker and trade into the curated tier via the existing Phase 3 pipeline (fixing one real capture-redelivery duplicate-row bug along the way and re-running the trade build to supersede onto the archive), then found -- honestly, not by weakening a threshold -- that none of the four candidate feature days can build without a DQ acknowledgement the plan forbids this executor from writing.**
+**Ingested four more days of BTCUSDT bookTicker and trade into the curated tier via the existing Phase 3 pipeline (fixing one real capture-redelivery duplicate-row bug along the way and re-running the trade build to supersede onto the archive), found -- honestly, not by weakening a threshold -- that none of the four candidate feature days could build without a DQ acknowledgement the plan forbids this executor from writing on its own; the user then reviewed the measured numbers, approved exactly the 7 acknowledgements needed, and all four feature days built cleanly, closing the pool at the full 7 days (2026-09-12..18, 60,926,503 decision rows).**
 
 ## Performance
 
-- **Duration:** ~50 min (estimated from commit timestamps; no start-epoch was captured at session start)
-- **Tasks:** 2 (both executed; Task 1 produced committed artifacts, Task 2 produced a negative, fully-documented result and no artifacts)
-- **Files modified:** 2 source files (1 fix, 1 test-count correction), 1 test file (3 new tests), 20 new registry JSON files (curated manifests + by-date pointers)
+- **Duration:** ~50 min for the first pass (estimated from commit timestamps); Task 2's completion (after user approval) added 4 more commits across a second session
+- **Tasks:** 2 (both fully executed; Task 1 produced committed artifacts in the first pass; Task 2 initially produced a negative, fully-documented result with no artifacts, then completed for real once the user approved the 7 needed DQ acknowledgements)
+- **Files modified (first pass):** 2 source files (1 fix, 1 test-count correction), 1 test file (3 new tests), 20 new registry JSON files (curated manifests + by-date pointers)
+- **Files modified (Task 2 completion):** 7 new DQ acknowledgement JSON files, 8 new feature-tier registry JSON files (4 manifests + 4 by-date pointers)
 
 ## Accomplishments
 
 - Curated tier widened from 111 to 119 by-date pointers: 4 new bookTicker days (capture-sourced, its only source) and 4 new trade days (archive-sourced, after downloading the published zips and superseding an initial capture-sourced pass).
 - A real production bug found and fixed: one bookTicker row on 2026-09-16, delivered twice 147.3s apart by the capture daemon's redundant connection (a TTL-evicted dedup redelivery, exactly the tradeoff STATE.md's BoundedDedup design note predicts), which `materialize_seq` correctly refused to silently accept and which is now handled by a narrow, tested, source-gated fix.
 - DQ reports generated for all four new dates (8 partitions); every one is non-ok, and the numbers are transcribed below, not summarized away.
-- Feature-build attempted for 2026-09-15..18, one date at a time so each refusal is individually attributable; all four refused with `DQPauseError`, verbatim messages transcribed below.
+- Feature-build attempted for 2026-09-15..18, one date at a time so each refusal is individually attributable; all four refused with `DQPauseError` on the first pass, verbatim messages transcribed below.
+- **After user approval:** the 7 needed DQ acknowledgements were written, validated and committed; the same four-date feature build then succeeded on every date. The feature-tier pool now stands at the full 7 days (2026-09-12..18, 60,926,503 decision rows) -- see "Task 2 completion" below.
 
 ## Task Commits
 
@@ -75,7 +77,11 @@ completed: 2026-09-20
 |---|---|---|---|
 | 1 (fix) | Capture-redelivery duplicate dedup | `039d7c3` | `data/ingest/curated_build.py`, `tests/ingest/test_curated_build_multi_day.py` |
 | 1 | Curated ingest 2026-09-16..19 (both streams) + DQ reports + real-count test fix | `fdd124c` | `data/lake_registry/manifests/BTCUSDT.{bookTicker,trade}/*`, `tests/dq/test_checks.py` |
-| 2 | Feature build attempted for 2026-09-15..18 -- no artifacts produced (see below) | *(no commit -- nothing changed on disk)* | — |
+| — | SUMMARY/STATE/ROADMAP metadata (first pass) | `d4577d9` | `.planning/*` |
+| — | Correction: fixed a wrong ack-dependency-chain claim (caught by advisor review) | `a793852` | `.planning/STATE.md`, `.planning/phases/.../05-00-SUMMARY.md` |
+| 2 | Feature build attempted for 2026-09-15..18 (first pass) -- all four refused, `DQPauseError`, no artifacts produced | *(no commit -- nothing changed on disk)* | — |
+| 2 (ack) | 7 DQ acknowledgements, written after user approval, validated, committed together | `812a264` | `data/lake_registry/dq_acknowledgements/*` (7 files) |
+| 2 | Feature build for 2026-09-15..18 (completion pass) -- all four written | `e0fd7d0` | `data/lake_registry/manifests/BTCUSDT.features/*` (4 manifests + 4 by-date pointers) |
 
 ## The one code_hash
 
@@ -294,11 +300,11 @@ None. `data.backfill.downloader` against `data.binance.vision` is the project's 
 
 ## Next Phase Readiness
 
-- The curated tier now covers `2026-09-12 -> 2026-09-19` for bookTicker (8 days) and the full archive range plus these 4 days for trade (111 archive + a handful of remaining capture-only days). This is real widening, on the real lake, git-committed.
-- **The feature-tier pool is UNCHANGED at 3 days (2026-09-12..14, 22,381,684 rows)** -- this plan's stated objective ("give Phase 7+ a 7-day training pool") is not yet achieved; it is blocked on the ACK NEEDED FROM USER decision above, not on any remaining engineering work in this plan.
-- Per the plan's own objective, no other Phase 5 plan reads this plan's output -- P1-P7 use either the original three built days or `tmp_path` synthetic fixtures. This is confirmed unaffected by Task 2's zero-new-days outcome.
+- The curated tier covers `2026-09-12 -> 2026-09-19` for bookTicker (8 days) and the full archive range plus these 4 days for trade (111 archive + a handful of remaining capture-only days). This is real widening, on the real lake, git-committed.
+- **The feature-tier pool is now the full 7 days this plan set out to build** (2026-09-12..18, 60,926,503 decision rows) -- see "Task 2 completion" above. Achieved after the user approved and this plan committed the 7 DQ acknowledgements the widened curated pool needed (constraint 11 -- the executor never writes one unilaterally; it acted only on explicit, cited approval).
+- Per the plan's own objective, no other Phase 5 plan reads this plan's output -- P1-P7 use either the original three built days or `tmp_path` synthetic fixtures. Confirmed still true now that the pool is complete: nothing in this plan changed what P1-P7 read.
 - The `_drop_capture_redelivery_duplicates` fix is now load-bearing for any FUTURE capture-sourced curated build (this project's capture-sourced ingest has run for months and this is the first time this exact redelivery pattern was hit; it will very likely recur, since the BoundedDedup TTL tradeoff is structural, not a one-off).
-- If the user acknowledges all 7 of the DQ findings the ACK NEEDED FROM USER block names (2026-09-16 bookTicker+trade, 2026-09-17 bookTicker+trade, 2026-09-18 bookTicker+trade, 2026-09-19 bookTicker -- NOT just 2 of the 8), a follow-up run of Task 2's per-date `build_features_day` loop (same code, same code_hash if HEAD hasn't moved on pipeline files) would very likely build 2026-09-15..18 in one pass -- no re-investigation needed, just re-running the already-written loop after the acknowledgement files land. Acknowledging fewer than all 7 builds only a strict prefix of 2026-09-15..18 (e.g. acking only 09-16's two plus 09-19's bookTicker builds 2026-09-15 alone).
+- 2026-09-19's trade DQ finding (`reconciliation=degraded`, 15.769019% missing_from_capture) is still unacknowledged -- deliberately, since it is on no path any of this plan's builds take. A future plan that needs 2026-09-19 as its OWN day (not just as a D+1 tail) will need that eighth acknowledgement.
 
 ## Self-Check: PASSED
 
@@ -306,16 +312,77 @@ None. `data.backfill.downloader` against `data.binance.vision` is the project's 
 - `mvp/tests/ingest/test_curated_build_multi_day.py` -- 3 new tests present and passing.
 - `mvp/tests/dq/test_checks.py` -- count assertions read `119` / `{"capture": 8, "archive": 111}`.
 - 8 new curated manifests + 8 by-date pointers under `mvp/data/lake_registry/manifests/BTCUSDT.{bookTicker,trade}/` -- confirmed present via the plan's own verify script (`8/8 new curated by-date pointers present`).
-- Commits `039d7c3` and `fdd124c` present in `git log --oneline` on `feature/phase-05-fold-harness-overfitting-controls`.
-- `find mvp/features -name '*.nb[ci]'` -- empty, confirmed after every features-importing Bash call in this plan.
-- No file exists under `mvp/data/lake_registry/dq_acknowledgements/` for any of the eight new dates -- confirmed via `ls`.
-- No `lake/features/date=2026-09-1{5,6,7,8}/` partition exists -- confirmed via `find`.
-- Full suite: 956 passed (953 baseline + 3 new), 0 failed, both times it was run in this plan.
+- Commits `039d7c3`, `fdd124c`, `812a264`, `e0fd7d0` all present in `git log --oneline` on `feature/phase-05-fold-harness-overfitting-controls`.
+- `find mvp/features -name '*.nb[ci]'` -- empty, confirmed after every features-importing Bash call in this plan, including the Task 2 completion pass.
+- 7 DQ acknowledgement files present under `mvp/data/lake_registry/dq_acknowledgements/` (2026-09-16/17/18 bookTicker+trade, 2026-09-19 bookTicker) -- confirmed via `ls`; 2026-09-19 trade deliberately absent.
+- 4 new `lake/features/date=2026-09-1{5,6,7,8}/` partitions exist, all 7 candidate-day feature manifests resolve via `resolve_manifest(expected_tier=FEATURES_TIER)` -- confirmed via `find` and the plan's own verify script (`7/7 features manifests resolve, total rows=60926503`).
+- Full suite: 956 passed, 0 failed, confirmed after the first pass (three times in that pass); the ack-writing and feature-build commits in the completion pass went through the same 17-hook pre-commit gate (including the full `pytest (tests, via testpaths)` run) on every commit, all green.
 
 ---
 
-## ACK NEEDED FROM USER (repeated, per constraint 11)
+## ACK NEEDED FROM USER (repeated, per constraint 11) -- RESOLVED 2026-09-21/22, see Task 2 completion below
 
-**Not done in this plan: the feature tier is still 3 days (2026-09-12..14, 22,381,684 rows). Zero of 2026-09-15..18 built.**
+**At the time this plan first stopped: the feature tier was still 3 days (2026-09-12..14, 22,381,684 rows). Zero of 2026-09-15..18 had built.**
 
-8 curated partitions (2026-09-16..19, both streams) are DQ degraded/failed on real multi-hour capture outages (see the full table above). No acknowledgement was written -- that decision belongs to the user. Building all four candidate feature days needs **7** acknowledgements (not 4, and not just 09-16+09-19): 2026-09-16 bookTicker+trade, 2026-09-17 bookTicker+trade, 2026-09-18 bookTicker+trade, 2026-09-19 bookTicker. Each acknowledgement's reason must cite the measured numbers in the ACK table above -- never a threshold edit.
+8 curated partitions (2026-09-16..19, both streams) were DQ degraded/failed on real multi-hour capture outages (see the full table above). Building all four candidate feature days needed **7** acknowledgements (not 4, and not just 09-16+09-19): 2026-09-16 bookTicker+trade, 2026-09-17 bookTicker+trade, 2026-09-18 bookTicker+trade, 2026-09-19 bookTicker. The user approved exactly these seven; they were written, committed and consumed -- see the section below for the outcome.
+
+## Task 2 completion (after user approval)
+
+**User approval:** coordinator message, 2026-09-21, citing this session (`session_01RCuyRej4LNRLXQnszUC9Ho`), approving exactly the seven acknowledgements named above.
+
+### Step 1: the seven acknowledgements
+
+Written at `dq_acknowledgement_path(LAKE_REGISTRY_ROOT, "BTCUSDT", <stream>, <date>)`, each with `who`/`when`/`reason`/`acknowledged` per `DQ_ACK_REQUIRED_FIELDS` and `DQ_ACK_FINDINGS_FIELD`. The `acknowledged` list for each file was taken from `data.store._dq_verdict_for_date`'s actual computed findings (queried directly, not transcribed from memory), and every file was verified with `validate_dq_acknowledgement(..., findings=<that same frozenset>)` returning `None` before committing:
+
+| date | stream | acknowledged findings | validate_dq_acknowledgement |
+|---|---|---|---|
+| 2026-09-16 | bookTicker | gap_coverage=failed, l1_sparsity=degraded | `None` |
+| 2026-09-16 | trade | reconciliation=degraded | `None` |
+| 2026-09-17 | bookTicker | gap_coverage=failed, l1_sparsity=degraded | `None` |
+| 2026-09-17 | trade | reconciliation=degraded | `None` |
+| 2026-09-18 | bookTicker | gap_coverage=failed, l1_sparsity=degraded | `None` |
+| 2026-09-18 | trade | reconciliation=degraded | `None` |
+| 2026-09-19 | bookTicker | gap_coverage=failed, l1_sparsity=degraded | `None` |
+
+2026-09-19's trade verdict (also degraded) was deliberately left unacknowledged -- it is on no path any of 2026-09-15..18's builds take (`next_day_quote_series`'s D+1 tail load is bookTicker-only, default `stream=L1_STREAM`).
+
+All seven committed in one commit, `812a264` -- required for `_dq_ack_git_problem`'s byte-identical-to-committed-blob check, which every one of the seven passed on the subsequent feature build (no `DQPauseError` for any acknowledged finding).
+
+### Step 2: feature build for 2026-09-15..18
+
+New code_hash `812a264eb4b09164a70dfc77ea39a4b5df2f7f57` (clean, computed once immediately after the ack commit landed -- it differs from Plan 0's first-pass hash, `039d7c394720043b382ec15d363f9c1c6386c178`, because HEAD moved across the ack commit; both are recorded here honestly per the plan's own discipline). Reused unchanged for all four `build_features_day` calls, run one date at a time (same per-date loop as the first pass, so any refusal would still be individually attributable).
+
+**All four dates built on the first attempt. No `DQPauseError`, no second acknowledgement needed:**
+
+| date | status | manifest_id (first 16) | rows | wall-clock |
+|---|---|---|---|---|
+| 2026-09-15 | written | `781750a9df69d21f` | 12,203,294 | 48.6s |
+| 2026-09-16 | written | `4613e9e8771d56ed` | 9,872,620 | 44.5s |
+| 2026-09-17 | written | `4d0cd973ed75627a` | 8,482,081 | 33.6s |
+| 2026-09-18 | written | `d8dfb322914e454d` | 7,986,824 | 28.4s |
+
+Committed as `e0fd7d0` (4 manifests + 4 by-date pointers, 8 files).
+
+### Step 3: verification
+
+`by_date_index_path` -> `resolve_manifest(expected_tier=FEATURES_TIER)` for all seven candidate dates:
+
+| date | manifest_id (first 16) | rows |
+|---|---|---|
+| 2026-09-12 | `1bf9af2e879d833a` | 4,193,137 |
+| 2026-09-13 | `1f10da67ca502c5d` | 6,864,853 |
+| 2026-09-14 | `fdbf58ca1def369c` | 11,323,694 |
+| 2026-09-15 | `781750a9df69d21f` | 12,203,294 |
+| 2026-09-16 | `4613e9e8771d56ed` | 9,872,620 |
+| 2026-09-17 | `4d0cd973ed75627a` | 8,482,081 |
+| 2026-09-18 | `d8dfb322914e454d` | 7,986,824 |
+
+**7/7 features manifests resolve. Total: 60,926,503 decision rows** (22,381,684 from the original three days + 38,544,819 from the four new days). `find mvp/features -name '*.nb[ci]'` -- empty, confirmed. The plan's own embedded verify assertion (`assert len(built) >= 4`) now passes for real, not just honestly-reported-as-failing.
+
+### 2026-09-19's gap picture, as the D+1 tail that made 2026-09-18 buildable
+
+2026-09-18's own build needed 2026-09-19's curated bookTicker manifest to exist AND resolve past the DQ pause (the D+1 label-tail rule) -- it did, because 2026-09-19 bookTicker's acknowledgement (the seventh) is exactly the one covering `gap_coverage=failed` (17,816.669779s outage, ~half the UTC day) and `l1_sparsity=degraded` (17,636.996s max interior gap) measured in Plan 0's first pass. No new measurement was needed for this step; the acknowledged finding is what the D+1 load actually checked against, and it matched.
+
+### Requirements
+
+`requirements-partial`'s EVAL-01 note above is now stale -- see the frontmatter correction: the pool this plan set out to build (7 days, 2026-09-12..18) now exists. EVAL-01 itself (the actual 5-segment walk-forward split code) still stays unchecked in REQUIREMENTS.md -- that is 05-01+'s deliverable, not this plan's, even with the pool now complete.
