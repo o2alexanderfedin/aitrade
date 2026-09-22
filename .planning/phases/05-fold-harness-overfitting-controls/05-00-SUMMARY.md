@@ -226,7 +226,7 @@ PLAN VERIFY ASSERTION: FAILED -- expected at least one new day to build, built=[
 
 The plan's own embedded `assert len(built) >= 4` fails, because zero new days built. This is the honest, correct outcome given constraint 11 (this executor never writes an acknowledgement) and the real DQ picture measured above -- **not** a defect papered over. The plan's `<acceptance_criteria>` for Task 2 explicitly anticipates "fewer only because a verdict paused a day, with each unbuilt day named and its cause stated" -- satisfied, at the boundary case of "fewer" being zero. The three pre-existing days (2026-09-12/13/14, 22,381,684 rows total) are unchanged and still resolve.
 
-## ACK NEEDED FROM USER
+## ACK NEEDED FROM USER -- RESOLVED 2026-09-21/22, see "Task 2 completion" below
 
 Eight curated partitions across four dates carry a non-ok DQ verdict. No acknowledgement was written by this plan (constraint 11 -- a DQ acknowledgement is a human decision).
 
@@ -378,6 +378,23 @@ Committed as `e0fd7d0` (4 manifests + 4 by-date pointers, 8 files).
 | 2026-09-18 | `d8dfb322914e454d` | 7,986,824 |
 
 **7/7 features manifests resolve. Total: 60,926,503 decision rows** (22,381,684 from the original three days + 38,544,819 from the four new days). `find mvp/features -name '*.nb[ci]'` -- empty, confirmed. The plan's own embedded verify assertion (`assert len(built) >= 4`) now passes for real, not just honestly-reported-as-failing.
+
+**`resolve_manifest` checks bytes, not DQ -- an advisor review caught that this alone does not make the pool loadable.** The actual reader, `features.tier.load_features`, additionally requires a `stream="features"` row in that date's `report.parquet` (04-05-SUMMARY's own documented trap: "a features row missing from report.parquet is invisible in the artifact and fatal at the loader"). Checked directly: all four of 2026-09-15..18 had ZERO features rows (their `report.parquet` files were last written by Task 1's `--range 2026-09-16 2026-09-19` regeneration, which ran BEFORE these manifests existed; 2026-09-15's carries no features row from Phase 3/4 either, since it was never built until this session). Confirmed the failure mode directly: `load_features` on 2026-09-15 raised `DQPauseError: ... 2026-09-15: missing (no DQ report generated for this date; findings dq_report=missing; ...)`.
+
+**Fixed the same way 04-05-SUMMARY did it:** snapshotted each date's non-features report rows (13 rows each), ran `python -m data.dq.report --symbol BTCUSDT --range 2026-09-15 2026-09-18` to regenerate, and asserted the snapshotted rows were `DataFrame.equals()`-identical before/after for all four dates -- **confirmed True on all four**, so none of the 7 committed acknowledgements' bound `(check, dq_status)` findings shifted under them. Each date gained exactly 6 new `stream="features"` rows, **all `ok`** (`feature_row_filters`, `feature_label_coverage`, `feature_quantization`, `feature_warmup`, `feature_window`, `feature_asof_convention`) -- the closest to its threshold is 2026-09-18's `feature_label_coverage` at **1.6526%** (131,989 of 7,986,824 rows null-primary-labeled) against the 2.0% degraded threshold; every other day is comfortably under 1%.
+
+**`load_features` round-trip, the real gated reader, all four dates -- no `DQPauseError`:**
+
+| date | rows loaded | null mid/imb_top/ofi | null ret_10s/1s/1min/10min |
+|---|---|---|---|
+| 2026-09-15 | 12,203,294 | 0 / 0 / 0 | 66,270 / 61,417 / 81,313 / 227,635 |
+| 2026-09-16 | 9,872,620 | 0 / 0 / 0 | 66,467 / 60,270 / 94,876 / 286,907 |
+| 2026-09-17 | 8,482,081 | 16,001 / 16,001 / 16,002 | 51,360 / 48,747 / 66,250 / 220,732 |
+| 2026-09-18 | 7,986,824 | 0 / 0 / 0 | 131,989 / 128,218 / 147,631 / 249,398 |
+
+No git-tracked file changed by this step -- `report.parquet`/`resync_windows.parquet`/`report.md` live under `lake_root()/dq/`, on the SSD, never in git (same as every prior DQ report write in this plan). `find mvp/features -name '*.nb[ci]'` -- empty, confirmed again after this step.
+
+**The pool is now genuinely loadable, not merely byte-resolvable**, for all 7 candidate days.
 
 ### 2026-09-19's gap picture, as the D+1 tail that made 2026-09-18 buildable
 
