@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Phase 5 Plan 1 (05-01, thin vertical slice: 5seg segment manifest, purge/embargo, budgeted accessor) complete. mvp/harness/ is a real package with a passing end-to-end walking-skeleton test. Next: /gsd-execute-phase for Plan 2 (05-02)."
-last_updated: "2026-09-22T06:02:43.077Z"
-last_activity: 2026-09-21
+stopped_at: "Phase 5 Plan 2 (05-02, D-05-02 refusals + purged-embargoed k-fold OOF + compressed_3seg) complete. Both fold layouts fully issuable with real geometric validation and derived purge/embargo fields. Next: /gsd-execute-phase for Plan 3 (05-03)."
+last_updated: "2026-09-22T07:09:40.764Z"
+last_activity: 2026-09-22
 progress:
   total_phases: 11
   completed_phases: 4
   total_plans: 29
-  completed_plans: 24
-  percent: 83
+  completed_plans: 25
+  percent: 86
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 5 (Fold Harness & Overfitting Controls) — EXECUTING
-Plan: 3 of 8
+Plan: 4 of 8
 Status: Ready to execute
-Last activity: 2026-09-21
+Last activity: 2026-09-22
 
-Progress: [████████░░] 83%
+Progress: [█████████░] 86%
 
 > That 100% is `state.update-progress`'s definition -- SUMMARY files over PLAN files on disk (22 summaries over 21 plans, capped at 100%). Every one of the 21 plans now has a summary; the 22nd is `03-07-GAPS-SUMMARY.md`, which has no plan of its own. It is NOT milestone completion: phases 5-11 have no plans on disk yet, and 3 of 11 phases are marked complete -- Phase 4's seven plans are all executed, and the phase closes at its verification/merge step, exactly as Phases 1-3 did.
 
@@ -70,6 +70,7 @@ Progress: [████████░░] 83%
 | Phase 4 P07 | ~2h | 2 tasks | 9 files |
 | Phase 05 P00 | 50min | 2 tasks | 23 files |
 | Phase 05 P01 | 50min | 2 tasks | 11 files |
+| Phase 05 P02 | 65min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -139,6 +140,9 @@ Recent decisions affecting current work:
 - [Phase 05]: harness.accessor.materialize filters purge/embargo other_entries to role in (val, held_out, oof_block), never another train segment, per D-05-04 -- resolved over the plan's more terse action-text phrasing (geometrically indistinguishable for this plan's own contiguous-segment fixture, will matter once 05-02 adds oof_block entries).
 - [Phase 05]: The purge zone's own left boundary (start_ns - purge_ns) is treated as INCLUSIVE in the excluded band (a row exactly there is excluded), matching the plan's own exact-tuple test for effective_train_intervals over a stricter reading of D-05-04's open-interval prose.
 - [Phase 05]: tests/fixtures/harness_span.py:build_span_partition also writes an 'ok' DQ report row for the features-tier manifest it issues (Rule 3 fix) -- features.tier.load_features unconditionally requires one via store._enforce_dq_pause; discovered when Task 2's accessor tests raised DQPauseError against an otherwise-healthy synthetic fixture.
+- [Phase 05]: harness.segments._derive_purge_embargo_fields/accessor.materialize scope a train entry's purge/embargo 'others' to val/held_out roles only, never a sibling train and never that train's own nested oof_block children -- verified numerically that including oof_block self-starves every compressed_3seg train by construction, before writing any code.
+- [Phase 05]: 05-02's 5seg fixture widened from P1's uniform 900s to 1800s train / 600s val (P1's geometry starves train_s2 under the real 600s purge horizon, verified numerically) -- required editing tests/harness/test_accessor.py, nominally owned by 05-04 in a parallel wave, approved after a checkpoint since wave 2 is running sequentially and Plan 04 had not started.
+- [Phase 05]: issue_segment_manifest gains a new required keyword-only lake_root parameter (no optional/opt-out variant) -- D-05-09's derived purged_row_count/embargoed_row_count/effective_intervals cannot exist without reading real upstream partitions; a gap in the plan's own 'interfaces unchanged' note.
 
 ### Pending Todos
 
@@ -173,7 +177,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-21T05:12:29.778Z
-Stopped at: Phase 5 Plan 1 (05-01, thin vertical slice: 5seg segment manifest, purge/embargo, budgeted accessor) complete. mvp/harness/ is a real package with a passing end-to-end walking-skeleton test. Next: /gsd-execute-phase for Plan 2 (05-02).
+Last session: 2026-09-22T07:09:40.755Z
+Stopped at: Phase 5 Plan 2 (05-02, D-05-02 refusals + purged-embargoed k-fold OOF + compressed_3seg) complete. Both fold layouts fully issuable with real geometric validation and derived purge/embargo fields. Next: /gsd-execute-phase for Plan 3 (05-03).
 Resume file: None
 Resumed: 2026-09-19 -- session restored at the Phase 4/5 boundary. Verified live, not read: develop at 9898e4d clean and level with origin, no PLAN without a SUMMARY, capture daemon PID 72546 alive at 2d14h, SleepDisabled=1 (the LaunchDaemon is holding), 844 GiB free. HANDOFF.json kept until Phase 5 actually starts.

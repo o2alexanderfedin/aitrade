@@ -117,7 +117,7 @@ Plans:
   2. Compressed 3-segment fallback with purged+embargoed inner k-fold OOF is selectable per run, with the choice and reason recorded in MLflow
   3. Every validation look increments the selection-bias budget in MLflow; budget exhaustion forces a fresh window
   4. Negative-result log records failed configs in queryable form
-**Plans:** 8 plans
+**Plans:** 3/8 plans executed
 
 Plans:
 **Wave 1**
@@ -125,7 +125,7 @@ Plans:
 - [x] 05-01-PLAN.md — thin vertical slice: harness package, purge/embargo constants, 5seg manifest schema, minimal accessor + budget, the walking-skeleton proof
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 05-02-PLAN.md — D-05-02 geometric refusals, purged+embargoed inner k-fold OOF (kfold.py), compressed_3seg issuance
+- [x] 05-02-PLAN.md — D-05-02 geometric refusals, purged+embargoed inner k-fold OOF (kfold.py), compressed_3seg issuance
 - [ ] 05-04-PLAN.md — stale-book row admission (29,058 reproduction) and errata computation (249-cell reproduction), wired into the accessor
 - [ ] 05-05-PLAN.md — held-out declaration tool (--dry-run), the new data.lockbox quarantine function, the holdout.json writer
 - [ ] 05-06-PLAN.md — static tripwire (check_harness_accessor_only), the 19th guardrail hook
@@ -218,7 +218,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 2. Stage 0 — Living Spec, CI Guardrails & Tracking | 4/4 | Complete | 2026-09-14 |
 | 3. Data Layer — Backfill, Ingest & Lockbox | 7/6 | Complete    | 2026-09-17 |
 | 4. Feature & Label Engine | 7/7 | Complete    | 2026-09-19 |
-| 5. Fold Harness & Overfitting Controls | 0/TBD | Not started | - |
+| 5. Fold Harness & Overfitting Controls | 3/8 | In Progress|  |
 | 6. Event-Driven Simulator | 0/TBD | Not started | - |
 | 7. Regression Track & Vertical Slice | 0/TBD | Not started | - |
 | 8. Trees, Transformer & v0 Gate | 0/TBD | Not started | - |
