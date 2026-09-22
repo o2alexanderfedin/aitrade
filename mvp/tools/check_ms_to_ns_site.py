@@ -197,6 +197,13 @@ ALLOWLISTED_SEC_TO_NS_SITES: dict[str, str] = {
         "(04-CONTEXT.md D-04-13); every other feature/label module imports "
         "the pre-multiplied value"
     ),
+    "harness/row_admission.py": (
+        "STALE_BOOK_MAX_AGE_NS = 5 * NS_PER_SECOND, D-05-21's decided "
+        "stale-book admission threshold (05-04-PLAN.md, checker iteration "
+        "1 blocker 3) -- a policy constant expressed once, in ns, here; "
+        "the module's own test greps for a second, independent "
+        "5_000_000_000 literal"
+    ),
 }
 
 MUL_CALL_NAMES = frozenset({"mul", "__mul__", "__rmul__", "__imul__", "multiply"})

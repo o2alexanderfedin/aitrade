@@ -183,10 +183,12 @@ def test_real_tree_has_exactly_one_ms_to_ns_site_at_parse_py(capsys):
 def test_real_tree_seconds_to_ns_allowlist_is_preserved():
     """The 8 pre-existing seconds->ns sites in the 3 originally-allowlisted
     capture files are still found (resolution added sites, it lost none), and
-    the only other files holding one are the two explicitly allowlisted
-    homes: `data/dq/checks.py` (day-boundary/display arithmetic) and, since
-    Phase 4 Plan 01, `data/time_ns.py` (the single home for feature/label
-    window and horizon constants, 04-CONTEXT.md D-04-13).
+    the only other files holding one are the explicitly allowlisted homes:
+    `data/dq/checks.py` (day-boundary/display arithmetic), `data/time_ns.py`
+    (Phase 4 Plan 01, the single home for feature/label window and horizon
+    constants, 04-CONTEXT.md D-04-13), and `harness/row_admission.py`
+    (05-04-PLAN.md, D-05-21's decided `STALE_BOOK_MAX_AGE_NS = 5 *
+    NS_PER_SECOND` stale-book admission threshold).
 
     This set is deliberately EXACT, not a subset check: a new file appearing
     here is the convention drift the allowlist exists to make visible, so
@@ -202,7 +204,11 @@ def test_real_tree_seconds_to_ns_allowlist_is_preserved():
         "data/capture/watchdog.py",
     }
     assert sum(n for f, n in by_file.items() if f in original) == 8
-    assert set(by_file) == original | {"data/dq/checks.py", "data/time_ns.py"}
+    assert set(by_file) == original | {
+        "data/dq/checks.py",
+        "data/time_ns.py",
+        "harness/row_admission.py",
+    }
     assert set(by_file) <= set(tool.ALLOWLISTED_SEC_TO_NS_SITES)
 
 
