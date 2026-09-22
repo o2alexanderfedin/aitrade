@@ -35,10 +35,10 @@ Requirements for MVP exit. Each maps to roadmap phases. Source of truth: `mvp.md
 
 ### Evaluation Harness
 
-- [ ] **EVAL-01**: Walk-forward fold harness with 5-segment split (Train_S1 | Val_S1 | Train_S2 | Val_S2 | Held-out) and embargo gaps; segment manifests stored as data
-- [ ] **EVAL-02**: Compressed 3-segment fallback (Train shared via purged+embargoed inner k-fold OOF | Val | Held-out) selectable per run with reason recorded in MLflow
-- [ ] **EVAL-03**: Selection-bias budget tracked in MLflow; every validation look counted; budget exhaustion forces a fresh window
-- [ ] **EVAL-04**: Negative-result log records failed configs
+- [x] **EVAL-01**: Walk-forward fold harness with 5-segment split (Train_S1 | Val_S1 | Train_S2 | Val_S2 | Held-out) and embargo gaps; segment manifests stored as data
+- [x] **EVAL-02**: Compressed 3-segment fallback (Train shared via purged+embargoed inner k-fold OOF | Val | Held-out) selectable per run with reason recorded in MLflow
+- [x] **EVAL-03**: Selection-bias budget tracked in MLflow; every validation look counted; budget exhaustion forces a fresh window
+- [x] **EVAL-04**: Negative-result log records failed configs
 - [ ] **EVAL-05**: Reporting suite: per-fold metrics ± std, regime-split (high/low vol), effective sample size (HAC/block bootstrap), Deflated Sharpe Ratio, equity curves, trade logs, alpha-decay curve
 - [ ] **EVAL-06**: Held-out window locked at v0; one look per gate enforced via EVAL/DATA-08 quarantine
 
@@ -143,10 +143,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FEAT-03 | Phase 4 | Complete |
 | FEAT-04 | Phase 4 | Complete |
 | FEAT-05 | Phase 4 | Complete |
-| EVAL-01 | Phase 5 | Pending |
-| EVAL-02 | Phase 5 | Pending |
-| EVAL-03 | Phase 5 | Pending |
-| EVAL-04 | Phase 5 | Pending |
+| EVAL-01 | Phase 5 | Complete |
+| EVAL-02 | Phase 5 | Complete |
+| EVAL-03 | Phase 5 | Complete |
+| EVAL-04 | Phase 5 | Complete |
 | EVAL-05 | Phase 9 | Pending |
 | EVAL-06 | Phase 8 | Pending |
 | FCST-01 | Phase 7 | Pending |

@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 05-03-PLAN.md
-last_updated: "2026-09-22T09:59:31.339Z"
+status: verifying
+stopped_at: Completed 05-07-PLAN.md (phase close)
+last_updated: "2026-09-22T11:34:34.285Z"
 last_activity: 2026-09-22
 progress:
   total_phases: 11
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 29
-  completed_plans: 29
+  completed_plans: 30
   percent: 100
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 
 Phase: 5 (Fold Harness & Overfitting Controls) — EXECUTING
 Plan: 8 of 8
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-22
 
 Progress: [██████████] 100%
@@ -75,6 +75,7 @@ Progress: [██████████] 100%
 | Phase 05 P05 | 50min | 2 tasks | 9 files |
 | Phase 05 P06 | 55min | 1 tasks | 4 files |
 | Phase 05 P03 | 11min | 2 tasks | 10 files |
+| Phase 05 P07 | 70min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -156,6 +157,9 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-03: record_look's budget_allowance is a required keyword (no default); accessor.materialize passes the segment manifest's own budget_allowance, closing the gap between counting a look and refusing one
 - [Phase 05]: 05-03: issue_segment_manifest's issuance-time overlap refusal is unconditional -- no existing_manifests opt-out parameter, tracking_root has no default, self-discovery globs registry_root/segments/ itself
 - [Phase 05]: 05-03: negative-result configs are identified by compute_manifest_id(config), never a second fingerprint implementation; re-running a known-negative fingerprint warns and proceeds, never refuses
+- [Phase 05]: 05-07: admission.counts is derived by issue_segment_manifest at issuance, never caller-supplied (supersedes plan prose per orchestrator absolute_rules)
+- [Phase 05]: 05-07: guardrail Rule 5 vacuity check is scoped per-directory across manifests/segments/errata, with a global fallback if none exist at all
+- [Phase 05]: 05-07: first real segment manifest's held_out is the zero-width sentinel [covered_end_ns, covered_end_ns) since no held-out day exists among the three original built days
 
 ### Pending Todos
 
@@ -190,7 +194,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-22T09:59:31.316Z
-Stopped at: Completed 05-03-PLAN.md
+Last session: 2026-09-22T11:34:34.264Z
+Stopped at: Completed 05-07-PLAN.md (phase close)
 Resume file: None
 Resumed: 2026-09-19 -- session restored at the Phase 4/5 boundary. Verified live, not read: develop at 9898e4d clean and level with origin, no PLAN without a SUMMARY, capture daemon PID 72546 alive at 2d14h, SleepDisabled=1 (the LaunchDaemon is holding), 844 GiB free. HANDOFF.json kept until Phase 5 actually starts.
