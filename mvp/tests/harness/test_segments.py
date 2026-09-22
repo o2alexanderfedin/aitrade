@@ -9,6 +9,7 @@ real D-05-02 validation and the shared `_validate_segments`/
 from __future__ import annotations
 
 import inspect
+import json
 
 import pytest
 from data.time_ns import NS_PER_SECOND
@@ -666,3 +667,31 @@ def test_issuance_propagates_an_mlflow_query_exception_unmodified(
     # (BudgetError's own base class) must fail this assertion.
     assert exc_info.type is BudgetError
     assert "not the project's canonical MLflow store" in str(exc_info.value)
+
+
+# --------------------------------------------------------------------------
+# 05-REVIEW.md IN-01: read_segment_manifest cross-checks the body's own
+# manifest_id field, not only the recomputed hash (mirroring
+# harness.errata.read_errata_manifest's identically-shaped double check)
+# --------------------------------------------------------------------------
+
+
+def test_read_segment_manifest_refuses_a_body_whose_manifest_id_field_disagrees(
+    lake_root, registry_root, tracking_root
+):
+    """Isolates the SECOND half of the check: the body's own `manifest_id`
+    field is rewritten to a different (but still 64-hex-char-shaped) value
+    while EVERY OTHER key stays untouched -- `compute_manifest_id` excludes
+    the `manifest_id` key from what it hashes, so `recomputed` alone would
+    NOT catch this (it still equals the filename-stem-derived id, because
+    every OTHER key is unchanged). Only the `body_manifest_id !=
+    manifest_id` half of the check fires here."""
+    manifest, _span = _build_fixture(lake_root, registry_root, tracking_root)
+    manifest_id = manifest["manifest_id"]
+    path = segment_manifest_path(registry_root, manifest_id)
+    body = json.loads(path.read_text())
+    body["manifest_id"] = "0" * 64
+    path.write_text(json.dumps(body, sort_keys=True, indent=2))
+
+    with pytest.raises(ValueError, match="hash mismatch"):
+        read_segment_manifest(registry_root, manifest_id)

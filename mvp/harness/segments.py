@@ -105,14 +105,30 @@ def read_segment_manifest(registry_root: Path, manifest_id: str) -> dict:
     own id (T-05-04) -- the same self-hash-on-read discipline
     `data.store.resolve_manifest` applies to a partitioned manifest,
     scaled down: a segment manifest has no partitions of its own to
-    verify, only its own body."""
+    verify, only its own body.
+
+    Checked against BOTH the `manifest_id` this function was CALLED with
+    (derived from the filename/caller) AND the body's own `manifest_id`
+    field (05-REVIEW.md IN-01) -- mirroring `harness.errata.
+    read_errata_manifest`'s identically-shaped double check.
+    `compute_manifest_id` excludes the `manifest_id` key from what it
+    hashes (by design, so the id can be embedded in its own body); without
+    this second comparison, a hand-edited body whose `manifest_id` field
+    was changed -- leaving the rest of the content, and thus the hash,
+    untouched -- would be accepted silently, and that stale field would
+    then appear in error messages (`accessor.py`) confusing an operator
+    debugging a mismatch. `05-VERIFICATION-FIX.md`'s own "What was NOT
+    done" section named this exact gap; closed here."""
     path = segment_manifest_path(registry_root, manifest_id)
     manifest = json.loads(path.read_text())
+    body_manifest_id = manifest.get("manifest_id")
     recomputed = compute_manifest_id(manifest)
-    if recomputed != manifest_id:
+    if recomputed != manifest_id or body_manifest_id != manifest_id:
         raise ValueError(
-            f"{path}: segment manifest hash mismatch -- expected {manifest_id}, "
-            f"recomputed {recomputed} from its own body"
+            f"{path}: segment manifest hash mismatch -- expected "
+            f"{manifest_id}, body's own manifest_id field "
+            f"{body_manifest_id!r}, recomputed {recomputed} from its own "
+            "body"
         )
     return manifest
 
