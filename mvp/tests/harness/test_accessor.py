@@ -18,6 +18,7 @@ from features.tier import (
     issue_feature_manifest,
     write_feature_partition,
 )
+from harness import accessor as accessor_module
 from harness import row_admission
 from harness.accessor import materialize
 from harness.budget import look_count
@@ -76,6 +77,12 @@ RUN_TAGS = {
     "env_hash": "b" * 64,
     "model_class": "none (harness probe, no model in this phase)",
 }
+
+#: 05-07-PLAN.md Task 1: every `issue_segment_manifest` call in this file
+#: now must state a reason (required keyword, D-05-06/EVAL-02).
+FOLD_CONFIG_REASON = (
+    "test fixture: 5seg layout probed by tests/harness/test_accessor.py"
+)
 
 
 def _five_seg_segments(start_ns: int = 0) -> list[dict]:
@@ -144,6 +151,7 @@ def _build_fixture(lake_root, registry_root, tracking_root, *, rows: int = 6_000
         admission=ADMISSION_DEFAULT,
         errata_id=None,
         budget_allowance=1,
+        fold_config_reason=FOLD_CONFIG_REASON,
         symbol="BTCUSDT",
         version=1,
         code_hash="deadbeef",
@@ -186,6 +194,41 @@ def test_materialize_filters_by_half_open_time_window(
     etimes = df["etime"].to_list()
     assert all(entry["start_ns"] <= e < entry["end_ns"] for e in etimes)
     assert entry["end_ns"] not in etimes
+
+
+def test_materialize_tags_fold_config_and_reason_on_every_look(
+    lake_root, registry_root, tracking_root, monkeypatch
+):
+    """05-07-PLAN.md Task 1, EVAL-02's own 'reason recorded' clause
+    (D-05-06): `materialize`'s gate 7 calls `budget.record_look` with
+    `run_tags` carrying BOTH `fold_config` (already true since P1) AND a
+    NEW additive `fold_config_reason` tag, exactly the manifest's own
+    stated string -- observed directly on the `record_look` call, not
+    inferred."""
+    manifest, _span = _build_fixture(lake_root, registry_root, tracking_root)
+
+    calls: list[dict] = []
+    real_record_look = accessor_module.budget.record_look
+
+    def _spy(*args, **kwargs):
+        calls.append(dict(kwargs["run_tags"]))
+        return real_record_look(*args, **kwargs)
+
+    monkeypatch.setattr(accessor_module.budget, "record_look", _spy)
+
+    materialize(
+        manifest["manifest_id"],
+        "val_s1",
+        registry_root=registry_root,
+        lake_root=lake_root,
+        tracking_root=str(tracking_root),
+        run_tags=dict(RUN_TAGS),
+    )
+
+    assert len(calls) == 1
+    assert calls[0]["fold_config"] == manifest["layout"] == "5seg"
+    assert calls[0]["fold_config_reason"] == manifest["fold_config_reason"]
+    assert manifest["fold_config_reason"] == FOLD_CONFIG_REASON
 
 
 def test_materialize_excludes_purge_and_embargo_zones_for_a_train_entry(
@@ -395,6 +438,7 @@ def _write_probe_manifest(registry_root, partition, *, admission: dict) -> dict:
     }
     body = {
         "layout": "ad_hoc_probe",
+        "fold_config_reason": "test probe: ad hoc single-val manifest, purge/embargo irrelevant",
         "segments": [entry],
         "upstream_feature_manifest_ids": [partition["manifest_id"]],
         "admission": admission,

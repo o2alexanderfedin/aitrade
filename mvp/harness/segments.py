@@ -498,6 +498,7 @@ def issue_segment_manifest(
     admission: dict,
     errata_id: str | None,
     budget_allowance: int,
+    fold_config_reason: str,
     symbol: str,
     version: int,
     code_hash: str,
@@ -547,6 +548,17 @@ def issue_segment_manifest(
     opt-out: a caller cannot omit two keyword arguments to skip the check,
     because there is only one keyword to omit, and omitting it is a
     `TypeError`, not a silently-skipped check.
+
+    `fold_config_reason` is a NEW required keyword-only parameter (05-07-
+    PLAN.md Task 1, EVAL-02's own "reason recorded" clause, D-05-06): a
+    manifest with no stated reason fails D-05-06's own text just as surely
+    as one with no `partitions` key fails `issue_manifest`'s check. Required
+    uniformly for BOTH layouts -- `layout="5seg"` is not special-cased, so
+    a `5seg` caller must still state why (e.g. "explicit 5-segment layout
+    selected for a wide pool"). Stored as a whole-manifest field alongside
+    `layout` in the written body; `harness.accessor.materialize` merges it,
+    additively, into every look's MLflow tags as `fold_config_reason`
+    (never touching `MANDATORY_TAG_KEYS`).
     """
     oof_blocks: list[dict] = []
     if layout == "5seg":
@@ -592,6 +604,7 @@ def issue_segment_manifest(
 
     body = {
         "layout": layout,
+        "fold_config_reason": fold_config_reason,
         "segments": segments,
         "upstream_feature_manifest_ids": list(upstream_feature_manifest_ids),
         "admission": admission,

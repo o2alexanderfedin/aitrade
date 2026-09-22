@@ -134,6 +134,7 @@ def _build_fixture(
         admission=ADMISSION_DEFAULT,
         errata_id=None,
         budget_allowance=1,
+        fold_config_reason="test fixture: 5seg layout for D-05-02 geometric refusal tests",
         symbol="BTCUSDT",
         version=1,
         code_hash="deadbeef",
@@ -367,6 +368,9 @@ def test_issue_segment_manifest_records_every_d05_09_field(
     assert manifest["admission"] == ADMISSION_DEFAULT
     assert manifest["errata_id"] is None
     assert manifest["budget_allowance"] == 1
+    assert manifest["fold_config_reason"] == (
+        "test fixture: 5seg layout for D-05-02 geometric refusal tests"
+    )
     assert manifest["symbol"] == "BTCUSDT"
     assert manifest["version"] == 1
     assert manifest["code_hash"] == "deadbeef"
@@ -394,6 +398,7 @@ def test_compressed_3seg_refuses_a_malformed_top_level_shape(
             admission=ADMISSION_DEFAULT,
             errata_id=None,
             budget_allowance=0,
+            fold_config_reason="test: malformed top-level shape probe",
             symbol="BTCUSDT",
             version=1,
             code_hash="deadbeef",
@@ -443,6 +448,37 @@ def test_tracking_root_is_a_required_keyword_argument():
     params = inspect.signature(issue_segment_manifest).parameters
     assert params["tracking_root"].default is inspect.Parameter.empty
     assert params["tracking_root"].kind is inspect.Parameter.KEYWORD_ONLY
+
+
+def test_issue_segment_manifest_requires_a_fold_config_reason(
+    lake_root, registry_root, tracking_root
+):
+    """05-07-PLAN.md Task 1, EVAL-02's own 'reason recorded' clause
+    (D-05-06): `fold_config_reason` is REQUIRED, not optional -- a manifest
+    with no stated reason fails D-05-06's own text just as surely as one
+    with no `partitions` key fails `issue_manifest`'s check. Required
+    uniformly for BOTH layouts, so this is checked at the SIGNATURE level
+    (no default), not with a layout-specific branch."""
+    params = inspect.signature(issue_segment_manifest).parameters
+    assert params["fold_config_reason"].default is inspect.Parameter.empty
+    assert params["fold_config_reason"].kind is inspect.Parameter.KEYWORD_ONLY
+
+    kwargs = dict(
+        layout="5seg",
+        segments=five_seg_segments(),
+        upstream_feature_manifest_ids=["irrelevant -- fails before any read"],
+        admission=ADMISSION_DEFAULT,
+        errata_id=None,
+        budget_allowance=1,
+        symbol="BTCUSDT",
+        version=1,
+        code_hash="deadbeef",
+        registry_root=registry_root,
+        lake_root=lake_root,
+        tracking_root=str(tracking_root),
+    )
+    with pytest.raises(TypeError, match="fold_config_reason"):
+        issue_segment_manifest(**kwargs)
 
 
 def test_no_existing_manifests_opt_out_parameter_exists():

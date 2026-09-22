@@ -86,7 +86,11 @@ def materialize(
        what the caller actually sees. `record_look` is passed the
        manifest's own `budget_allowance` (05-03-PLAN.md, D-05-14) and
        raises `harness.budget.BudgetExhaustedError` -- refusing to return
-       any rows -- once that segment's allowance is already spent.
+       any rows -- once that segment's allowance is already spent. The
+       merged `run_tags` additively carry both `fold_config` (the
+       manifest's `layout`) and `fold_config_reason` (the manifest's own
+       stated reason, 05-07-PLAN.md Task 1, EVAL-02's "reason recorded"
+       clause) -- neither touches `MANDATORY_TAG_KEYS`.
 
     GATE-ORDER NOTE (05-04-PLAN.md Task 2 finding). Gate 4 slices the
     upstream frame to `[start_ns, end_ns)` BEFORE gate 6 would otherwise
@@ -175,6 +179,11 @@ def materialize(
         # 11), never before.
         tags = dict(run_tags)
         tags["fold_config"] = manifest["layout"]
+        # Additive, alongside `fold_config` (never touching
+        # `MANDATORY_TAG_KEYS`) -- EVAL-02's own "reason recorded" clause
+        # (05-07-PLAN.md Task 1, D-05-06): every look's MLflow tags carry
+        # the manifest's own stated reason for its fold configuration.
+        tags["fold_config_reason"] = manifest["fold_config_reason"]
         budget.record_look(
             segment_manifest_id,
             segment_name,

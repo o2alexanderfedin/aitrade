@@ -258,6 +258,9 @@ def _build_compressed_3seg_fixture(
         admission=ADMISSION_DEFAULT,
         errata_id=None,
         budget_allowance=1,
+        fold_config_reason=(
+            "test fixture: compressed_3seg layout probed by tests/harness/test_kfold.py"
+        ),
         symbol="BTCUSDT",
         version=1,
         code_hash="deadbeef",
