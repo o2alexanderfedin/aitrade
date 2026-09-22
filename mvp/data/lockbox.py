@@ -643,7 +643,14 @@ def quarantine_feature_partition(
        manifest keeps its provenance chain back to curated bytes that are
        themselves never moved -- the plan's stated alternative
        (`inputs=[]`) would have severed that chain for no reason the move
-       itself requires.
+       itself requires. Step 3 is wrapped so that any exception it raises
+       triggers an `os.replace` BACK to `old_path` before re-raising
+       (05-REVIEW.md WR-01) -- the pre-call state (old manifest resolves,
+       nothing at the new path) is restored rather than left with the
+       bytes moved and no manifest naming them anywhere. This recovers
+       from an `issue_manifest` exception only, not from a hard kill
+       between the move and this recovery running -- see that function
+       call's own inline comment for the residual, stated honestly.
 
     NEVER CALLS `chmod`/`os.chmod` ANYWHERE IN ITS BODY (source-inspected
     by a dedicated red-proof test): the human lifts/re-applies the
@@ -711,14 +718,50 @@ def quarantine_feature_partition(
         "etime_min": old_entry["etime_min"],
         "etime_max": old_entry["etime_max"],
     }
-    return issue_manifest(
-        dataset=dataset,
-        symbol=symbol,
-        stream=FEATURES_TIER,
-        tier=LOCKBOX_TIER,
-        schema_version=manifest["schema_version"],
-        inputs=list(manifest.get("inputs") or []),
-        partitions=[new_entry],
-        code_hash=code_hash,
-        registry_root=registry_root,
-    )
+    # 05-REVIEW.md WR-01: the bytes have already moved (the `os.replace`
+    # above is irreversible on its own -- the old path is gone). If
+    # `issue_manifest` raises ANYTHING below -- disk-full on the JSON
+    # write, a partition-path collision, any of `data.store.issue_manifest`'s
+    # own several `ValueError`s -- the bytes would otherwise sit at the new
+    # lockbox path with NO manifest anywhere naming them, while the OLD
+    # features-tier manifest is now permanently broken (its partition file
+    # no longer exists at the recorded path). Move the bytes back to
+    # `old_path` on any such failure, so the pre-call state (old manifest
+    # resolves, nothing at the new path) is restored rather than left in
+    # an unregistered, doubly-broken state -- then re-raise so the caller
+    # still sees the original failure.
+    #
+    # RESIDUAL, STATED HONESTLY: this only recovers from an exception
+    # `issue_manifest` itself raises. A hard kill (SIGKILL, power loss)
+    # between the `os.replace` above and this `try` block's own completion
+    # leaves the bytes at `new_path` with no manifest -- recoverable only
+    # by a human re-running `issue_manifest` by hand against the orphaned
+    # file, exactly as 05-REVIEW.md's finding describes. Nothing short of a
+    # transactional filesystem closes that window; it is not attempted here.
+    try:
+        return issue_manifest(
+            dataset=dataset,
+            symbol=symbol,
+            stream=FEATURES_TIER,
+            tier=LOCKBOX_TIER,
+            schema_version=manifest["schema_version"],
+            inputs=list(manifest.get("inputs") or []),
+            partitions=[new_entry],
+            code_hash=code_hash,
+            registry_root=registry_root,
+        )
+    except BaseException:
+        logger.error(
+            "quarantine_feature_partition: issue_manifest failed after moving "
+            "symbol=%s date=%s to %s -- restoring the partition to %s",
+            symbol,
+            date,
+            new_path,
+            old_path,
+        )
+        os.replace(new_path, old_path)
+        assert old_path.exists(), (
+            "quarantine_feature_partition: restore itself failed -- "
+            f"{old_path} does not exist after the rollback os.replace"
+        )
+        raise

@@ -141,6 +141,68 @@ def test_quarantine_feature_partition_never_calls_chmod():
     assert "chmod" not in identifiers
 
 
+def test_quarantine_feature_partition_rolls_back_on_issue_manifest_failure(
+    tmp_path: Path, monkeypatch
+):
+    """05-REVIEW.md WR-01: if `issue_manifest` raises anything after
+    `os.replace` has already moved the bytes, the partition must be moved
+    back to its ORIGINAL path -- never left at the new path with no
+    manifest naming it anywhere -- and the original manifest must still
+    resolve."""
+    lake_root, registry_root, built = _build_fixture_date(tmp_path)
+    dataset = built["dataset"]
+
+    original_manifest = resolve_manifest(
+        built["manifest_id"],
+        dataset,
+        registry_root=registry_root,
+        lake_root=lake_root,
+        expected_tier="features",
+    )
+    original_path = lake_root / original_manifest["partitions"][0]["path"]
+    assert original_path.exists()
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("simulated issue_manifest failure (disk-full, etc.)")
+
+    monkeypatch.setattr("data.lockbox.issue_manifest", _boom)
+
+    with pytest.raises(RuntimeError, match="simulated issue_manifest failure"):
+        quarantine_feature_partition(
+            "2026-09-14",
+            symbol=SYMBOL,
+            lake_root=lake_root,
+            registry_root=registry_root,
+            code_hash=CODE_HASH,
+            reason="test",
+        )
+
+    # -- the bytes are back where they started --
+    assert original_path.exists()
+    # -- nothing left behind under lockbox/ for this date --
+    lockbox_dir = lake_root / "lockbox"
+    assert not lockbox_dir.exists() or not any(lockbox_dir.rglob("*.parquet"))
+
+    # -- the ORIGINAL manifest still resolves, byte-identical --
+    restored = resolve_manifest(
+        built["manifest_id"],
+        dataset,
+        registry_root=registry_root,
+        lake_root=lake_root,
+        expected_tier="features",
+    )
+    assert restored == original_manifest
+
+    # -- no lockbox-tier manifest was issued for this date --
+    manifest_dir = registry_root / "manifests" / dataset
+    lockbox_manifests = [
+        json.loads(p.read_text())
+        for p in manifest_dir.glob("*.json")
+        if json.loads(p.read_text()).get("tier") == "lockbox"
+    ]
+    assert lockbox_manifests == []
+
+
 def test_quarantine_refuses_a_date_with_no_features_partition(tmp_path: Path):
     lake_root = tmp_path / "lake"
     registry_root = tmp_path / "registry"
