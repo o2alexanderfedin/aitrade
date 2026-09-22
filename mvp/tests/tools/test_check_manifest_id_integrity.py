@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from data.store import issue_manifest
+from data.store import compute_manifest_id, issue_manifest
 from tools.check_manifest_id_integrity import check_manifest_file, main
 
 
@@ -130,6 +130,72 @@ def test_main_against_the_real_committed_111_manifests():
     mvp/data/lake_registry/manifests/ tree. Every one of the 111 real
     manifests must self-verify."""
     assert main([]) == 0
+
+
+def _write_registry_manifest(registry_root: Path, dir_name: str, body: dict) -> Path:
+    """Write a segment/errata-SHAPED manifest by hand into
+    `registry_root/<dir_name>/<id>.json` -- 05-07-PLAN.md Task 2
+    (D-05-07, 05-RESEARCH.md Q1): no `partitions` key, mirroring
+    `harness.segments.issue_segment_manifest`'s own writer."""
+    manifest_id = compute_manifest_id(body)
+    path = registry_root / dir_name / f"{manifest_id}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"manifest_id": manifest_id, **body}, sort_keys=True, indent=2)
+    )
+    return path
+
+
+def test_main_checks_segments_and_errata_directories_too(
+    tmp_path: Path, monkeypatch, capsys
+):
+    registry_root = tmp_path / "registry"
+    _issue_fixture_manifest(registry_root)
+    _write_registry_manifest(
+        registry_root, "segments", {"layout": "compressed_3seg", "segments": []}
+    )
+    _write_registry_manifest(
+        registry_root, "errata", {"symbol": "BTCUSDT", "cells": []}
+    )
+    monkeypatch.setattr(
+        "tools.check_manifest_id_integrity.LAKE_REGISTRY_ROOT", registry_root
+    )
+    assert main([]) == 0
+    assert "checked 3 manifest(s)" in capsys.readouterr().out
+
+
+def test_main_fails_and_names_a_hand_edited_segments_manifest(
+    tmp_path: Path, monkeypatch
+):
+    registry_root = tmp_path / "registry"
+    seg_path = _write_registry_manifest(
+        registry_root, "segments", {"layout": "compressed_3seg", "segments": []}
+    )
+    body = json.loads(seg_path.read_text())
+    body["layout"] = "tampered"  # id now stale, filename unchanged
+    seg_path.write_text(json.dumps(body, sort_keys=True, indent=2))
+
+    monkeypatch.setattr(
+        "tools.check_manifest_id_integrity.LAKE_REGISTRY_ROOT", registry_root
+    )
+    assert main([]) == 1
+
+
+def test_main_fails_and_names_a_hand_edited_errata_manifest(
+    tmp_path: Path, monkeypatch
+):
+    registry_root = tmp_path / "registry"
+    err_path = _write_registry_manifest(
+        registry_root, "errata", {"symbol": "BTCUSDT", "cells": []}
+    )
+    body = json.loads(err_path.read_text())
+    body["symbol"] = "ETHUSDT"  # id now stale, filename unchanged
+    err_path.write_text(json.dumps(body, sort_keys=True, indent=2))
+
+    monkeypatch.setattr(
+        "tools.check_manifest_id_integrity.LAKE_REGISTRY_ROOT", registry_root
+    )
+    assert main([]) == 1
 
 
 def test_main_fails_when_no_manifests_are_found(tmp_path: Path, monkeypatch, capsys):

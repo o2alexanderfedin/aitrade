@@ -851,3 +851,128 @@ def test_relocating_the_registry_to_an_ordinary_location_still_passes(tmp_path: 
     errors, tracked = check_append_only(moved)
     assert errors == [], errors
     assert tracked == 2
+
+
+# --- 05-07-PLAN.md Task 2: REGISTRY_DIR_NAMES generalized to cover
+# segments/ and errata/ (D-05-07, 05-RESEARCH.md Q1's vacuity trap) -------
+
+
+def _write_registry_manifest(
+    registry: Path, dir_name: str, body: dict
+) -> tuple[str, Path]:
+    """Write a segment/errata-SHAPED manifest by hand into
+    `registry/<dir_name>/<id>.json` -- content-addressed, NO `partitions`
+    key (D-05-07), mirroring `harness.segments.issue_segment_manifest`'s
+    own writer (never `data.store.issue_manifest`, which refuses an empty
+    `partitions` list)."""
+    manifest_id = compute_manifest_id(body)
+    path = registry / dir_name / f"{manifest_id}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"manifest_id": manifest_id, **body}, sort_keys=True, indent=2)
+    )
+    return manifest_id, path
+
+
+def test_manifests_only_registry_returns_unchanged_two_tuple(tmp_path: Path):
+    """Regression guard: a registry with ONLY `manifests/` populated (every
+    scratch fixture above, and every commit before this plan's own) must
+    keep returning exactly what it always did -- `segments/`/`errata/`
+    being added to REGISTRY_DIR_NAMES must not perturb the unchanged case."""
+    repo, registry, lake, _m0 = _repo(tmp_path)
+    assert check_append_only(registry) == ([], 1)
+
+
+def test_segments_and_errata_directories_are_covered_and_counted(
+    tmp_path: Path, capsys
+):
+    repo, registry, lake, _m0 = _repo(tmp_path)
+    seg_id, _seg_path = _write_registry_manifest(
+        registry, "segments", {"layout": "compressed_3seg", "segments": []}
+    )
+    err_id, _err_path = _write_registry_manifest(
+        registry, "errata", {"symbol": "BTCUSDT", "cells": []}
+    )
+    _commit_all(repo, "add segments + errata manifests")
+
+    assert check_append_only(registry) == ([], 3)
+    assert main(["--registry-root", str(registry)]) == 0
+    out = capsys.readouterr().out
+    assert "3 committed manifest(s)" in out
+    assert "errata/=1" in out
+    assert "manifests/=1" in out
+    assert "segments/=1" in out
+    assert seg_id and err_id  # sanity: both ids were actually produced
+
+
+def test_committed_delete_of_a_segments_manifest_is_caught(tmp_path: Path):
+    """Proves rule 2a's whole-repo `_is_manifest_shaped` walk sees the NEW
+    `segments` component -- not just `_check_append_only_detailed`'s own
+    per-directory loop."""
+    repo, registry, lake, _m0 = _repo(tmp_path)
+    seg_id, seg_path = _write_registry_manifest(
+        registry, "segments", {"layout": "5seg", "segments": []}
+    )
+    _commit_all(repo, "add segment manifest")
+    seg_path.unlink()
+    _commit_all(repo, "delete segment manifest")
+
+    errors, _ = check_append_only(registry)
+    assert any(seg_id in e and "deleted" in e for e in errors), errors
+
+
+def test_uncommitted_delete_of_an_errata_manifest_is_caught(tmp_path: Path):
+    repo, registry, lake, _m0 = _repo(tmp_path)
+    err_id, err_path = _write_registry_manifest(
+        registry, "errata", {"symbol": "BTCUSDT", "cells": []}
+    )
+    _commit_all(repo, "add errata manifest")
+    err_path.unlink()
+
+    errors, _ = check_append_only(registry)
+    assert any(err_id in e and "deleted in the working tree" in e for e in errors), (
+        errors
+    )
+
+
+def test_untracked_segments_manifest_is_a_vacuous_pass_failure_naming_only_segments(
+    tmp_path: Path,
+):
+    """Rule 5's vacuity check is PER-DIRECTORY (05-RESEARCH.md Q1's own
+    trap): `segments/` physically exists (a file sits there) but is
+    tracked/staged nowhere -- fails, naming `segments/` -- while
+    `manifests/` (already committed with one real manifest from `_repo()`)
+    is NOT named."""
+    repo, registry, lake, _m0 = _repo(tmp_path)
+    _write_registry_manifest(registry, "segments", {"layout": "5seg", "segments": []})
+
+    errors, _ = check_append_only(registry)
+    assert any("segments/" in e and "refusing a vacuous pass" in e for e in errors), (
+        errors
+    )
+    assert not any(
+        "manifests/" in e and "refusing a vacuous pass" in e for e in errors
+    ), errors
+
+
+def test_registry_with_no_known_directory_at_all_is_a_vacuous_pass_failure(
+    tmp_path: Path,
+):
+    """The global fallback guard: none of `manifests/`/`segments/`/
+    `errata/` exists on disk at all under `registry_root` -- a completely
+    wrong `--registry-root` (or a genuinely brand-new, unpopulated
+    registry) must still read as a failure, never as 'nothing to check,
+    so it passed' (WR-07's own concern, preserved across the
+    per-directory generalization)."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(["init", "-q"], repo)
+    _git(["config", "user.email", "t@t"], repo)
+    _git(["config", "user.name", "t"], repo)
+    (repo / "README").write_text("x\n")
+    _commit_all(repo, "no registry at all")
+    registry = repo / "mvp" / "data" / "lake_registry"  # never created
+
+    errors, _ = check_append_only(registry)
+    assert any("refusing a vacuous pass" in e for e in errors), errors
+    assert main(["--registry-root", str(registry)]) == 1

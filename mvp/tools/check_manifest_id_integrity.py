@@ -51,16 +51,28 @@ PKG_ROOT = Path(__file__).resolve().parents[1]
 #: `data/dq/report.py:build_stats_path`'s docstring).
 BY_DATE_MARKER = "/by-date/"
 
+#: 05-07-PLAN.md Task 2 (D-05-07, 05-RESEARCH.md Q1): the two sibling,
+#: content-addressed registries `harness.segments`/`harness.errata` write
+#: to -- `segments/`/`errata/` manifests have no `partitions`/`dataset`
+#: body shape at all (D-05-09), but this module never reads either: its
+#: whole check is `json.loads` + `compute_manifest_id` + a filename/field
+#: comparison, so extending the glob roots is safe as-is (confirmed
+#: against the actual code, not assumed -- RESEARCH.md Q1's own caveat).
+REGISTRY_DIR_NAMES: tuple[str, ...] = ("manifests", "segments", "errata")
+
 
 def _iter_manifest_files(registry_root: Path) -> list[Path]:
-    manifests_dir = Path(registry_root) / "manifests"
-    if not manifests_dir.exists():
-        return []
-    return [
-        p
-        for p in manifests_dir.glob("**/*.json")
-        if BY_DATE_MARKER not in f"/{p.relative_to(manifests_dir)}"
-    ]
+    files: list[Path] = []
+    for dir_name in REGISTRY_DIR_NAMES:
+        registry_dir = Path(registry_root) / dir_name
+        if not registry_dir.exists():
+            continue
+        files.extend(
+            p
+            for p in registry_dir.glob("**/*.json")
+            if BY_DATE_MARKER not in f"/{p.relative_to(registry_dir)}"
+        )
+    return files
 
 
 def check_manifest_file(manifest_file: Path) -> str | None:
@@ -91,10 +103,13 @@ def main(argv: list[str] | None = None) -> int:
     if not manifest_files:
         # 03-REVIEW.md WR-07: the committed registry is known to be non-empty;
         # a missing/empty manifests/ directory (or a path bug) must not read
-        # as "every manifest self-verified".
+        # as "every manifest self-verified". This global vacuity guard
+        # already tolerates any ONE of REGISTRY_DIR_NAMES being empty
+        # (05-07-PLAN.md Task 2, RESEARCH.md Q1) -- it only fires when
+        # every registry directory combined has zero manifest files.
+        dirs = ", ".join(str(Path(LAKE_REGISTRY_ROOT) / d) for d in REGISTRY_DIR_NAMES)
         print(
-            f"FAIL: found 0 manifest(s) under {Path(LAKE_REGISTRY_ROOT) / 'manifests'} "
-            "-- a scan that checked nothing must not pass"
+            f"FAIL: found 0 manifest(s) under {{{dirs}}} -- a scan that checked nothing must not pass"
         )
         return 1
 
