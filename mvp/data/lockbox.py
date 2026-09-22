@@ -48,12 +48,24 @@ consumed token.
 any rows (before even attempting the read) -- a crash between the stamp and
 the read leaves the token looking burned, never silently reusable. This is
 the deliberately safer failure direction.
+
+`quarantine_feature_partition` (05-05-PLAN.md, D-05-18/Q6) is the SECOND,
+and only other, operation in the whole codebase permitted to join a path
+under `lockbox/`: moving a features-tier partition's bytes into the
+lockbox tier and issuing its lockbox-tier manifest. It never lifts or
+re-applies the `chmod 0000` barrier either -- same posture as
+`open_lockbox` above, same reason (`data/lockbox_POLICY.md`). Unlike
+`open_lockbox`, it is never called by any Phase 5 code path or test beyond
+its own; `mvp/harness/holdout_declare.py` orchestrates around it but the
+function itself stays unexercised end-to-end until Phase 8 (D-05-17).
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import os
+import re
 import socket
 import sqlite3
 import time
@@ -66,7 +78,13 @@ from mlflow.tracking import MlflowClient
 from data import lake_paths
 from data.capture.config import DEFAULT_MIN_FREE_GB
 from data.lake_paths import LAKE_REGISTRY_ROOT
-from data.store import read_verified_partitions, resolve_manifest
+from data.store import (
+    FEATURES_TIER,
+    by_date_index_path,
+    issue_manifest,
+    read_verified_partitions,
+    resolve_manifest,
+)
 from tracking.mlflow_utils import (
     build_tracking_uri,
     compute_code_hash,
@@ -76,14 +94,18 @@ from tracking.mlflow_utils import (
 
 PKG_ROOT = Path(__file__).resolve().parents[1]
 
+logger = logging.getLogger(__name__)
+
 #: The tier name this module -- and only this module -- resolves manifests
 #: for (`data.store.resolve_manifest(expected_tier=...)`, 03-REVIEW.md CR-04).
 LOCKBOX_TIER = "lockbox"
 
 __all__ = [
     "LockboxTokenError",
+    "QuarantineError",
     "issue_token",
     "open_lockbox",
+    "quarantine_feature_partition",
     "token_path",
 ]
 
@@ -92,6 +114,14 @@ class LockboxTokenError(ValueError):
     """Raised for any lockbox token protocol violation: missing token,
     requester mismatch, or an already-consumed token (checked against
     MLflow first, then the JSON's own `consumed_at` field)."""
+
+
+class QuarantineError(ValueError):
+    """Raised by `quarantine_feature_partition`: no features partition on
+    record for the requested date (nothing to quarantine), or a manifest
+    shape this function was not written for (more than one partition per
+    day). Never raised for a `chmod 0000` `PermissionError` against the
+    lockbox tier itself -- that is a plain `PermissionError`, not this."""
 
 
 def token_path(token_id: str, *, registry_root: Path | None = None) -> Path:
@@ -171,6 +201,30 @@ MLFLOW_STORE_REQUIRED_TABLES: frozenset[str] = frozenset(
 )
 
 _SQLITE_HEADER = b"SQLite format 3\x00"
+
+#: Duplicated from `harness.budget`/`harness.negative_log` (05-PATTERNS.md:
+#: a private helper with a real behavioural contract, copied rather than
+#: cross-imported). Unlike a segment name or a config fingerprint,
+#: `token_id` IS human-chosen at `issue_token` call time -- this is the
+#: module with the LARGEST exposure to 05-REVIEW.md WR-04's own finding
+#: (unescaped f-string interpolation into an MLflow `filter_string`), even
+#: though the review named only `harness.budget`/`harness.negative_log`;
+#: fixed here too, per the project's own standing rule that every error
+#: found gets fixed, not only the ones named.
+_FILTER_SAFE_RE = re.compile(r"^[A-Za-z0-9_.\-]+$")
+
+
+def _require_filter_safe(value: str, label: str) -> None:
+    """Refuse (`LockboxTokenError`) a value about to be spliced into an
+    MLflow `filter_string` via raw f-string interpolation -- see
+    `harness.budget._require_filter_safe`'s identically named function for
+    the full rationale. Checked BEFORE any MLflow client is constructed."""
+    if not _FILTER_SAFE_RE.fullmatch(value):
+        raise LockboxTokenError(
+            f"{label} {value!r} contains a character outside "
+            f"{_FILTER_SAFE_RE.pattern} -- refusing to splice it into an "
+            "MLflow filter_string unescaped (05-REVIEW.md WR-04)"
+        )
 
 
 def _require_initialised_mlflow_store(store_file: Path) -> None:
@@ -288,6 +342,7 @@ def _mlflow_has_consumed(
     tell "never consumed" from "history destroyed". Either signal alone
     still catches it. Documented in `data/lockbox_POLICY.md`.
     """
+    _require_filter_safe(token_id, "token_id")
     _require_canonical_tracking_root(
         tracking_root, lake_paths.mlflow_tracking_root(allowed_root)
     )
@@ -510,9 +565,15 @@ def _open_locked(
         "lockbox_purpose": purpose,
     }
 
-    with start_tracked_run(
-        str(tracking_root), tags, "lockbox_access", min_free_gb=min_free_gb
-    ) as run:
+    # `min_free_gb` governs `resolved_lake_root` above ONLY (the physical
+    # SSD lake -- multi-GB parquet partitions, legitimately sized like
+    # capture's own DEFAULT_MIN_FREE_GB). The tracking root is a different
+    # kind of root (kilobytes, an MLflow run) and gets its OWN floor from
+    # `start_tracked_run`'s default (`tracking.mlflow_utils.
+    # MLFLOW_MIN_FREE_GB`) -- passing this function's `min_free_gb` through
+    # here would be the same category error 05-VERIFICATION-FIX.md's Gap 1
+    # fixed in `harness.budget`/`harness.negative_log`; not reproduced here.
+    with start_tracked_run(str(tracking_root), tags, "lockbox_access") as run:
         # (6) run_id written back immediately -- before the read.
         token["mlflow_run_id"] = run.info.run_id
         _atomic_write_json(path, token)
@@ -530,3 +591,203 @@ def _open_locked(
         df = pl.concat(frames, how="vertical")
 
     return df
+
+
+def _lockbox_feature_partition_path(lake_root: Path, symbol: str, date: str) -> Path:
+    """`lake_root/lockbox/symbol=<symbol>/date=<date>/part-<ns>.parquet` --
+    mirrors `features.tier.feature_partition_path`'s NO-`stream=`-level
+    shape (a decision row is the merge of both curated streams; a
+    per-stream lockbox path would invite a per-stream read that cannot
+    exist), with `lockbox` replacing `features` as the tier segment. THE
+    ONLY OTHER SITE IN THIS FILE PERMITTED TO JOIN A PATH UNDER `lockbox/`,
+    besides `open_lockbox`'s own read in `_open_locked` above."""
+    return (
+        Path(lake_root)
+        / LOCKBOX_TIER
+        / f"symbol={symbol}"
+        / f"date={date}"
+        / f"part-{time.time_ns()}.parquet"
+    )
+
+
+def quarantine_feature_partition(
+    date: str,
+    *,
+    symbol: str,
+    lake_root: Path,
+    registry_root: Path,
+    code_hash: str,
+    reason: str,
+) -> dict:
+    """Move `date`'s CURRENT features-tier partition into the lockbox tier
+    and issue its lockbox-tier manifest -- the ONE new operation D-05-18/Q6
+    calls for, and (with `open_lockbox`'s own read above) one of only two
+    sites in the entire codebase permitted to join a path under `lockbox/`
+    (enforced by `tools/check_lockbox_containment.py` against every other
+    `*.py` file in `mvp/`, this one and the scanner itself excepted).
+
+    `mvp/harness/holdout_declare.py` orchestrates the D_lock/D_lock-1 pair
+    and the holdout-registry write AROUND this call; this function itself
+    knows nothing about "declaration" -- it moves exactly the one date it
+    is given, once, and returns the new manifest.
+
+    Order of operations (mirrors `open_lockbox`'s own check-then-act
+    discipline above: resolve and verify BEFORE anything is created or
+    moved):
+
+    1. Resolve `date`'s CURRENT features-tier manifest via the by-date
+       index (a plain existence check on the pointer file) and
+       `resolve_manifest(expected_tier=FEATURES_TIER)` -- which re-hashes
+       the manifest body AND every partition's on-disk bytes before
+       returning it. Refuses (`QuarantineError`) if no by-date pointer
+       exists for `(symbol, date)` -- nothing built, nothing to quarantine
+       -- or if the resolved manifest names anything other than exactly
+       one partition (a decision-row day is one file; this function is not
+       written for any other shape).
+    2. `os.replace` the partition file straight from its features-tier path
+       to a NEW lockbox-tier path (`_lockbox_feature_partition_path`
+       above) -- an atomic rename on the same filesystem (both tiers are
+       siblings under the same `lake_root`), never a read-then-write-then-
+       delete: the bytes are relocated, not copied and not re-read. The
+       new manifest's `sha256`/`rows`/`etime_min`/`etime_max` are carried
+       over VERBATIM from the just-verified original entry (step 1 already
+       proved those bytes match that digest; re-hashing a partition that
+       can run into the hundreds of MiB a second time, on every real
+       invocation, buys nothing `resolve_manifest` did not already buy).
+       Only `size_bytes`/`mtime_ns` are re-`stat()`'d at the new path,
+       since a rename can change them even though the content is
+       untouched.
+    3. Issue the new manifest: `dataset=f"{symbol}.features"` -- the SAME
+       dataset name the ordinary features tier uses; only `tier="lockbox"`
+       differs, so this manifest lands in the SAME
+       `manifests/{symbol}.features/` directory as ordinary features-tier
+       manifests, distinguished by its own content-hash id and by the
+       `tier` field every caller must pass as `expected_tier` to
+       `resolve_manifest`. `inputs` RE-CITES the original manifest's own
+       `inputs` list verbatim (the curated manifests the quarantined day
+       was built from, chosen over an empty list) so the lockbox
+       manifest keeps its provenance chain back to curated bytes that are
+       themselves never moved -- the plan's stated alternative
+       (`inputs=[]`) would have severed that chain for no reason the move
+       itself requires. Step 3 is wrapped so that any exception it raises
+       triggers an `os.replace` BACK to `old_path` before re-raising
+       (05-REVIEW.md WR-01) -- the pre-call state (old manifest resolves,
+       nothing at the new path) is restored rather than left with the
+       bytes moved and no manifest naming them anywhere. This recovers
+       from an `issue_manifest` exception only, not from a hard kill
+       between the move and this recovery running -- see that function
+       call's own inline comment for the residual, stated honestly.
+
+    NEVER CALLS `chmod`/`os.chmod` ANYWHERE IN ITS BODY (source-inspected
+    by a dedicated red-proof test): the human lifts/re-applies the
+    `chmod 0000` barrier out-of-band, per `data/lockbox_POLICY.md`. This
+    function's job ends at the manifest.
+
+    NAMED RESIDUAL FOR PHASE 8 -- STATED, NOT SOLVED. Once this returns,
+    the OLD features-tier manifest for `date` no longer resolves
+    (`resolve_manifest(..., expected_tier=FEATURES_TIER)` now raises
+    `ManifestHashMismatch` with `"<missing>"`, since its partition file is
+    gone): but that manifest is never rewritten or deleted, only orphaned
+    -- a committed, append-only artifact whose named bytes are no longer on
+    disk. `tools/check_no_manifest_rewrite --full` will flag every date
+    this function has quarantined as a violation from the moment it runs,
+    unless Phase 8 also designs a mechanism to RETIRE (never rewrite) the
+    old manifest. That design is explicitly not this function's job.
+    """
+    dataset = f"{symbol}.{FEATURES_TIER}"
+    pointer_path = by_date_index_path(
+        registry_root, dataset, symbol, FEATURES_TIER, date
+    )
+    if not pointer_path.exists():
+        raise QuarantineError(
+            f"quarantine_feature_partition: no features partition on record "
+            f"for {symbol} {date} (no by-date pointer at {pointer_path}) -- "
+            "nothing to quarantine"
+        )
+    manifest_id = json.loads(pointer_path.read_text())["manifest_id"]
+    manifest = resolve_manifest(
+        manifest_id,
+        dataset,
+        registry_root=registry_root,
+        lake_root=lake_root,
+        expected_tier=FEATURES_TIER,
+    )
+    partitions = manifest["partitions"]
+    if len(partitions) != 1:
+        raise QuarantineError(
+            f"quarantine_feature_partition: manifest {manifest_id[:12]} for "
+            f"{symbol} {date} names {len(partitions)} partitions, expected "
+            "exactly 1 -- a decision-row day is one file"
+        )
+    old_entry = partitions[0]
+    old_path = Path(lake_root) / old_entry["path"]
+
+    new_path = _lockbox_feature_partition_path(lake_root, symbol, date)
+    new_path.parent.mkdir(parents=True, exist_ok=True)
+    logger.info(
+        "quarantine_feature_partition: moving symbol=%s date=%s manifest=%s reason=%r",
+        symbol,
+        date,
+        manifest_id[:12],
+        reason,
+    )
+    os.replace(old_path, new_path)
+    st = new_path.stat()
+
+    new_entry = {
+        "date": date,
+        "path": str(new_path.relative_to(Path(lake_root))),
+        "sha256": old_entry["sha256"],
+        "rows": old_entry["rows"],
+        "size_bytes": st.st_size,
+        "mtime_ns": st.st_mtime_ns,
+        "etime_min": old_entry["etime_min"],
+        "etime_max": old_entry["etime_max"],
+    }
+    # 05-REVIEW.md WR-01: the bytes have already moved (the `os.replace`
+    # above is irreversible on its own -- the old path is gone). If
+    # `issue_manifest` raises ANYTHING below -- disk-full on the JSON
+    # write, a partition-path collision, any of `data.store.issue_manifest`'s
+    # own several `ValueError`s -- the bytes would otherwise sit at the new
+    # lockbox path with NO manifest anywhere naming them, while the OLD
+    # features-tier manifest is now permanently broken (its partition file
+    # no longer exists at the recorded path). Move the bytes back to
+    # `old_path` on any such failure, so the pre-call state (old manifest
+    # resolves, nothing at the new path) is restored rather than left in
+    # an unregistered, doubly-broken state -- then re-raise so the caller
+    # still sees the original failure.
+    #
+    # RESIDUAL, STATED HONESTLY: this only recovers from an exception
+    # `issue_manifest` itself raises. A hard kill (SIGKILL, power loss)
+    # between the `os.replace` above and this `try` block's own completion
+    # leaves the bytes at `new_path` with no manifest -- recoverable only
+    # by a human re-running `issue_manifest` by hand against the orphaned
+    # file, exactly as 05-REVIEW.md's finding describes. Nothing short of a
+    # transactional filesystem closes that window; it is not attempted here.
+    try:
+        return issue_manifest(
+            dataset=dataset,
+            symbol=symbol,
+            stream=FEATURES_TIER,
+            tier=LOCKBOX_TIER,
+            schema_version=manifest["schema_version"],
+            inputs=list(manifest.get("inputs") or []),
+            partitions=[new_entry],
+            code_hash=code_hash,
+            registry_root=registry_root,
+        )
+    except BaseException:
+        logger.error(
+            "quarantine_feature_partition: issue_manifest failed after moving "
+            "symbol=%s date=%s to %s -- restoring the partition to %s",
+            symbol,
+            date,
+            new_path,
+            old_path,
+        )
+        os.replace(new_path, old_path)
+        assert old_path.exists(), (
+            "quarantine_feature_partition: restore itself failed -- "
+            f"{old_path} does not exist after the rollback os.replace"
+        )
+        raise

@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_to_plan
-stopped_at: "Phase 4 COMPLETE (all 7 plans). 04-07 closed FEAT-01 and FEAT-05: one feature entry point (features/api.py) called three genuinely different ways -- one batch, 64 chunks with 45 of 63 boundaries inside an etime group, and 200,000 rows one at a time -- byte-identical on all 6,864,853 decision rows of the real 2026-09-13 day AND byte-identical to the partition features/build.py already wrote. Kernel-entry counts asserted exactly (1 / 64 / 200,000): a working delegation from the simulator to the batch path leaves every equality test green and only that count catches it. Normalization is a manifest-addressed features_norm artifact (d1d35fbf, 5,568 bytes, 4 rows) fit on 11,057,990 decision rows of 09-12+09-13; handing the fit all three days plus a boundary gives bit-identical parameters, and scoring 11.3M held-back 09-14 rows leaves its sha256 unchanged. mid's frozen z on 09-14 is +4.31 sigma with 2.85x the training dispersion -- the transform working, and the strongest signal yet that `mid` wants a differenced form as a model input (a NEW catalogue name, Phase 8). 930 tests green; 18 pre-commit hooks. Phase 5 (fold harness) next. Capture daemon Run J (PID 72546) live, same PID before and after, never signalled. Open user action: sudo pmset -b disablesleep 1."
-last_updated: "2026-09-19T12:10:00.000Z"
-last_activity: 2026-09-19
+status: verifying
+stopped_at: Completed 05-07-PLAN.md (phase close)
+last_updated: "2026-09-22T11:34:34.285Z"
+last_activity: 2026-09-22
 progress:
   total_phases: 11
-  completed_phases: 4
-  total_plans: 21
-  completed_plans: 21
-  percent: 36
+  completed_phases: 5
+  total_plans: 29
+  completed_plans: 30
+  percent: 100
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-10)
 
 **Core value:** A reproducible, leakage-proof two-stage pipeline achieving Net P&L > 0 and annualized Sharpe > 5 on a locked held-out walk-forward window under stated simplifications — produced by a workflow where agentic iteration verifiably improves the model.
-**Current focus:** Phase 4 — Feature & Label Engine
+**Current focus:** Phase 5 — Fold Harness & Overfitting Controls
 
 ## Current Position
 
-Phase: 5 of 11 (fold harness & overfitting controls)
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-09-19
+Phase: 5 (Fold Harness & Overfitting Controls) — EXECUTING
+Plan: 8 of 8
+Status: Phase complete — ready for verification
+Last activity: 2026-09-22
 
 Progress: [██████████] 100%
 
@@ -68,6 +68,14 @@ Progress: [██████████] 100%
 | Phase 04 P05 | ~3h | 2 tasks | 10 files |
 | Phase 4 P06 | ~2h | 2 tasks | 12 files |
 | Phase 4 P07 | ~2h | 2 tasks | 9 files |
+| Phase 05 P00 | 50min | 2 tasks | 23 files |
+| Phase 05 P01 | 50min | 2 tasks | 11 files |
+| Phase 05 P02 | 65min | 2 tasks | 7 files |
+| Phase 05 P04 | 55min | 2 tasks | 8 files |
+| Phase 05 P05 | 50min | 2 tasks | 9 files |
+| Phase 05 P06 | 55min | 1 tasks | 4 files |
+| Phase 05 P03 | 11min | 2 tasks | 10 files |
+| Phase 05 P07 | 70min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -131,6 +139,27 @@ Recent decisions affecting current work:
 - [Phase 4]: 04-07: the `features_norm` tier has no DQ rows and its loader deliberately skips the pause gate; its partition entries carry no `date`, so the gate is not merely unnecessary but INAPPLICABLE (KeyError, measured). Adding the gate alone pauses it forever; adding a date alone gives it a `missing` verdict.
 - [Phase 4]: 04-07: a fold boundary is an inclusive int64-ns `train_end_etime` argument (`fit_training_segment`), never a date string. The artifact stores Welford `(count, mean, M2)` so an EXTENDED training segment can resume exactly rather than refit.
 - [Phase 4]: 04-07: frozen normalization of `mid` puts the very next day at z = +4.31 with 2.85x the training spread. Correct behaviour (a level moved), and the reason a per-window recomputation would look tidy and be a leak. Phase 8 should give `mid` a differenced model-input form under a NEW catalogue name.
+- [Phase 05]: [Phase 5, Plan 0]: A capture-sourced curated day may carry a content-identical redelivered row (BoundedDedup TTL-eviction tradeoff); data.ingest.curated_build now drops it before materialize_seq, gated on chosen_source=='capture', keeping the earliest arrival -- a content-differing duplicate id still raises.
+- [Phase 05]: [Phase 5, Plan 0]: build_curated_day never reaches the network; archive precedence for a newly-published trade day requires running data.backfill.downloader before build_curated_range, then re-running build_curated_range to supersede a capture-sourced first pass.
+- [Phase 05]: [Phase 5, Plan 0]: The curated tier widened to 2026-09-12..19 (8 new by-date pointers). The FEATURE tier initially stayed at 3 days -- all eight new curated partitions were DQ degraded/failed (multi-hour real capture outages) and no acknowledgement was written by the executor (constraint 11). RESOLVED 2026-09-21/22: the user reviewed the measured numbers and approved 7 of the 8 findings (all but 2026-09-19 trade, which is on no path any of 2026-09-15..18's builds take); this plan wrote, validated (`validate_dq_acknowledgement` -> `None` on all seven) and committed them (`812a264`), then built all four feature days (`e0fd7d0`). The feature-tier pool is now 7 days: 2026-09-12..18, 60,926,503 decision rows.
+- [Phase 05]: harness.accessor.materialize filters purge/embargo other_entries to role in (val, held_out, oof_block), never another train segment, per D-05-04 -- resolved over the plan's more terse action-text phrasing (geometrically indistinguishable for this plan's own contiguous-segment fixture, will matter once 05-02 adds oof_block entries).
+- [Phase 05]: The purge zone's own left boundary (start_ns - purge_ns) is treated as INCLUSIVE in the excluded band (a row exactly there is excluded), matching the plan's own exact-tuple test for effective_train_intervals over a stricter reading of D-05-04's open-interval prose.
+- [Phase 05]: tests/fixtures/harness_span.py:build_span_partition also writes an 'ok' DQ report row for the features-tier manifest it issues (Rule 3 fix) -- features.tier.load_features unconditionally requires one via store._enforce_dq_pause; discovered when Task 2's accessor tests raised DQPauseError against an otherwise-healthy synthetic fixture.
+- [Phase 05]: harness.segments._derive_purge_embargo_fields/accessor.materialize scope a train entry's purge/embargo 'others' to val/held_out roles only, never a sibling train and never that train's own nested oof_block children -- verified numerically that including oof_block self-starves every compressed_3seg train by construction, before writing any code.
+- [Phase 05]: 05-02's 5seg fixture widened from P1's uniform 900s to 1800s train / 600s val (P1's geometry starves train_s2 under the real 600s purge horizon, verified numerically) -- required editing tests/harness/test_accessor.py, nominally owned by 05-04 in a parallel wave, approved after a checkpoint since wave 2 is running sequentially and Plan 04 had not started.
+- [Phase 05]: issue_segment_manifest gains a new required keyword-only lake_root parameter (no optional/opt-out variant) -- D-05-09's derived purged_row_count/embargoed_row_count/effective_intervals cannot exist without reading real upstream partitions; a gap in the plan's own 'interfaces unchanged' note.
+- [Phase 05]: row_admission.py's decided 5s threshold (5 * NS_PER_SECOND) required allowlisting the file in check_ms_to_ns_site.py -- NS_PER_SECOND itself resolves to the checker's target value — Rule 3 fix; guardrail scans by resolved value, not literal spelling
+- [Phase 05]: Stale-book age must be computed on the full upstream frame before the segment time-slice, never after -- a segment boundary is not a book reset — Gate-order finding caught by advisor review before accessor code shipped
+- [Phase 05]: quarantine_feature_partition re-cites the original features manifest's own inputs verbatim for lockbox-tier provenance, rather than an empty list
+- [Phase 05]: data/dates.py gained prev_utc_date (Rule 3 deviation) -- the D-1 mirror next_utc_date was missing
+- [Phase 05]: declare()'s holdout.json dates field stays the caller's original list, never the expanded D/D-1 candidate set
+- [Phase 05]: check_harness_accessor_only.py sanctions four test files, not the three 05-06-PLAN.md named — A grep at plan-authoring time found three; a grep at execution time found a fourth real caller, tests/harness/test_kfold.py, added by 05-02's kfold tests -- named individually, not sanctioned as a directory, so the anti-vacuity fifth-file test still holds
+- [Phase 05]: 05-03: record_look's budget_allowance is a required keyword (no default); accessor.materialize passes the segment manifest's own budget_allowance, closing the gap between counting a look and refusing one
+- [Phase 05]: 05-03: issue_segment_manifest's issuance-time overlap refusal is unconditional -- no existing_manifests opt-out parameter, tracking_root has no default, self-discovery globs registry_root/segments/ itself
+- [Phase 05]: 05-03: negative-result configs are identified by compute_manifest_id(config), never a second fingerprint implementation; re-running a known-negative fingerprint warns and proceeds, never refuses
+- [Phase 05]: 05-07: admission.counts is derived by issue_segment_manifest at issuance, never caller-supplied (supersedes plan prose per orchestrator absolute_rules)
+- [Phase 05]: 05-07: guardrail Rule 5 vacuity check is scoped per-directory across manifests/segments/errata, with a global fallback if none exist at all
+- [Phase 05]: 05-07: first real segment manifest's held_out is the zero-width sentinel [covered_end_ns, covered_end_ns) since no held-out day exists among the three original built days
 
 ### Pending Todos
 
@@ -165,7 +194,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-19
-Stopped at: Phase 4 (Feature & Label Engine) complete -- 7 plans, 953 tests, CI green, verification 5/5 (both human items resolved), review 1 critical + 7 warnings all fixed and re-proved. Merged to develop. The decision-row matrix exists on the real lake: features/date=2026-09-12/13/14, 22,381,684 rows, manifest-addressed with provenance chaining to curated. CARRY FORWARD INTO PHASE 5: (a) a held-out day's feature BYTES stay readable by a bare read_parquet -- load_features is one barrier where Phase 3's lockbox had two, and Phase 5's declaration step must move or delete the partition for the day BEFORE the declared date, since that is the one carrying the label tail; (b) 249 labels on disk are fabricated zeros from the pre-fix staleness rule (180 ret_1s, 69 ret_10s) -- partitions are write-once, so a rebuild under a new manifest is Phase 5's call; (c) every row inside an L1 outage is a real trade wearing a frozen book (29,058 inside one 2894s gap) with both warm-up flags false -- Phase 5 needs a lake-derived staleness flag; (d) the primary label is exactly zero on 43.89% of written decision rows, so loss and IC/Sharpe choices must account for a point mass at zero; (e) test_the_embargo_bound_is_tight_enough_to_bite asserts embargo == horizon, so LENGTHENING an embargo fails CI by design. Next: `/gsd-autonomous --from 5` (Fold Harness & Overfitting Controls). Work ONLY from /Volumes/ProjectsSSD/aihedgefund/repo. Capture daemon Run J (PID 72546) still carries the OLD power probe and segment stamp -- a restart is pending user approval. Battery sleep is now held by /Library/LaunchDaemons/com.aihedgefund.disablebatterysleep.plist (proved: flipped to 0, restored after 195s).
-Resume file: .planning/phases/04-feature-label-engine/04-REVIEW-FIX.md
+Last session: 2026-09-22T11:34:34.264Z
+Stopped at: Completed 05-07-PLAN.md (phase close)
+Resume file: None
 Resumed: 2026-09-19 -- session restored at the Phase 4/5 boundary. Verified live, not read: develop at 9898e4d clean and level with origin, no PLAN without a SUMMARY, capture daemon PID 72546 alive at 2d14h, SleepDisabled=1 (the LaunchDaemon is holding), 844 GiB free. HANDOFF.json kept until Phase 5 actually starts.

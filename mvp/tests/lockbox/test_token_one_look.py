@@ -683,3 +683,41 @@ def test_an_env_var_pointing_somewhere_else_still_refuses_a_foreign_store(
             registry_root=registry_root,
             min_free_gb=0.0,
         )
+
+
+# --------------------------------------------------------------------------
+# 05-REVIEW.md WR-04: filter_string values are validated BEFORE any MLflow
+# query, not spliced in raw. token_id is the module with the LARGEST
+# exposure to this class of bug -- it is human-chosen at issue_token time,
+# unlike a segment name or a config fingerprint -- so it is fixed here too,
+# even though 05-REVIEW.md named only harness.budget/harness.negative_log.
+# --------------------------------------------------------------------------
+
+
+def test_mlflow_has_consumed_refuses_a_hostile_token_id_before_any_query(
+    tmp_path: Path,
+):
+    from data.lockbox import _mlflow_has_consumed
+
+    _registry_root, _lake_root, tracking_root, _m, _t = _build_segment(
+        tmp_path, token_id="lb-wr04"
+    )
+    hostile = "lb-wr04' or tags.lockbox_token_id != 'x"
+    with pytest.raises(LockboxTokenError, match="filter_string"):
+        _mlflow_has_consumed(hostile, str(tracking_root))
+
+
+def test_mlflow_has_consumed_refuses_a_token_id_with_a_trailing_newline(
+    tmp_path: Path,
+):
+    """`.fullmatch`, not `.match`: Python's `$` matches before a trailing
+    newline, so a bare `.match` against `^...+$` would accept
+    `"lb-wr04\\n"` and silently under-count (zero matching runs -- a
+    consumed token would read as never-consumed)."""
+    from data.lockbox import _mlflow_has_consumed
+
+    _registry_root, _lake_root, tracking_root, _m, _t = _build_segment(
+        tmp_path, token_id="lb-wr04-nl"
+    )
+    with pytest.raises(LockboxTokenError, match="filter_string"):
+        _mlflow_has_consumed("lb-wr04-nl\n", str(tracking_root))

@@ -136,7 +136,18 @@ from tools.git_env import scrubbed_git_env
 PKG_ROOT = Path(__file__).resolve().parents[1]
 
 POINTER_DIR_NAME = "by-date"
-MANIFESTS_DIR_NAME = "manifests"
+
+#: 05-07-PLAN.md Task 2 (D-05-07, 05-RESEARCH.md Q1): generalized from the
+#: single `MANIFESTS_DIR_NAME = "manifests"` to a set of THREE sibling,
+#: content-addressed registries -- `harness.segments`'s segment manifests
+#: and `harness.errata`'s errata lists are written the same way
+#: (`sha256(canonicalize_manifest(body))`, atomic tmp-then-rename) but
+#: through their own writers, never `data.store.issue_manifest` (which
+#: refuses an empty `partitions` list -- a segment/errata manifest names
+#: no partition bytes of its own, D-05-09). `_realm`/`NON_REGISTRY_COMPONENTS`
+#: (below) need no change -- they already operate generically on path
+#: components, regardless of which registry name matched.
+REGISTRY_DIR_NAMES: frozenset[str] = frozenset({"manifests", "segments", "errata"})
 
 #: Refs whose merge-base with HEAD is rule 2b's base, in order.
 BASE_BRANCH_REFS: tuple[str, ...] = ("develop", "origin/develop")
@@ -332,14 +343,18 @@ def _worktree_manifest_blobs(toplevel: Path) -> dict[str, set[str]]:
 
 def _is_manifest_shaped(repo_rel: str) -> bool:
     """Is `repo_rel` a manifest of ANY registry, wherever it lives (rule 2,
-    WR-17)? A `.json` below a `manifests` directory, not inside a pointer
-    directory below it."""
+    WR-17)? A `.json` below a `manifests`/`segments`/`errata` directory
+    (05-07-PLAN.md Task 2, D-05-07), not inside a pointer directory below
+    it. `dirs.index(matched)` finds the FIRST registry-name component --
+    two registry names nested inside each other is not a shape any writer
+    in this repository produces."""
     if not repo_rel.endswith(".json"):
         return False
     dirs = repo_rel.split("/")[:-1]
-    if MANIFESTS_DIR_NAME not in dirs:
+    matched = next((d for d in dirs if d in REGISTRY_DIR_NAMES), None)
+    if matched is None:
         return False
-    rest = repo_rel.split("/")[dirs.index(MANIFESTS_DIR_NAME) + 1 :]
+    rest = repo_rel.split("/")[dirs.index(matched) + 1 :]
     return not _is_pointer("/".join(rest))
 
 
@@ -428,9 +443,24 @@ def _symlinked_registry_components(registry_abs: Path, toplevel: Path) -> list[s
 
 
 def check_append_only(registry_root: Path) -> tuple[list[str], int]:
-    """Return `(violations, n_manifests_tracked_in_HEAD)`; an empty violation
-    list means append-only holds. Raises `GitHistoryUnavailable` if history
-    cannot be consulted."""
+    """Return `(violations, n_manifests_tracked_in_HEAD)` -- the second
+    value SUMMED across every registry directory in `REGISTRY_DIR_NAMES`
+    that exists on disk (05-07-PLAN.md Task 2: was one directory's count,
+    now three); an empty violation list means append-only holds. Raises
+    `GitHistoryUnavailable` if history cannot be consulted."""
+    errors, per_directory = _check_append_only_detailed(registry_root)
+    return errors, sum(per_directory.values())
+
+
+def _check_append_only_detailed(
+    registry_root: Path,
+) -> tuple[list[str], dict[str, int]]:
+    """The real implementation: `(violations, {dir_name: tracked_or_staged
+    count})` -- one entry per `REGISTRY_DIR_NAMES` member that exists on
+    disk. `check_append_only` (the stable, 2-tuple public API every
+    existing caller/test destructures) is a thin `sum()` wrapper around
+    this; `main()` calls this directly for its per-directory legibility
+    line, without a second round of git subprocess calls."""
     registry_abs = Path(registry_root).absolute()
     toplevel = _toplevel_for(registry_abs)
 
@@ -442,46 +472,123 @@ def check_append_only(registry_root: Path) -> tuple[list[str], int]:
         )
 
     # Never resolve the registry path (WR-17): a symlinked registry root or
-    # ancestor is a rule-6 violation, not a redirect to follow. The manifests
-    # directory is addressed by its LEXICAL in-repository path.
+    # ancestor is a rule-6 violation, not a redirect to follow. Every
+    # registry directory is addressed by its LEXICAL in-repository path.
     symlinked = _symlinked_registry_components(registry_abs, toplevel)
     errors: list[str] = list(symlinked)
     located = _in_repo_chain(registry_abs, toplevel)
     if located is None:
-        return errors, 0
+        return errors, {}
     top, _chain = located
-    manifests_dir = registry_abs / MANIFESTS_DIR_NAME
-    manifests_rel = manifests_dir.relative_to(top).as_posix()
 
-    # Rule 6 (HEAD side) + rule 5 + input to rule 3: manifests tracked in HEAD.
-    tracked: list[str] = []
-    for record in _git(
-        ["ls-tree", "-r", "-z", "HEAD", "--", manifests_rel], toplevel
-    ).split("\0"):
-        if not record:
+    # Rules 4, 5 and 6, ONCE PER NAME in REGISTRY_DIR_NAMES that exists on
+    # disk under `registry_abs` (05-07-PLAN.md Task 2, 05-PATTERNS.md: a
+    # per-directory loop, not a constant swap). A name whose directory does
+    # not exist yet is simply SKIPPED -- not an error: not every registry
+    # realm is populated at every point in history, and this is exactly
+    # what lets every existing `manifests/`-only registry (every scratch
+    # `tmp_path` fixture in this file's own test suite, and every commit
+    # before this plan's own) keep passing unchanged. Rule 5's vacuity
+    # check is therefore PER-DIRECTORY and fires only for a name whose
+    # directory PHYSICALLY EXISTS (bytes are sitting there, staged or not)
+    # but tracks zero manifests in both HEAD and the index -- exactly the
+    # window the guardrail-extension commit closes by landing the first
+    # `segments/`/`errata/` manifest in the SAME commit (05-RESEARCH.md
+    # Q1's vacuity trap).
+    per_directory: dict[str, int] = {}
+    seen: dict[str, tuple[str, str]] = {}
+    for dir_name in sorted(REGISTRY_DIR_NAMES):
+        dir_abs = registry_abs / dir_name
+        if not dir_abs.exists():
             continue
-        meta, _, path = record.partition("\t")
-        mode = meta.split()[0]
-        if not path.startswith(manifests_rel + "/"):
-            continue
-        if mode not in {"100644", "100755"}:
-            kind = "a symlink" if mode == "120000" else f"mode {mode}"
+        dir_rel = dir_abs.relative_to(top).as_posix()
+
+        # Rule 6 (HEAD side) + rule 5 + input to rule 3: manifests tracked
+        # in HEAD, for THIS directory.
+        tracked: list[str] = []
+        for record in _git(
+            ["ls-tree", "-r", "-z", "HEAD", "--", dir_rel], toplevel
+        ).split("\0"):
+            if not record:
+                continue
+            meta, _, path = record.partition("\t")
+            mode = meta.split()[0]
+            if not path.startswith(dir_rel + "/"):
+                continue
+            if mode not in {"100644", "100755"}:
+                kind = "a symlink" if mode == "120000" else f"mode {mode}"
+                errors.append(
+                    f"{path}: is {kind} in HEAD -- manifests must be regular files"
+                )
+            if _is_manifest_path(path, dir_rel):
+                tracked.append(path)
+        # Rule 5's counterpart in the index, so a staged-but-uncommitted
+        # relocation (the pre-commit view) is not read as "the path matched
+        # nothing". The rule still fails when BOTH views are empty.
+        staged = [
+            path
+            for path in _git(["ls-files", "-z", "--", dir_rel], toplevel).split("\0")
+            if path and _is_manifest_path(path, dir_rel)
+        ]
+        if not tracked and not staged:
             errors.append(
-                f"{path}: is {kind} in HEAD -- manifests must be regular files"
+                f"HEAD and the index both track 0 manifests under {dir_rel}/ "
+                "-- refusing a vacuous pass"
             )
-        if _is_manifest_path(path, manifests_rel):
-            tracked.append(path)
-    # Rule 5's counterpart in the index, so a staged-but-uncommitted
-    # relocation (the pre-commit view) is not read as "the path matched
-    # nothing". The rule still fails when BOTH views are empty.
-    staged = [
-        path
-        for path in _git(["ls-files", "-z", "--", manifests_rel], toplevel).split("\0")
-        if path and _is_manifest_path(path, manifests_rel)
-    ]
-    if not tracked and not staged:
+
+        # Rule 6 (working-tree side), before rule 4 reads any file in THIS
+        # directory.
+        non_regular = _non_regular_entries(dir_abs, dir_rel)
+        errors.extend(non_regular)
+        if non_regular or symlinked:
+            # Rule 4 reads manifest bodies; through a symlink what it would
+            # read is not the committed registry.
+            per_directory[dir_name] = len(tracked) or len(staged)
+            continue
+
+        # Rule 4: one sha256 per partition path, across all manifests in
+        # EVERY registry directory (`seen` is shared across the whole
+        # loop, matching the original "across all manifests" scope) -- a
+        # segment/errata manifest has no `partitions` key at all (D-05-07),
+        # so `manifest.get("partitions", [])` contributes nothing from
+        # those directories; only `manifests/` ever populates `seen`.
+        for manifest_file in sorted(dir_abs.glob("**/*.json")):
+            rel = manifest_file.relative_to(dir_abs).as_posix()
+            if _is_pointer(rel):
+                continue
+            manifest = json.loads(manifest_file.read_text())
+            for part in manifest.get("partitions", []):
+                path, sha = part.get("path"), part.get("sha256")
+                problem = partition_path_problem(path)
+                if problem is not None:
+                    errors.append(f"{rel}: {problem}")
+                if not isinstance(path, str) or not path:
+                    continue
+                key = partition_path_key(path)
+                prior = seen.get(key)
+                if prior is None:
+                    seen[key] = (sha, rel)
+                elif prior[0] != sha:
+                    errors.append(
+                        f"partition {path} is named by {prior[1]} with sha256 "
+                        f"{prior[0][:12]} and by {rel} with sha256 "
+                        f"{str(sha)[:12]} -- a partition was rewritten in "
+                        "place and re-manifested"
+                    )
+        per_directory[dir_name] = len(tracked) or len(staged)
+
+    if not per_directory:
+        # Global fallback vacuity guard (WR-07's own concern, preserved
+        # across the per-directory generalization): if NONE of
+        # REGISTRY_DIR_NAMES exists on disk at all under `registry_abs`,
+        # the per-directory loop above skipped every name and ran Rule 5
+        # nowhere -- a completely wrong `--registry-root` must still read
+        # as a failure, never as "nothing to check, so it passed". A
+        # registry with `manifests/` populated but `segments/`/`errata/`
+        # not yet created (every commit before this plan's own) does NOT
+        # hit this branch -- `per_directory` has a `"manifests"` entry.
         errors.append(
-            f"HEAD and the index both track 0 manifests under {manifests_rel}/ "
+            f"none of {sorted(REGISTRY_DIR_NAMES)} exists under {registry_abs} "
             "-- refusing a vacuous pass"
         )
 
@@ -564,42 +671,9 @@ def check_append_only(registry_root: Path) -> tuple[list[str], int]:
                 "manifest path in it"
             )
 
-    # Rule 6 (working-tree side), before rule 4 reads any file.
-    non_regular = _non_regular_entries(manifests_dir, manifests_rel)
-    errors.extend(non_regular)
-    if non_regular or symlinked:
-        # Rule 4 reads manifest bodies; through a symlink what it would read
-        # is not the committed registry.
-        return list(dict.fromkeys(errors)), len(tracked) or len(staged)
-
-    # Rule 4: one sha256 per partition path across all manifests.
-    seen: dict[str, tuple[str, str]] = {}
-    for manifest_file in sorted(manifests_dir.glob("**/*.json")):
-        rel = manifest_file.relative_to(manifests_dir).as_posix()
-        if _is_pointer(rel):
-            continue
-        manifest = json.loads(manifest_file.read_text())
-        for part in manifest.get("partitions", []):
-            path, sha = part.get("path"), part.get("sha256")
-            problem = partition_path_problem(path)
-            if problem is not None:
-                errors.append(f"{rel}: {problem}")
-            if not isinstance(path, str) or not path:
-                continue
-            key = partition_path_key(path)
-            prior = seen.get(key)
-            if prior is None:
-                seen[key] = (sha, rel)
-            elif prior[0] != sha:
-                errors.append(
-                    f"partition {path} is named by {prior[1]} with sha256 "
-                    f"{prior[0][:12]} and by {rel} with sha256 {str(sha)[:12]} "
-                    "-- a partition was rewritten in place and re-manifested"
-                )
-
     # A merge diffed against two parents that both held the manifest reports
     # the same change twice; say it once.
-    return list(dict.fromkeys(errors)), len(tracked) or len(staged)
+    return list(dict.fromkeys(errors)), per_directory
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -615,7 +689,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     try:
-        errors, n_tracked = check_append_only(registry_root)
+        errors, per_directory = _check_append_only_detailed(registry_root)
     except GitHistoryUnavailable as exc:
         print(f"FAIL: cannot verify manifest append-only history: {exc}")
         return 1
@@ -626,11 +700,17 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {err}")
         return 1
 
+    n_tracked = sum(per_directory.values())
     _base, base_desc = resolve_base(_toplevel_for(registry_root))
     print(
         f"PASS: {n_tracked} committed manifest(s) append-only against HEAD history "
         f"(content-anchored; every commit vs every parent; tree base: {base_desc})"
     )
+    if per_directory:
+        breakdown = ", ".join(
+            f"{name}/={count}" for name, count in sorted(per_directory.items())
+        )
+        print(f"  by registry directory: {breakdown}")
     return 0
 
 

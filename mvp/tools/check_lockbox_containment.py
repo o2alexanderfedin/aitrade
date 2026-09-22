@@ -224,6 +224,10 @@ SANCTIONED_TEST_FILES: dict[str, str] = {
     "tests/store/test_loader_tier_containment.py": (
         "hand-writes lockbox-tier and ../lockbox manifests the loader must refuse"
     ),
+    "tests/lockbox/test_quarantine_feature_partition.py": (
+        "drives the new data.lockbox.quarantine_feature_partition function for "
+        "a features partition"
+    ),
 }
 
 #: Files permitted to assign or delete an UNRESOLVABLE `sys.modules` key --

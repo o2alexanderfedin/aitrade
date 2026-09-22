@@ -1,0 +1,62 @@
+{
+  "built_at": 1790056580551634000,
+  "code_hash": "812a264eb4b09164a70dfc77ea39a4b5df2f7f57",
+  "dataset": "BTCUSDT.features",
+  "etime_range": [
+    1789689600002000000,
+    1789775999957000000
+  ],
+  "inputs": [
+    {
+      "dataset": "BTCUSDT.bookTicker",
+      "dates": [
+        "2026-09-18"
+      ],
+      "manifest_id": "1ef62c97bb7e732f70c29ddfc4d5b8257be2ef85eac16126a6045049b9957973",
+      "path": "/Volumes/ProjectsSSD/aihedgefund/repo/mvp/data/lake_registry/manifests/BTCUSDT.bookTicker/1ef62c97bb7e732f70c29ddfc4d5b8257be2ef85eac16126a6045049b9957973.json",
+      "role": "l1_day",
+      "rows": 31460152,
+      "sha256": "498e78538129fb7c044531e61bd2b0631623a7343d7ab806e8b4a371b4610ef6"
+    },
+    {
+      "dataset": "BTCUSDT.trade",
+      "dates": [
+        "2026-09-18"
+      ],
+      "manifest_id": "fd18654c54bea88462554bad2c0d4f5aeae458a0e60ee6486b8f5fc397017365",
+      "path": "/Volumes/ProjectsSSD/aihedgefund/repo/mvp/data/lake_registry/manifests/BTCUSDT.trade/fd18654c54bea88462554bad2c0d4f5aeae458a0e60ee6486b8f5fc397017365.json",
+      "role": "trade_day",
+      "rows": 4486145,
+      "sha256": "30fd75f87e129b5a70df5f6c829faab43ed63d5edcc288400c8832f787d9decd"
+    },
+    {
+      "dataset": "BTCUSDT.bookTicker",
+      "dates": [
+        "2026-09-19"
+      ],
+      "manifest_id": "41ae94a9014fbce14463aa9775b8ff002cf871cef54422fe7269f909af448c98",
+      "path": "/Volumes/ProjectsSSD/aihedgefund/repo/mvp/data/lake_registry/manifests/BTCUSDT.bookTicker/41ae94a9014fbce14463aa9775b8ff002cf871cef54422fe7269f909af448c98.json",
+      "role": "l1_label_tail",
+      "rows": 13913226,
+      "sha256": "289db5efc94596500cab336a58cf9e55fc304aa5242f6c3629ed774e78afb8de"
+    }
+  ],
+  "manifest_id": "d8dfb322914e454d423d21f3db69ad7623399b9d54e5d5d261b0cb69d2f92519",
+  "partitions": [
+    {
+      "date": "2026-09-18",
+      "etime_max": 1789775999957000000,
+      "etime_min": 1789689600002000000,
+      "mtime_ns": 1790056580442993612,
+      "path": "features/symbol=BTCUSDT/date=2026-09-18/part-1790056580091656000.parquet",
+      "rows": 7986824,
+      "sha256": "1e14b8af802965fa1cbe67886f25c16bc5f8e52d7a5fd5b9234d519108a00648",
+      "size_bytes": 123402506
+    }
+  ],
+  "row_count": 7986824,
+  "schema_version": 1,
+  "stream": "features",
+  "symbol": "BTCUSDT",
+  "tier": "features"
+}

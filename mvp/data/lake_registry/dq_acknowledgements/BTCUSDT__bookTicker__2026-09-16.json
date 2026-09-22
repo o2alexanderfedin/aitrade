@@ -1,0 +1,18 @@
+{
+  "acknowledged": [
+    {
+      "check": "gap_coverage",
+      "dq_status": "failed"
+    },
+    {
+      "check": "l1_sparsity",
+      "dq_status": "degraded"
+    }
+  ],
+  "date": "2026-09-16",
+  "reason": "gap_coverage FAILED: 9333.449716s outage seconds this UTC day (failed_seconds threshold=900s). l1_sparsity degraded: 3075.739s max interior inter-arrival gap (degraded_seconds threshold=30s). Gap ledger (ledger_version>=2): 2 __power__ events, 25 __connection__ rows this UTC day; max single connection-gap 4761.57s (an outage spanning the 2026-09-16/17 boundary, counted on both adjacent days). Cause: the host sleeps on battery -- caffeinate's PreventSystemSleep assertion is honored on AC power only (data/capture/power.py; STATE.md's ongoing battery-sleep blocker, mitigated by /Library/LaunchDaemons/com.aihedgefund.disablebatterysleep.plist, pmset history recorded in STATE.md). No threshold changed. Decision rows inside this outage carry null labels by the D-04-05 gap rule (an L1 silence nulls the label, never a carried-forward price) and are excluded from training by Phase 5's stale-book admission policy (D-05-21) once the harness reads this data.",
+  "stream": "bookTicker",
+  "symbol": "BTCUSDT",
+  "when": "2026-09-22T05:48:43Z",
+  "who": "alexanderfedin (approved 2026-09-21 in Claude session session_01RCuyRej4LNRLXQnszUC9Ho; file written by gsd-execute-phase Plan 05-00)"
+}

@@ -1,0 +1,1506 @@
+{
+  "symbol": "BTCUSDT",
+  "dates": [
+    "2026-09-12",
+    "2026-09-13",
+    "2026-09-14"
+  ],
+  "procedure": "harness.errata.compute_errata_cells -- re-run of 04-REVIEW-FIX.md WR-02's measurement",
+  "total_cells": 249,
+  "cells": [
+    {
+      "date": "2026-09-12",
+      "etime": 1789197902481000000,
+      "decision_seq": 365450,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197902486000000,
+      "decision_seq": 247770,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197902532000000,
+      "decision_seq": 247771,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197902585000000,
+      "decision_seq": 247772,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197902683000000,
+      "decision_seq": 247773,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197902718000000,
+      "decision_seq": 247774,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197902761000000,
+      "decision_seq": 247775,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197902837000000,
+      "decision_seq": 247776,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197903961000000,
+      "decision_seq": 247777,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197903962000000,
+      "decision_seq": 247778,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197904049000000,
+      "decision_seq": 247780,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197904211000000,
+      "decision_seq": 247781,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197904636000000,
+      "decision_seq": 247782,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197904717000000,
+      "decision_seq": 247783,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197905014000000,
+      "decision_seq": 247785,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197905438000000,
+      "decision_seq": 247786,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197906225000000,
+      "decision_seq": 247787,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197907617000000,
+      "decision_seq": 247794,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197907875000000,
+      "decision_seq": 247795,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197908493000000,
+      "decision_seq": 247796,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197908782000000,
+      "decision_seq": 247797,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197909052000000,
+      "decision_seq": 247798,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197909421000000,
+      "decision_seq": 247799,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197910579000000,
+      "decision_seq": 247803,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197910726000000,
+      "decision_seq": 247804,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197910986000000,
+      "decision_seq": 247809,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197911012000000,
+      "decision_seq": 247810,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197911500000000,
+      "decision_seq": 247811,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197911717000000,
+      "decision_seq": 247812,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197912526000000,
+      "decision_seq": 247813,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197913384000000,
+      "decision_seq": 247814,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197913403000000,
+      "decision_seq": 247815,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197913417000000,
+      "decision_seq": 247817,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197913788000000,
+      "decision_seq": 247819,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197914733000000,
+      "decision_seq": 247820,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197916234000000,
+      "decision_seq": 247821,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197916417000000,
+      "decision_seq": 247823,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197916617000000,
+      "decision_seq": 247824,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243859975000000,
+      "decision_seq": 5867683,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243860320000000,
+      "decision_seq": 678138,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243860450000000,
+      "decision_seq": 678139,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243860514000000,
+      "decision_seq": 678140,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243860553000000,
+      "decision_seq": 678141,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243862121000000,
+      "decision_seq": 678144,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243863895000000,
+      "decision_seq": 678145,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243864359000000,
+      "decision_seq": 678146,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243864568000000,
+      "decision_seq": 678147,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243864962000000,
+      "decision_seq": 678148,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243865051000000,
+      "decision_seq": 678149,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243865212000000,
+      "decision_seq": 678150,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243865479000000,
+      "decision_seq": 678151,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243866076000000,
+      "decision_seq": 678152,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243866490000000,
+      "decision_seq": 678153,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243866688000000,
+      "decision_seq": 678154,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243867228000000,
+      "decision_seq": 678155,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243867510000000,
+      "decision_seq": 678159,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243867579000000,
+      "decision_seq": 678160,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243867873000000,
+      "decision_seq": 678161,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243869179000000,
+      "decision_seq": 678162,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243869204000000,
+      "decision_seq": 678254,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243869248000000,
+      "decision_seq": 678255,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243869249000000,
+      "decision_seq": 678258,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243869253000000,
+      "decision_seq": 678259,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243869257000000,
+      "decision_seq": 678260,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243869262000000,
+      "decision_seq": 678261,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243869269000000,
+      "decision_seq": 678262,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243869273000000,
+      "decision_seq": 678263,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243869593000000,
+      "decision_seq": 678265,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243869606000000,
+      "decision_seq": 678266,
+      "label_column": "ret_10s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197902481000000,
+      "decision_seq": 365450,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197902486000000,
+      "decision_seq": 247770,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197902532000000,
+      "decision_seq": 247771,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197902585000000,
+      "decision_seq": 247772,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197902683000000,
+      "decision_seq": 247773,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197902718000000,
+      "decision_seq": 247774,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197902761000000,
+      "decision_seq": 247775,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197902837000000,
+      "decision_seq": 247776,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197903961000000,
+      "decision_seq": 247777,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197903962000000,
+      "decision_seq": 247778,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197904049000000,
+      "decision_seq": 247780,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197904211000000,
+      "decision_seq": 247781,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197904636000000,
+      "decision_seq": 247782,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197904717000000,
+      "decision_seq": 247783,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197905014000000,
+      "decision_seq": 247785,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197905438000000,
+      "decision_seq": 247786,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197906225000000,
+      "decision_seq": 247787,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197907617000000,
+      "decision_seq": 247794,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197907875000000,
+      "decision_seq": 247795,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197908493000000,
+      "decision_seq": 247796,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197908782000000,
+      "decision_seq": 247797,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197909052000000,
+      "decision_seq": 247798,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197909421000000,
+      "decision_seq": 247799,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197910579000000,
+      "decision_seq": 247803,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197910726000000,
+      "decision_seq": 247804,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197910986000000,
+      "decision_seq": 247809,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197911012000000,
+      "decision_seq": 247810,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197911500000000,
+      "decision_seq": 247811,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197911717000000,
+      "decision_seq": 247812,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197912526000000,
+      "decision_seq": 247813,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197913384000000,
+      "decision_seq": 247814,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197913403000000,
+      "decision_seq": 247815,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197913417000000,
+      "decision_seq": 247817,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197913788000000,
+      "decision_seq": 247819,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197914733000000,
+      "decision_seq": 247820,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197916234000000,
+      "decision_seq": 247821,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197916417000000,
+      "decision_seq": 247823,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197916617000000,
+      "decision_seq": 247824,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197917231000000,
+      "decision_seq": 247825,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197917637000000,
+      "decision_seq": 247826,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197917701000000,
+      "decision_seq": 247827,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197917786000000,
+      "decision_seq": 247828,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197918057000000,
+      "decision_seq": 247829,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197918282000000,
+      "decision_seq": 247830,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197918391000000,
+      "decision_seq": 247831,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197919109000000,
+      "decision_seq": 247832,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197919191000000,
+      "decision_seq": 247833,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197919563000000,
+      "decision_seq": 247834,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197919584000000,
+      "decision_seq": 247835,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197919732000000,
+      "decision_seq": 247837,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197921362000000,
+      "decision_seq": 247838,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197921455000000,
+      "decision_seq": 247840,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197922045000000,
+      "decision_seq": 247841,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197922324000000,
+      "decision_seq": 247842,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197922805000000,
+      "decision_seq": 247845,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197922940000000,
+      "decision_seq": 247849,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197923203000000,
+      "decision_seq": 247850,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197923444000000,
+      "decision_seq": 247851,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197923689000000,
+      "decision_seq": 247852,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197924335000000,
+      "decision_seq": 247853,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789197925017000000,
+      "decision_seq": 247857,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789201505538000000,
+      "decision_seq": 736792,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789204798948000000,
+      "decision_seq": 1129947,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789205960992000000,
+      "decision_seq": 1320978,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789206297000000000,
+      "decision_seq": 1340807,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789220376336000000,
+      "decision_seq": 2790513,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789222795713000000,
+      "decision_seq": 3048220,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789229549402000000,
+      "decision_seq": 3986633,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789233517891000000,
+      "decision_seq": 4412552,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789240430182000000,
+      "decision_seq": 5391127,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789240430254000000,
+      "decision_seq": 639369,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789240431132000000,
+      "decision_seq": 639370,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789240431177000000,
+      "decision_seq": 639371,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789240431639000000,
+      "decision_seq": 639372,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789240432138000000,
+      "decision_seq": 639373,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789240432140000000,
+      "decision_seq": 639374,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789240432842000000,
+      "decision_seq": 639375,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789240433009000000,
+      "decision_seq": 639376,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789240433148000000,
+      "decision_seq": 639377,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789240433431000000,
+      "decision_seq": 639378,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789240434370000000,
+      "decision_seq": 639381,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789240434763000000,
+      "decision_seq": 639383,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243859975000000,
+      "decision_seq": 5867683,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243860320000000,
+      "decision_seq": 678138,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243860450000000,
+      "decision_seq": 678139,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243860514000000,
+      "decision_seq": 678140,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243860553000000,
+      "decision_seq": 678141,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243862121000000,
+      "decision_seq": 678144,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243863895000000,
+      "decision_seq": 678145,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243864359000000,
+      "decision_seq": 678146,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243864568000000,
+      "decision_seq": 678147,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243864962000000,
+      "decision_seq": 678148,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243865051000000,
+      "decision_seq": 678149,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243865212000000,
+      "decision_seq": 678150,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243865479000000,
+      "decision_seq": 678151,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243866076000000,
+      "decision_seq": 678152,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243866490000000,
+      "decision_seq": 678153,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243866688000000,
+      "decision_seq": 678154,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243867228000000,
+      "decision_seq": 678155,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243867510000000,
+      "decision_seq": 678159,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243867579000000,
+      "decision_seq": 678160,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243867873000000,
+      "decision_seq": 678161,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243869179000000,
+      "decision_seq": 678162,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243869204000000,
+      "decision_seq": 678254,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243869248000000,
+      "decision_seq": 678255,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243869249000000,
+      "decision_seq": 678258,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243869253000000,
+      "decision_seq": 678259,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243869257000000,
+      "decision_seq": 678260,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243869262000000,
+      "decision_seq": 678261,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243869269000000,
+      "decision_seq": 678262,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243869273000000,
+      "decision_seq": 678263,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243869593000000,
+      "decision_seq": 678265,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243869606000000,
+      "decision_seq": 678266,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243870030000000,
+      "decision_seq": 678267,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243871368000000,
+      "decision_seq": 678268,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243871385000000,
+      "decision_seq": 678269,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243871636000000,
+      "decision_seq": 678270,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243872224000000,
+      "decision_seq": 678271,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243872280000000,
+      "decision_seq": 678272,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243873046000000,
+      "decision_seq": 678273,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243873241000000,
+      "decision_seq": 678274,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243874532000000,
+      "decision_seq": 678327,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243874542000000,
+      "decision_seq": 678328,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243875229000000,
+      "decision_seq": 678330,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243875281000000,
+      "decision_seq": 678331,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243875522000000,
+      "decision_seq": 678332,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243876230000000,
+      "decision_seq": 678333,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243877166000000,
+      "decision_seq": 678339,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243878633000000,
+      "decision_seq": 678378,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243878634000000,
+      "decision_seq": 678392,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243878635000000,
+      "decision_seq": 678394,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243878636000000,
+      "decision_seq": 678399,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789243878639000000,
+      "decision_seq": 678400,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789246049428000000,
+      "decision_seq": 6225387,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789249892038000000,
+      "decision_seq": 6626071,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789250195837000000,
+      "decision_seq": 6649778,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789250852940000000,
+      "decision_seq": 6725777,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789251753414000000,
+      "decision_seq": 6798000,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789252745305000000,
+      "decision_seq": 6891472,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789253477096000000,
+      "decision_seq": 6957914,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789254662223000000,
+      "decision_seq": 7060924,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789254664631000000,
+      "decision_seq": 7060944,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789255508377000000,
+      "decision_seq": 7112763,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789255882728000000,
+      "decision_seq": 7123688,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789256029102000000,
+      "decision_seq": 782148,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789256240997000000,
+      "decision_seq": 7135766,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789256483226000000,
+      "decision_seq": 7146631,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789256550524000000,
+      "decision_seq": 7149104,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789256558097000000,
+      "decision_seq": 7149261,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789256559363000000,
+      "decision_seq": 7149270,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789256841326000000,
+      "decision_seq": 7168428,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789256969081000000,
+      "decision_seq": 7174673,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-12",
+      "etime": 1789257127557000000,
+      "decision_seq": 7194717,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789259302456000000,
+      "decision_seq": 130633,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789262390221000000,
+      "decision_seq": 485194,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789264364477000000,
+      "decision_seq": 724872,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789264375249000000,
+      "decision_seq": 725017,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789264378318000000,
+      "decision_seq": 725064,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789264382994000000,
+      "decision_seq": 725119,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789264388499000000,
+      "decision_seq": 725154,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789264391504000000,
+      "decision_seq": 725168,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789264648991000000,
+      "decision_seq": 739505,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789264701380000000,
+      "decision_seq": 748527,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789268894748000000,
+      "decision_seq": 1112770,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789269078046000000,
+      "decision_seq": 1119930,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789271560503000000,
+      "decision_seq": 1440263,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789272891109000000,
+      "decision_seq": 1544010,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789273744531000000,
+      "decision_seq": 1618181,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789274367608000000,
+      "decision_seq": 1657081,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789274441419000000,
+      "decision_seq": 1661330,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789277857591000000,
+      "decision_seq": 146464,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789280657384000000,
+      "decision_seq": 2213458,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789281174486000000,
+      "decision_seq": 2238920,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789283978942000000,
+      "decision_seq": 2693374,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789286211177000000,
+      "decision_seq": 2996396,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789324652710000000,
+      "decision_seq": 11965969,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789324897825000000,
+      "decision_seq": 11993789,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789331659564000000,
+      "decision_seq": 12808271,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789336640199000000,
+      "decision_seq": 13525690,
+      "label_column": "ret_1s_mid"
+    },
+    {
+      "date": "2026-09-13",
+      "etime": 1789336791171000000,
+      "decision_seq": 13538027,
+      "label_column": "ret_1s_mid"
+    }
+  ]
+}

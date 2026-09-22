@@ -10,12 +10,14 @@ be in place BEFORE the first date is declared -- which is today. Measured
 every real L1 day is still buildable and this module's only job so far is
 to be ready.
 
-DELIBERATELY DEPENDENCE-FREE -- `json`, `pathlib`, `re`, `logging` and
-nothing else. In particular it does NOT import the quarantined tier's own
-audited module: that module imports `mlflow` at its top, and a feature
-pipeline acquiring an mlflow import for a date-list lookup is a coupling
-nobody asked for. Nor does it name that tier's path anywhere: what it reads
-is a different artifact, a git-committed list of dates.
+DELIBERATELY DEPENDENCE-FREE -- `json`, `pathlib`, `re`, `logging`, `time`
+(05-05-PLAN.md's `write_holdout_registry`, this module's first WRITER, needs
+`time.time_ns()` for `locked_at` -- the same stdlib-only posture, nothing
+heavier) and nothing else. In particular it does NOT import the quarantined
+tier's own audited module: that module imports `mlflow` at its top, and a
+feature pipeline acquiring an mlflow import for a date-list lookup is a
+coupling nobody asked for. Nor does it name that tier's path anywhere: what
+it reads is a different artifact, a git-committed list of dates.
 
 GIT-COMMITTED, for the same reason every other audit artifact here is:
 "every look appears in a diff" has to be literally true, and a holdout list
@@ -31,7 +33,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import threading
+import time
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -45,6 +50,7 @@ __all__ = [
     "holdout_registry_path",
     "quarantined_dates",
     "assert_not_quarantined",
+    "write_holdout_registry",
 ]
 
 logger = logging.getLogger(__name__)
@@ -207,3 +213,124 @@ def assert_not_quarantined(
             "held-out window is reachable only through the Phase 9/10 gate "
             "protocol, never through this path."
         )
+
+
+class _AlreadyExistsError(Exception):
+    """Internal signal from `_exclusive_write_json`: `path` already exists.
+    Never escapes this module -- `write_holdout_registry` catches it and
+    raises its own, message-compatible `ValueError` naming what the
+    existing file declares."""
+
+
+def _exclusive_write_json(path: Path, body: dict) -> None:
+    """Create `path` for the first time ONLY -- atomically, at the
+    filesystem level, so "does a file already exist here" and "create it"
+    can never be two separate steps two concurrent callers each observe
+    differently (05-REVIEW.md WR-02).
+
+    `path.exists()` then `_atomic_write_json` (the check-then-act this
+    replaces) has a window: two concurrent callers can both observe
+    `False`, both pass the write-once refusal, and one `tmp_path.replace`
+    silently wins over the other -- the loser's `dates`/`reason` vanish
+    with no error to either caller. This closes it with `os.link`, which
+    POSIX guarantees is atomic and raises `FileExistsError` if the target
+    already exists: write the body to a per-call-unique temp file (unique
+    per PID and thread, so two concurrent callers never share, and thus
+    never race on, the SAME temp path), then `os.link` that temp file onto
+    `path` -- whichever caller's `os.link` lands first wins `path`; every
+    other caller's `os.link` raises `FileExistsError`, translated here to
+    `_AlreadyExistsError` so the caller can build its own message from the
+    file that actually won.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.parent / f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp"
+    tmp_path.write_text(json.dumps(body, sort_keys=True, indent=2))
+    try:
+        os.link(tmp_path, path)
+    except FileExistsError:
+        raise _AlreadyExistsError() from None
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+def write_holdout_registry(
+    dates: list[str],
+    *,
+    reason: str,
+    symbol: str,
+    registry_root: Path | None = None,
+    locked_at_ns: int | None = None,
+) -> Path:
+    """Write `holdout_registry_path(registry_root)` for the first (and, per
+    this function's own refusal, ONLY) time -- this module's first WRITER;
+    everything above stays a reader.
+
+    WRITE-ONCE, LIKE EVERY OTHER REGISTRY ARTIFACT IN THIS CODEBASE. Refuses
+    (`ValueError`) if the target file already exists, naming the dates it
+    already declares -- a re-declaration (widening or narrowing an already
+    -armed held-out window) is out of Phase 5's scope entirely (D-05-17: this
+    phase builds the tool, it does not declare), so this function does not
+    need, and deliberately does not offer, an update path. Callers who need
+    to change a declared window are a later phase's design problem, not a
+    silent overwrite here.
+
+    THE REFUSAL ITSELF IS ATOMIC (05-REVIEW.md WR-02): the write goes
+    through `_exclusive_write_json`, an `os.link`-based create that the
+    filesystem itself refuses if `path` already exists -- never a Python
+    -level `path.exists()` check followed by a separate write. The
+    previous shape (check, THEN write) had a window: two concurrent
+    callers (e.g. a retried declaration attempt racing the first one still
+    finishing) could both observe `path.exists() is False`, both pass the
+    refusal, and one write would silently win over the other with no error
+    to either caller -- exactly the quiet-failure direction this module's
+    own fail-closed doctrine forbids. On a losing race, the existing file
+    is read fresh (not the pre-race body) so the error message always
+    names whichever declaration actually won.
+
+    VALIDATES `dates` BEFORE WRITING (fail-closed cuts both ways, per the
+    module docstring above): every entry must match `_DATE_RE`, the same
+    shape `_registry_problem` requires on READ. A malformed write here would
+    make every later `quarantined_dates` call raise -- wedging
+    `write_feature_partition`, `load_features`, and the harness accessor for
+    every symbol, not just this one -- so the same shape check that guards
+    the read guards the write too.
+
+    Writes exactly the schema `quarantined_dates` already parses:
+    `{"version": HOLDOUT_REGISTRY_VERSION, "symbol": symbol,
+    "dates": sorted(dates), "locked_at": <int64 ns>, "reason": reason}`.
+    `locked_at_ns` defaults to `time.time_ns()` -- a caller-supplied value
+    exists only so a test can pin a deterministic timestamp without
+    monkeypatching `time.time_ns` itself.
+
+    NEVER CALLS `chmod`/`os.chmod` (source-inspected by a dedicated
+    red-proof test, mirroring `data/lockbox.py`'s own): this writer's job
+    ends at the JSON. The physical `lake/lockbox/` barrier is a human,
+    out-of-band operation (`data/lockbox_POLICY.md`) this function has no
+    part in.
+    """
+    path = holdout_registry_path(registry_root)
+    bad = [d for d in dates if not (isinstance(d, str) and _DATE_RE.match(d))]
+    if bad:
+        raise ValueError(
+            f"write_holdout_registry: date(s) {bad!r} are not YYYY-MM-DD -- "
+            "refusing to write a registry every later reader would then "
+            "have to raise on"
+        )
+    body = {
+        "version": HOLDOUT_REGISTRY_VERSION,
+        "symbol": symbol,
+        "dates": sorted(dates),
+        "locked_at": locked_at_ns if locked_at_ns is not None else time.time_ns(),
+        "reason": reason,
+    }
+    try:
+        _exclusive_write_json(path, body)
+    except _AlreadyExistsError:
+        existing = json.loads(path.read_text())
+        raise ValueError(
+            f"write_holdout_registry: {path} already exists (declares "
+            f"{existing.get('dates')!r} for {existing.get('symbol')!r}, "
+            f"locked_at={existing.get('locked_at')!r}) -- this writer is "
+            "write-once; a re-declaration is out of scope"
+        ) from None
+    return path

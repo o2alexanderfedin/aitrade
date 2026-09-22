@@ -354,7 +354,7 @@ def recompute_build_stats(
     capture_df = read_capture_partition(
         Path(capture_root) / f"symbol={symbol}" / f"stream={stream}" / f"date={date}"
     )
-    _chosen, stats, na_stats = _select_with_na_stats(
+    chosen_df, stats, na_stats = _select_with_na_stats(
         stream, archive_df, capture_df, bool(archive_files)
     )
     if stats["chosen_source"] != manifest_source(manifest):
@@ -364,18 +364,85 @@ def recompute_build_stats(
             "rebuild (supersede) instead of re-deriving stats"
         )
 
+    # Same accounting `build_curated_day` records (05-00-PLAN.md): a
+    # capture-sourced day may carry a redundant-connection redelivery
+    # `_drop_capture_redelivery_duplicates` would have dropped at build
+    # time. Recomputed here so `new_stats` carries the same key set as a
+    # fresh build's `build_stats.json`, never a smaller one.
+    capture_redelivery_dropped = 0
+    if stats["chosen_source"] == "capture":
+        id_col = "trade_id" if stream == "trade" else "update_id"
+        _, capture_redelivery_dropped = _drop_capture_redelivery_duplicates(
+            chosen_df, id_col
+        )
+
     stats_path = _curated_build_stats_path(lake_root, symbol, stream, date)
     previous = json.loads(stats_path.read_text()) if stats_path.exists() else None
     part = manifest["partitions"][0]
     new_stats = {
         **stats,
         **na_stats,
+        "capture_redelivery_rows_dropped": capture_redelivery_dropped,
         "partition_path": part["path"],
         "partition_sha256": part["sha256"],
         "manifest_id": manifest_id,
     }
     _atomic_write_json(stats_path, new_stats)
     return previous, new_stats
+
+
+def _drop_capture_redelivery_duplicates(
+    df: pl.DataFrame, id_col: str
+) -> tuple[pl.DataFrame, int]:
+    """Drop CONTENT-IDENTICAL redelivered rows a capture-sourced partition
+    may carry.
+
+    STATE.md's BoundedDedup design note: the daemon's dedup seen-set is
+    TTL-evicted, not a high-water-mark, "so a key the redundant connection
+    delivers late is never wrongly dropped as a duplicate" -- the flip
+    side, measured for the first time on the real 2026-09-16 bookTicker
+    capture partition (one `update_id` delivered twice, rtime 147.3s
+    apart, identical on every exchange field), is that a duplicate
+    delivered LATER than the TTL is NOT deduped by the daemon and lands
+    here as a genuine second row. `materialize_seq`'s uniqueness assertion
+    treats any duplicate `id_col` as a bug; this narrows that to "a real
+    anomaly" by removing only rows that are duplicates on every column
+    EXCEPT the daemon's own arrival bookkeeping (`seq`, `rtime`), keeping
+    the lowest `seq` (earliest arrival) of each such group.
+
+    A duplicate `id_col` group that is NOT content-identical is left
+    completely untouched -- it still reaches `materialize_seq`, which
+    still raises with its own diagnostic. Never called for archive-sourced
+    frames (no redundant-connection concept there).
+    """
+    compare_cols = [c for c in df.columns if c not in ("seq", "rtime")]
+    n_before = df.height
+    counts = df.group_by(id_col).len()
+    dup_ids = counts.filter(pl.col("len") > 1)[id_col].to_list()
+    if not dup_ids:
+        return df, 0
+
+    non_dup = df.filter(~pl.col(id_col).is_in(dup_ids))
+    dup_rows = df.filter(pl.col(id_col).is_in(dup_ids))
+
+    identical_check = dup_rows.group_by(id_col).agg(
+        pl.struct(compare_cols).n_unique().alias("_n_distinct")
+    )
+    identical_ids = identical_check.filter(pl.col("_n_distinct") == 1)[id_col].to_list()
+    anomalous_ids = identical_check.filter(pl.col("_n_distinct") > 1)[id_col].to_list()
+
+    kept_from_identical = (
+        dup_rows.filter(pl.col(id_col).is_in(identical_ids))
+        .sort("seq")
+        .group_by(id_col, maintain_order=True)
+        .head(1)
+        .select(df.columns)
+    )
+    kept_anomalous = dup_rows.filter(pl.col(id_col).is_in(anomalous_ids))
+
+    cleaned = pl.concat([non_dup, kept_from_identical, kept_anomalous], how="vertical")
+    dropped = n_before - cleaned.height
+    return cleaned, dropped
 
 
 def build_curated_day(
@@ -469,6 +536,12 @@ def build_curated_day(
     else:
         sort_keys = ["etime", "update_id"]
 
+    capture_redelivery_dropped = 0
+    if chosen_source == "capture":
+        chosen_df, capture_redelivery_dropped = _drop_capture_redelivery_duplicates(
+            chosen_df, sort_keys[-1]
+        )
+
     chosen_df = materialize_seq(chosen_df, sort_keys)
 
     curated_date_dir = (
@@ -513,6 +586,7 @@ def build_curated_day(
     build_stats = {
         **stats,
         **na_stats,
+        "capture_redelivery_rows_dropped": capture_redelivery_dropped,
         "partition_path": partition_entry["path"],
         "partition_sha256": partition_entry["sha256"],
         "manifest_id": None,

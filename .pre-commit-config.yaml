@@ -144,6 +144,17 @@ repos:
         language: system
         pass_filenames: false
 
+      # D-05-15's static tripwire: only harness/ and its four named test
+      # callers may reach features.tier.load_features directly -- everyone
+      # else must go through harness.accessor.materialize so a validation
+      # look is counted. Same-uid accident-proofing, not a security
+      # boundary -- see the checker's own docstring.
+      - id: check-harness-accessor-only
+        name: check_harness_accessor_only
+        entry: uv run --locked --directory mvp python -m tools.check_harness_accessor_only
+        language: system
+        pass_filenames: false
+
       # FEAT-03's gate, DELIBERATELY REDUNDANT with the full-suite hook
       # below -- do not "clean this up". `tests/leakage` is collected by
       # `pytest tests` too, so this re-runs ~2 s of work. What it buys is a

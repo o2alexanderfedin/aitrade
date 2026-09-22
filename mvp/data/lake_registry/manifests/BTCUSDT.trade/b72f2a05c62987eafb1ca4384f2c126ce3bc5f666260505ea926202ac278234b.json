@@ -1,0 +1,1569 @@
+{
+  "built_at": 1789963682315555000,
+  "code_hash": "039d7c394720043b382ec15d363f9c1c6386c178",
+  "dataset": "BTCUSDT.trade",
+  "etime_range": [
+    1789776000141000000,
+    1789862399508000000
+  ],
+  "inputs": [
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789776032460125000.parquet",
+      "rows": null,
+      "sha256": "3a9b16bf0d1e61404d471f1bdc29fcd1c9a69066064e75560bdbb9ce7b60992e"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789776176026323000.parquet",
+      "rows": null,
+      "sha256": "b2835dfb778d4f08ac4f9e5f37d1b7a7a46ac5d413c1b2a7068d9f45fef8f3bc"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789776368675777000.parquet",
+      "rows": null,
+      "sha256": "5e10f63b3b8184e06a63b399d8c6ed0ea5099697b59c0c318abd3b99390a18a6"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789776581140101000.parquet",
+      "rows": null,
+      "sha256": "31e139cef2234193f8b909d4397bfb4bb02980e7dd80e8e3f9b1b0fef62ca674"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789776741635549000.parquet",
+      "rows": null,
+      "sha256": "1bc925ad51d893a2f42577e2350615cb8a5f5a8cab11664b6c979949875836f8"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789776970678620000.parquet",
+      "rows": null,
+      "sha256": "035a45978d871138c59d9a36c7d669c8c0babf1f5e07a869fb87cb45e063c9c3"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789777135459312000.parquet",
+      "rows": null,
+      "sha256": "208d5e10e27d2e004fa42a2f8fc5a8678cd44b6abeff6171e24238b5c4453c4a"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789777302136637000.parquet",
+      "rows": null,
+      "sha256": "86e67e5f36a9f480d7969bfb86a13757d397b80d14875d0114b827793bb826d5"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789777588027299000.parquet",
+      "rows": null,
+      "sha256": "f0c11e55169150febb3383e454c4eaa5849133890d6d5c7624c2ef799668d0b6"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789777902752834000.parquet",
+      "rows": null,
+      "sha256": "6499fcabaa381014e6c0934424b25266eb017d54f85426332efab74f100abb3c"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789777983174889000.parquet",
+      "rows": null,
+      "sha256": "251ce240336fa5114816ff241e3e132a0291c9107366eda652982b928569f227"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789778098065582000.parquet",
+      "rows": null,
+      "sha256": "1704aaff22c411c3637a5f384e7e83efbe68932391b1bf6c9f9fceadbee5271d"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789778361433797000.parquet",
+      "rows": null,
+      "sha256": "7d195c88057581e0c4f1ac71f67e98fcbca375dfeb57394e16bc8872db577335"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789778641529229000.parquet",
+      "rows": null,
+      "sha256": "cf5e9727c6ee7e9388fea56d577654b264dd55531fad94a365ba90c206e3cf4f"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789778806457241000.parquet",
+      "rows": null,
+      "sha256": "031889c2b647646419e8dc34b1d516e09801a78d5471a4b6f7ad73c2285c950c"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789779006512213000.parquet",
+      "rows": null,
+      "sha256": "9e4f4431dda09e8c561f98dee2c05e4fc055c80848323b239305c055e5ccac2b"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789779136373469000.parquet",
+      "rows": null,
+      "sha256": "ee8125fedce556d5191ef8bb15a452cc1bb46f63a100fc66dde51eb7c5e1937e"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789779191990472000.parquet",
+      "rows": null,
+      "sha256": "bd0a68b0d2486cf74140f44d896f21c32def168fbb8e99ccb3e0ea7b5435762e"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789779193201502000.parquet",
+      "rows": null,
+      "sha256": "c0c03fbff8becece65aa33dc75cad6ff7990a0aa8712c4203199b96f6b06a418"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789779203363689000.parquet",
+      "rows": null,
+      "sha256": "f77fb8d5c1a714bd3d07fa801a139959af46a17772a86308cf8a168fee4b1af2"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789779227853506000.parquet",
+      "rows": null,
+      "sha256": "ccbaa40621a39afd88a7380835f582065a427833c79058c65501360f2e83de1d"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789779300131823000.parquet",
+      "rows": null,
+      "sha256": "ccdb1643e7a4bdee6c062919336a17b3051d2e405c7e2a624d7c2c307918b036"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789779363289788000.parquet",
+      "rows": null,
+      "sha256": "e7b108c3d0bfb0472ebad5251b771034be3249746f94b5fdff5027dfad1e38c4"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789779379657193000.parquet",
+      "rows": null,
+      "sha256": "e41abf730411d4f5c81a085d00f97ac44ee60cb224028e35b267da7b4e739d36"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789779423818759000.parquet",
+      "rows": null,
+      "sha256": "d13dd6a75cbfa76de5357d75f18e7741599507d974eb80635c61cc7569119be0"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789779518871136000.parquet",
+      "rows": null,
+      "sha256": "b0018c2e514ecf1914cc5f840f88df624fe3b90bea5e90cf26ee74a66b18c2e2"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789779555157456000.parquet",
+      "rows": null,
+      "sha256": "95dc78f5627b5cd4def16331bed153c6389886e6c5042385498e6d1193f644cc"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789779594560859000.parquet",
+      "rows": null,
+      "sha256": "a3466ceb4fc171496321e061d43fe7a23781399e70bcb6e5b7fa529c50e340b7"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789779622676099000.parquet",
+      "rows": null,
+      "sha256": "c8436eb270c606b655b31543d59a4a7bd6926e1b9635eb2199902efe497baa09"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789779655603363000.parquet",
+      "rows": null,
+      "sha256": "e7239e375bd1cef3072341315a359797738285219affcc5cdf16c15a7f172ebc"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789779681930219000.parquet",
+      "rows": null,
+      "sha256": "e6d25242c60d5330b3f15f575f5a78caafd8a4aebfb3bf545d21a32ae85fdd68"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789779727029805000.parquet",
+      "rows": null,
+      "sha256": "a577d3c918e2485957d14288c7d4704da695920378d12e51dc602b38e8009e81"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789779776226033000.parquet",
+      "rows": null,
+      "sha256": "865dfc250242002c690c68b2a89b1494910435e73010446baa8a5ee426c4e71f"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789779830713927000.parquet",
+      "rows": null,
+      "sha256": "a3f9e7bf63a68dc91fcc34da4beb1095ac01929e6cc809483fccc85a13cd754b"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789779875420925000.parquet",
+      "rows": null,
+      "sha256": "1c2815636e6ab1e0f270e1081fdfd3288cdab95845247ce1ce00aa9b2f835c52"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789779955596661000.parquet",
+      "rows": null,
+      "sha256": "984339ec028d604b546562a572a55d3633e4514797205da9469a16d54663eb35"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789780072921749000.parquet",
+      "rows": null,
+      "sha256": "30f993c282477323a2c6e38074325493139be3b5fb0d4ec6dcc07b3d19980b12"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789780156603025000.parquet",
+      "rows": null,
+      "sha256": "09dd9c622a3e72d7493ef4cecd8da5d902b99c330d7239557e546718eb929ccd"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789780250708044000.parquet",
+      "rows": null,
+      "sha256": "d209580e5bd16768653c2b05bbf006f2f14cb491357c8cb33cbea8a92bc1864e"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789780331636711000.parquet",
+      "rows": null,
+      "sha256": "12f802e36eff08124f2ddef5fe0b9fcff8761a5cd6270eb5e0d83dec2281d511"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789780443162681000.parquet",
+      "rows": null,
+      "sha256": "c59486dcd1cd05686b2e89eff9ebba1e4c4209b2d1354bb8d8d512c4d7a80b55"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789780564370761000.parquet",
+      "rows": null,
+      "sha256": "cb0b9820577e3217f540968df8b099496bcbe9f612c0b791970a36a5d3c00263"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789780702752688000.parquet",
+      "rows": null,
+      "sha256": "0a57772e95d44f7ecaea4fa1a6e867ed188c032c2808fd416e91322b801d923d"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789780810625317000.parquet",
+      "rows": null,
+      "sha256": "da4ced994000c4acb1791c777b4ef6bee99d61f589e5bc403b1db2e4245b976a"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789780889854479000.parquet",
+      "rows": null,
+      "sha256": "93cd174151e2283bb9b679c7db573e0aae464c9b0f83877c26927b9c98767758"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789781015735767000.parquet",
+      "rows": null,
+      "sha256": "009b3c5665fab9b2eb0fb36237155c6cd94d9993a703bcc5b24b54b6984bdaf0"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789781163581164000.parquet",
+      "rows": null,
+      "sha256": "eae1a1f054a8b01399e903468ae2a7b255d6df27b561f8624119e7bc7e87c8d8"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789781381220867000.parquet",
+      "rows": null,
+      "sha256": "b4ca8ea948c1b747a4233abb045b020a32deddd609cd6ab73591bc3f127ade5b"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789781612792828000.parquet",
+      "rows": null,
+      "sha256": "1cf9d28536643c31dcc19517360aff8dd66829236e637f7b01d6007ad4d8acad"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789781725011087000.parquet",
+      "rows": null,
+      "sha256": "8230f34237c765c844712ec598cfbad2428016c7e7e580d8ee5b38b538788c76"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789781835712731000.parquet",
+      "rows": null,
+      "sha256": "fe28c9433d9fb76ac3c671f1db8a9d61341b1b1965bec9f2b64ada44a0718f6e"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789781996488987000.parquet",
+      "rows": null,
+      "sha256": "8b59a5a826be2b1b845e8819dd641ba96c6f42c4cfed71c12159a294993ff46e"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789782338507744000.parquet",
+      "rows": null,
+      "sha256": "d3cee57ada6c2f778b3337e46359f2f7ba7e4abd4e85e051b6ab704cdc8e8c90"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789782583817466000.parquet",
+      "rows": null,
+      "sha256": "fa0382d8befa6b57007a30e6fdafb6917d10350cfee8717db6824e721858d389"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789782654847100000.parquet",
+      "rows": null,
+      "sha256": "0d507614d45750e6cc49aba4b28b13bc05aa5b563d06656c3436509152aa8505"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789782744585197000.parquet",
+      "rows": null,
+      "sha256": "8f768286337b20c9d0b09d108d928e7e1dd8c8be2d0028f2bca77476342651c7"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789782910218123000.parquet",
+      "rows": null,
+      "sha256": "d4cad865c99e24783b08217330c989f3e0dacf2cb5eddeb34c536357dea76937"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789783188516049000.parquet",
+      "rows": null,
+      "sha256": "a8a80e704459d8515173bc5850252a373039e74a3b25275a7a91974a86bcd039"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789783440328354000.parquet",
+      "rows": null,
+      "sha256": "51a78924238163b33ca4f2c3f309f507c95232b87d87f86a054548781e1ec833"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789801722431421000.parquet",
+      "rows": null,
+      "sha256": "44d84e02df8c818e4293f7d0c8fde0f2159bab9d7b66cb4ee68c752247b91448"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789802063616778000.parquet",
+      "rows": null,
+      "sha256": "9e21436ec3c99d4908cc5ba3981cb62c3bfb3ee1381c63e2151104ba6992fb9a"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789802227393868000.parquet",
+      "rows": null,
+      "sha256": "3d2e8a586c883714a70856028b727a8d04d7c8726b6c834fe453a63741cee4cc"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789802278980501000.parquet",
+      "rows": null,
+      "sha256": "f067120d2d266250a95cd2903e2070f93ca3377af9c9556ab66469dfde62a082"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789802461242838000.parquet",
+      "rows": null,
+      "sha256": "5789d1cb2746408f05592999c855ae098cb849d93b26da30d0716762435ad182"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789802836816318000.parquet",
+      "rows": null,
+      "sha256": "d985a34cdd8a2068ac464ac50507e4d64a817f5ff17386c679761ebbf7ce48c3"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789803200120039000.parquet",
+      "rows": null,
+      "sha256": "d9b52868e6cac0c5dba084bfbeaa35ecb2860de47c6247d97b523759c0aea190"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789803566805388000.parquet",
+      "rows": null,
+      "sha256": "bcf913c84f5be1b49efebc89f5582990b42afd482daf9cf0c5d21c6f5b4a62cf"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789804015281014000.parquet",
+      "rows": null,
+      "sha256": "e69822714af7388037f578c82387e13413822eeab47370d21e75244a2950b7d6"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789804414794518000.parquet",
+      "rows": null,
+      "sha256": "c9f78f24ef17b9a91354e69bd5bc4680b67bedf3dfe3b8a6e303c420f9eac0fb"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789804617686706000.parquet",
+      "rows": null,
+      "sha256": "6922c1f84356ca87c6719a76dc2232394238a4f3c697ef1834363c6464b59177"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789804920693739000.parquet",
+      "rows": null,
+      "sha256": "91d17ae2136fa0fa9a074f8e6c5b4a621ce3fe96a082f8cbb33c412a29b86311"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789805239228903000.parquet",
+      "rows": null,
+      "sha256": "98bf0524bcbc85d8427ea5763fb4d6a0e1692e1ea9b26e0de1e01b7e5c080c31"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789805496859282000.parquet",
+      "rows": null,
+      "sha256": "9bef2cff559ced698de2b6ac6b08e4a38611edf2211d96a3d0ac5201705141f4"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789805768755238000.parquet",
+      "rows": null,
+      "sha256": "07fab74d82652b50f1f62b6e3f0249447d3ff0eb18bea69c8d76e3656d59103a"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789805915527066000.parquet",
+      "rows": null,
+      "sha256": "d4e6f0ff9732e3d6b1c8479d2fd28dc452069cbe24095ff258c4b4374b5c7fa2"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789806045904079000.parquet",
+      "rows": null,
+      "sha256": "09694a4d3cad1512be6a91a69b874cdbcbfa215ead1e1f46f757124e265f3515"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789806064416369000.parquet",
+      "rows": null,
+      "sha256": "2fc281714cacc6f3f1365c08348b35737052cb708b6f489c037b2734e8a13e87"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789806090284306000.parquet",
+      "rows": null,
+      "sha256": "97b4a0e358652afeca1b229ceca611ef9d3d79b0c7cfcfb9ea9e0d34a37c4279"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789806175293162000.parquet",
+      "rows": null,
+      "sha256": "281bd5e2f72ac895218a077b6178539817e3dc281de966055fc09aa815b4488b"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789806288262706000.parquet",
+      "rows": null,
+      "sha256": "50e22a816dfe433d89156397036119ec12079f2c3124a30bec84dc01965ba70c"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789806583753632000.parquet",
+      "rows": null,
+      "sha256": "04174a8b65383d747974b53ccaeafad0b014c61ef6b1a1fc04d69c4cca7e2c65"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789806878965178000.parquet",
+      "rows": null,
+      "sha256": "ac0344234a4536898b9091d6bef293868553346caae3636eb3cc3195d66019a7"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789806978100385000.parquet",
+      "rows": null,
+      "sha256": "23755da2305a79802218d0e59b05d62a90f60a52aad492769ed6858c507fc8e8"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789807241496327000.parquet",
+      "rows": null,
+      "sha256": "810267d640a2ba9718930d0dbe2e3bb5f2798fc752fc88b53b7ab23c598638e6"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789807732938916000.parquet",
+      "rows": null,
+      "sha256": "fa6e7f7a32cebf2be9a51911988dcefb1623f29daf7790911486f104957c93e1"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789808117878655000.parquet",
+      "rows": null,
+      "sha256": "f0515740ad5fdd2daf685950880c7b5b06f3f8b27cea70f30923d8fb7e82ede3"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789808414606119000.parquet",
+      "rows": null,
+      "sha256": "d01c65979896fe3366a6c2e37bd85f4f70248f24be22500c916b8123945cfdeb"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789808699293474000.parquet",
+      "rows": null,
+      "sha256": "d27ce851a72362e549be4932213a5ed7864b8680941869b18a69645ff0392ac4"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789808891437574000.parquet",
+      "rows": null,
+      "sha256": "5335a7e16d21523e5a26c2f775d051f56e7060a2652a76318f767369434cd6c8"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789808918152900000.parquet",
+      "rows": null,
+      "sha256": "e6ac11f64c8630b38913113bf441bb4d1afd57428fc514b4e81444723bb0ea24"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789808955904243000.parquet",
+      "rows": null,
+      "sha256": "752fbb840704f1a8917080d68f219d5b657d919bcd75d92ee298ece9beb86a9e"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789809141825415000.parquet",
+      "rows": null,
+      "sha256": "0f2163625a9c743785c916e1ee753cc0fc8a3047821e216e587d284c5acd8640"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789809369217988000.parquet",
+      "rows": null,
+      "sha256": "1dbbe9b8c7454a40c71eb1850f1ad343854121b1c7d656dd3a66822042a18e02"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789809618111744000.parquet",
+      "rows": null,
+      "sha256": "18ebb8c36563651a394370bbf82e94d67d186f6ebbc4fa330fcdd746a243d6ae"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789809829048836000.parquet",
+      "rows": null,
+      "sha256": "ee3e24bad2ea687146ee241cb35db0252c3cec6a253026d39768f0dfc5d31c6a"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789810088694632000.parquet",
+      "rows": null,
+      "sha256": "5f5caea9a69ae1f4a4f1562bdaa9066c24825757f3143dcf32841440c65cbae5"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789810325953817000.parquet",
+      "rows": null,
+      "sha256": "8b689420ff9265739cc9fc9cf229861f7a4614d8332c06eb63c86ddea0bc29ce"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789810420773419000.parquet",
+      "rows": null,
+      "sha256": "0a07492c0e4f9d9d95da55a2702a71915f983ad1ee7da5fa46ae1e642d9c3ed9"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789810530482945000.parquet",
+      "rows": null,
+      "sha256": "37446999c58ef59c4396bba50246fe8b0421f1c72623d1cc76dd9b9c0d606512"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789810730669235000.parquet",
+      "rows": null,
+      "sha256": "c6e05619eb57a68833c63cd66108686af6b587bae2f3ad8a545c316cd5987522"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789810955403157000.parquet",
+      "rows": null,
+      "sha256": "5fa384fe41f5abd4e6c918a5a681be5490ea2c5b70883934c3d815e8f192cb98"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789811307100940000.parquet",
+      "rows": null,
+      "sha256": "e5c93590a11e511df356b8d69b96015b7d662bb43a7d938861f755dae8581cca"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789811629771352000.parquet",
+      "rows": null,
+      "sha256": "5b9794c2fd6628ee2b337939799bc4b68de3fa2f42b3262575c285e0c3e0a89a"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789812234657494000.parquet",
+      "rows": null,
+      "sha256": "46dad39ae381b9db19025173e8cc2529fc329822ad41493448d913c786cbcfbe"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789812455508107000.parquet",
+      "rows": null,
+      "sha256": "7a3fa0066b19c07c87b197dd076b38e94755ee1ed07f52561ef94a4676cee9be"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789812505607097000.parquet",
+      "rows": null,
+      "sha256": "502f9d34644e930d53f7de6862a83d0a8590f89bfc14f2c26d8a19cd0a074356"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789812827485006000.parquet",
+      "rows": null,
+      "sha256": "f28084b35860654608da0f48d623c89c1c72a70c2efd0c4523a0250de100a46e"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789813231331890000.parquet",
+      "rows": null,
+      "sha256": "528adc55c14ed2806ccf61832cb9ed1e93ac6eeeb5d4b75b7718fcbfab3c2351"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789813422946557000.parquet",
+      "rows": null,
+      "sha256": "fb050fb360d1b0b7b6dd1ece7bdb175a34f32699c73a83528b09df8231bd9b0d"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789813753240526000.parquet",
+      "rows": null,
+      "sha256": "7e2214c5fedcb14fa43421fbc52ca7225c279cd169e4b2abeeba7ad1e2e3fdee"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789813928618173000.parquet",
+      "rows": null,
+      "sha256": "03cb37b5c6743543bf63150a61fd5d4c037cc6e9c70190d9d29c70972882f8e2"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789814258549935000.parquet",
+      "rows": null,
+      "sha256": "70613ec8fb6bdf067d13353b2308a3b0967b53a7c7ebf7a43fbbd8831adafa2b"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789814597255552000.parquet",
+      "rows": null,
+      "sha256": "fcadbc10555a0ec17ef4553dce61e948bb550877b9932d82ec5501b4db6c9249"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789814928195639000.parquet",
+      "rows": null,
+      "sha256": "5d75bfb7621fd904f54d0891bb7f075449c524a42ea579607f14ddfbf4ac68d9"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789815323487341000.parquet",
+      "rows": null,
+      "sha256": "91f8117f4758e7d69e117e4f626553c049904b15695a8a746045e4d718fe8e15"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789815558994527000.parquet",
+      "rows": null,
+      "sha256": "e68aa8019cd812073ada00da648d8856770c4c712f20ad9ad5e6db1e3dc3860a"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789815815332010000.parquet",
+      "rows": null,
+      "sha256": "f7e1a8f7f16d6d531c64eedf26f9679c432d92ce5cac0a8635abf7c831d57ea6"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789816182955034000.parquet",
+      "rows": null,
+      "sha256": "bdf96399cede082de6fe75d9f4c3bb43f121bc2ff60e4dc4733aead7b649f52b"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789816414798915000.parquet",
+      "rows": null,
+      "sha256": "e9699b9836e3ba89fbe44d3220ed297e57a7ff04f81978f710183da901af977c"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789816866155474000.parquet",
+      "rows": null,
+      "sha256": "526c689230b796aec6dec6f0d5c7747366cee18aa86210b289f6fd720170c0f6"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789817289206659000.parquet",
+      "rows": null,
+      "sha256": "807633b5c02dba2e60fef49bcf59a661197587a9974b3ba5adcb67d4c3dec752"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789817776251756000.parquet",
+      "rows": null,
+      "sha256": "5116c5e2fa9d8b6fe2fd37d2432d0c2011bcbef24d82e6532f7b0f48320a014b"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789818192257530000.parquet",
+      "rows": null,
+      "sha256": "31ffea5d84b2996d10eefc47371f27215f98a2090dcbb6d7de23ab0e6788989e"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789818797299589000.parquet",
+      "rows": null,
+      "sha256": "7e97a81896ca7c7f36ad9ed9e989df8115b03e285b0b40033614d3a705a2f7c3"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789819345900208000.parquet",
+      "rows": null,
+      "sha256": "bd2428b56e941d7f8b119055909341625dd399d98430a4966bbce6437d8edc0d"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789819640671302000.parquet",
+      "rows": null,
+      "sha256": "cfb41b54cf90cb8c8e8a4dc09666e8140a42d9e037232307698af921775caf4f"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789819911918762000.parquet",
+      "rows": null,
+      "sha256": "041c48919b3863a497f71ec722373cbcb4a7f767665c9cce3987e4e16914959b"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789820177557250000.parquet",
+      "rows": null,
+      "sha256": "79eb4ae2b7d685f2c00b97fa7d644854c82afecbe63d995fce7fbb3aaa0ffc58"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789820575249867000.parquet",
+      "rows": null,
+      "sha256": "a3138336e720c3e958cc6eaee3dedba775391a6090d3d860093c8001d806c314"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789820791436379000.parquet",
+      "rows": null,
+      "sha256": "7776b7165290ff5a6bff3a610ebb8696d95fa6c248f43e12e15d27aea179ff77"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789821187909401000.parquet",
+      "rows": null,
+      "sha256": "7d18edf4f85b99985cd1b43473e655f5da0c113c12b343c6363366951ab796f7"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789821696518859000.parquet",
+      "rows": null,
+      "sha256": "d5a17bd600bd6a4b31159e9d31892dc148f25940ea80f7ae668f527815ce3614"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789822155738488000.parquet",
+      "rows": null,
+      "sha256": "50a528cd56c20fc86bab8ba4d8e8647f2a17bbd3de7e1ca67d719a6062ec4d0f"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789822504637694000.parquet",
+      "rows": null,
+      "sha256": "b2e9231d4c9c040bed882b929eba55f4e83c952bce2d5f5b526562e739f9e815"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789822924672376000.parquet",
+      "rows": null,
+      "sha256": "dbfbe495f6572195f99ec0ea69b460026ca191725b4777d77a3a05d1d2f8c7f8"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789823299800443000.parquet",
+      "rows": null,
+      "sha256": "998b743e8405107898ca50e4a49d50a000de3f671b9be509c9f797a29b4b6dcf"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789823536002061000.parquet",
+      "rows": null,
+      "sha256": "b2ff00e0466bd6898b4fb0c0156d52ede74daef132196babffc31420b95e8b32"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789823644223270000.parquet",
+      "rows": null,
+      "sha256": "a8cf86e5628072eba318854ccb8a1a5e341d179f03951c068bb772f3df2f89f6"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789823926332306000.parquet",
+      "rows": null,
+      "sha256": "c3b92ba09671fc1dc7f6c649f50830583508fba0964710f21b7bccd902d2af63"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789824226281254000.parquet",
+      "rows": null,
+      "sha256": "6f46528a54fcd6c6e6e7aecfd25d9735d038bc6302216ceb3b2165ccf432c56d"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789824641171486000.parquet",
+      "rows": null,
+      "sha256": "e6494d7aa6758ed31163ecf406d37ba50fdb03b7e1a8c343ba7ebd0b5e585340"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789824957030526000.parquet",
+      "rows": null,
+      "sha256": "13d8ef90b09deeb08c9eaeef56906eb5b7793d29875a0d5a78375b0be1dcaf13"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789825401640257000.parquet",
+      "rows": null,
+      "sha256": "d8754a0254d55f9da2019ea519c9deab726ce2880af160cc37d8cf9d80a1b357"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789825939373808000.parquet",
+      "rows": null,
+      "sha256": "d4db431344fc040869120c27b860146d50034ff4980c8b7d8cb84d02856bcffb"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789826166000894000.parquet",
+      "rows": null,
+      "sha256": "c1eacedc7329c8f3e10ce280f6c60c55852acc47b3133f4230998a310b60f069"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789826580611745000.parquet",
+      "rows": null,
+      "sha256": "7b26cb16cda17ca614901eed3c26018d5651490fe94e317bcc92e87c05a56265"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789826755654876000.parquet",
+      "rows": null,
+      "sha256": "bd6946a7e1c872c2c0d93d20316f3b6578d40a552ecb474eeba276596990d359"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789826852849850000.parquet",
+      "rows": null,
+      "sha256": "5ad962c99855b40b45cbe224c88927b38bfbfeb279bfbeaab0880eeab9c6bf59"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789827173038000000.parquet",
+      "rows": null,
+      "sha256": "8a683f1a2b19ffcf78882c7fe33a3899bb2be10bdefd1b807da0823ba93e90c5"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789827485069999000.parquet",
+      "rows": null,
+      "sha256": "39bc3be527ac432ac86e2ba758506c927d0bf0fe531114bbd5e531fe7f5751ce"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789827649191487000.parquet",
+      "rows": null,
+      "sha256": "578550bdd30c50386d2f4569b9e6bdba68975f4872222b33079ce02089ec32c3"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789827692396621000.parquet",
+      "rows": null,
+      "sha256": "6ab44191baa344649009f9c7c6e94368298a95cf0dcc5913b4ecadec89365366"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789827897246723000.parquet",
+      "rows": null,
+      "sha256": "33a1a63fabd3fbc3f9c7fdabbfb4533106feac61e5af44bd0f8dbc948978939b"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789828101352352000.parquet",
+      "rows": null,
+      "sha256": "09dabc883450cd95f700ddabc94b9c29b6d0bc124edd784398c908af1ec81fb0"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789828226820517000.parquet",
+      "rows": null,
+      "sha256": "b0e547fde710638d2b1e0112ac393be0251bc738f9a1ea49c6519b053b90ea7b"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789828379890989000.parquet",
+      "rows": null,
+      "sha256": "601389dd829e9ffbafe2bba0c528e8e0c47189c0f76ae3b3ce99ecc5228d398e"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789828442139543000.parquet",
+      "rows": null,
+      "sha256": "7c54ce91600bb600facbe1f0534203c28046a52fcef1b659944e16f9b8ee1565"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789828707290120000.parquet",
+      "rows": null,
+      "sha256": "650b7fe3a0353d47bd6cebf55eae63b0281e27f864317f54eac7741824db6a0d"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789828982417835000.parquet",
+      "rows": null,
+      "sha256": "8f0825078a3a3e09c1feb31904156f1909050a6fed0b0ec78a35a1ac8ac46a62"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789829123630927000.parquet",
+      "rows": null,
+      "sha256": "6649b759d8b570c063e814a6a84845664e9673291d9ed27814ff698d430cd5d8"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789829323872660000.parquet",
+      "rows": null,
+      "sha256": "8a6f18c7b59f635b2df7b75ff8e3bcdcaa263bf20c7caf122e1e36ee11239910"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789829518063759000.parquet",
+      "rows": null,
+      "sha256": "7688ad9f4c8fee46bb4f9f4389b73088f582afc0ac1002569f49992ed60e039e"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789829778786733000.parquet",
+      "rows": null,
+      "sha256": "6121ff0325d7ad7886beba48dbca930b02a861e8e2d6bc19a5ab887a3f67d136"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789829980699461000.parquet",
+      "rows": null,
+      "sha256": "120368b452b0ea414fe81c9dbf9a14a33df8eb0b9ad10748517e4919d6a1ce58"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789830179219285000.parquet",
+      "rows": null,
+      "sha256": "2c2f619edd7f13212a4c54a8cab0e4a8a70a9c686832b572eeb2bda8a2f0ad46"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789830284636422000.parquet",
+      "rows": null,
+      "sha256": "387eedac62d2617202360412c62c04bdcafca7384c392b6b5d44eeea51d68353"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789830377972205000.parquet",
+      "rows": null,
+      "sha256": "9bf1bd3f60c8f743682b4dd1681b40eacd64cd5f4851527dd7cd61779736c8fd"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789830587235458000.parquet",
+      "rows": null,
+      "sha256": "e514fe17eb01d696e996daa60d2de0bf9449a386e736560cee2b14fc29babc21"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789830648014499000.parquet",
+      "rows": null,
+      "sha256": "c97feea54437bb52f30041841490b5a208baf9354050ea6e649bfc14edcadc44"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789830753156937000.parquet",
+      "rows": null,
+      "sha256": "4bb043566c7e3fb0323533732a94a38da7731667facb140c0a9f549153c574ef"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789830902489296000.parquet",
+      "rows": null,
+      "sha256": "aa59ff06546e7f9049ada508e5d890e2cf8a0397affaecfc93f384069e6e199b"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789831047341848000.parquet",
+      "rows": null,
+      "sha256": "1027babb2b8b9600effaaa3c6b905b3fe7ce24b9131895020082120c65c27c9a"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789831214605985000.parquet",
+      "rows": null,
+      "sha256": "2e4e5d926bcd277c24c727f931a930b873a3e7b4fb85004dd408d161cef3af8d"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789831449368177000.parquet",
+      "rows": null,
+      "sha256": "a9107f98a8e0ab4e5f5b3abccc71a8bdf917e4565ca6380d54bdc5b165ddda73"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789831706856197000.parquet",
+      "rows": null,
+      "sha256": "85895638d3620979e6b379120ff6747e0e72fd8858c9ecdb919d6f898490b28c"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789831864720225000.parquet",
+      "rows": null,
+      "sha256": "a3e115397aa526d21c0dfc07151fc24c855ded9667a0f9e7d29139defa3f969e"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789832110857625000.parquet",
+      "rows": null,
+      "sha256": "eb81d81b0bc5352c483695fe5dde772d0ce7ae231a3a8c90c062105bad9e3803"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789832392549961000.parquet",
+      "rows": null,
+      "sha256": "8b12098926214704866cf8c47c7a8d100de56acda6ee0c575869d2a0b1b659b1"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789832469381137000.parquet",
+      "rows": null,
+      "sha256": "04677022ead9877fb939ce218d918a50dfefb4d04a3b05d1f3fe69236eb868fe"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789832469936221000.parquet",
+      "rows": null,
+      "sha256": "78a25340a4fe8110f7bd4e738d168564933cdeeee6ac1d79a0aa7e5c9c10264d"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789832471490340000.parquet",
+      "rows": null,
+      "sha256": "92f7af7dae7d0c606c918d3cc4a71da1b7f267b7df72645d1bf6aa6e1c631ac0"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789832508183305000.parquet",
+      "rows": null,
+      "sha256": "5b50d5937451c034eb6fe243e8bfba81546024173558919fb50dbd016bbba5d3"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789832541834221000.parquet",
+      "rows": null,
+      "sha256": "a1a52472b03d9977b59ee967b67d7a195dd20253186ab04d11602cb8892854d3"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789832559892862000.parquet",
+      "rows": null,
+      "sha256": "36086dfef154e2809a1aac123b2b7b711332150ca911d7241752826cd0d21c7f"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789832595472340000.parquet",
+      "rows": null,
+      "sha256": "3300df4db9505598927ffa9d1222123d330b9ba38770286b6ea0bcafccefdc83"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789832657977313000.parquet",
+      "rows": null,
+      "sha256": "832a5dba545ba0ade207e8f07e6a7666f652343b4d41891d813c962d50986c55"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789832740265356000.parquet",
+      "rows": null,
+      "sha256": "037e2f447398d40a95dd947fdf9544360f5bc331cbecb3f10a5ba3365658ea7f"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789832837921468000.parquet",
+      "rows": null,
+      "sha256": "1a6e620d92cd0d1d1a6813f309163401e16f652bbaf89514ae66aa0c756c5033"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789832896669854000.parquet",
+      "rows": null,
+      "sha256": "a45a07fffaa9086fc45303fe866c00273dbc55325d21f12add0c530d1bd14134"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789832959864394000.parquet",
+      "rows": null,
+      "sha256": "7b142398540d564ba9315606715acb47cc3000f645bccfd52ecf539bdb195428"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789833072543008000.parquet",
+      "rows": null,
+      "sha256": "a4913bbe59efe25d34230483236652d25db126075eae3ee9941773db745dce49"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789833302564060000.parquet",
+      "rows": null,
+      "sha256": "baba19cdb19b9727f6c09ded1fa21705d33f168df97b4557c7acaad0d2672c41"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789833443046033000.parquet",
+      "rows": null,
+      "sha256": "e721881ed13a055e2b152157a89f4d38fc2b744c64d2fd5897f292810f0863d1"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789833633406145000.parquet",
+      "rows": null,
+      "sha256": "d9c934bd1b7429815deab26cab1c38b5924e68be217686d6f8e9f6f3225402ea"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789833778039749000.parquet",
+      "rows": null,
+      "sha256": "28d9174d6b32d85850a96d77d56607b9389a0dacb505731e6a6b2743758a6b70"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789833861096827000.parquet",
+      "rows": null,
+      "sha256": "b8195133eea6c19f55d551703eb9d61476a3d87f94125a736078da1f53830c9b"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789833913380339000.parquet",
+      "rows": null,
+      "sha256": "8f326c52a405b2bb364a367d26e6adb6f485707eb28fefac03c02b2393283522"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789834032212967000.parquet",
+      "rows": null,
+      "sha256": "6a6853538117c070b64ec8cbf327bd6cdd3906c1050700a8e4dcc29d7a0f92ef"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789834171452845000.parquet",
+      "rows": null,
+      "sha256": "1e7841c58b4a10c7967ceb354be3c894c9c6009531ec37d4f18f7c8a6701aa6e"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789834271133500000.parquet",
+      "rows": null,
+      "sha256": "89f4e8af25a845b628395e647f8b95d440c5e60ce34e924bf7e8edde9e2876a8"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789834381622294000.parquet",
+      "rows": null,
+      "sha256": "7afa9083d9ec0581c47a188fd69132844c6de021eb677b878d6134d80e8139a2"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789834543096532000.parquet",
+      "rows": null,
+      "sha256": "47e25179e2be43422ad9fe2063c2e25da9e71c8c1794cc44242f147f5bf4e5fb"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789834705089782000.parquet",
+      "rows": null,
+      "sha256": "7a1284ea514b89b0b3f95f4d9eb7b8a0a9a56e317728b4ac44bf1e519a203467"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789834927810835000.parquet",
+      "rows": null,
+      "sha256": "2f4251727514541f05fe41ef6732db8abf0d7aaa5d4cccf8922bdc1a368a01d5"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789835096223893000.parquet",
+      "rows": null,
+      "sha256": "ff46b554bce315834386be5ab55955d58094b674764cacd25d10cf8ee12d4f27"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789835199190683000.parquet",
+      "rows": null,
+      "sha256": "47ec287acd34875f0a2ac01f570c640234faf9039fad707336178380fab61a28"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789835387600571000.parquet",
+      "rows": null,
+      "sha256": "059769424bf82a895977570b7b0a67b64f166226a8eb088a0afb57355859b0a9"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789835549973863000.parquet",
+      "rows": null,
+      "sha256": "037ca18e9f2460b8a0b6f29a6806c1acb97b8b9fe7e4c79b324a797203d2535d"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789835696091007000.parquet",
+      "rows": null,
+      "sha256": "9b639abff3d1d9b08fb2357c463fa6d4c272733c46a8a0dcc02b644d3537cf48"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789835828524332000.parquet",
+      "rows": null,
+      "sha256": "953203fa2bea7aaef64d7ee3751c931cbc9646e0a7c7ec7c0ccbdcfb1558729b"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789836074414206000.parquet",
+      "rows": null,
+      "sha256": "034ddc07f85d35f0f3da59919fd943e247029e091314d6017303a0319aea4573"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789836351050629000.parquet",
+      "rows": null,
+      "sha256": "7d80ef443a402b6f97a475e5dd7df4d0f1e740e2be72787911959ca4067d3b5a"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789836627093740000.parquet",
+      "rows": null,
+      "sha256": "cda05ab938be1eb1dcbec65ed93ef9c02045c41d23365f9e5703647e7a07d651"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789836976280888000.parquet",
+      "rows": null,
+      "sha256": "f86e295df62752bda8ffc065ca8791f77b1afcce6c1ad043049879a194d6be57"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789837271363058000.parquet",
+      "rows": null,
+      "sha256": "fccd356ad812e2300af4e9aa0a8bed2c861eccb87b9c75c0d16157c2097681c6"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789837548744892000.parquet",
+      "rows": null,
+      "sha256": "1c2f0e606d6fc187a2fc22ba727cfd1fa175ace36f1afa1bc3c080f54cfa96fe"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789837746210784000.parquet",
+      "rows": null,
+      "sha256": "c133bbcd997ecbcf0416c8529f8d6e5e95f61904d98de5a7383f7ca28ab9c72d"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789838046424486000.parquet",
+      "rows": null,
+      "sha256": "e58c8e3b141f9e4c032dc253bd00642388e35a64f6dc26d39a22baf8033113d0"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789838209814128000.parquet",
+      "rows": null,
+      "sha256": "0e3ae131fb636a93633643ba55eff3f7c708fcb3e4fd67026c9ba6a48bb99a17"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789838318345010000.parquet",
+      "rows": null,
+      "sha256": "d2352e0fcf26d27158e62c9bc7e9e5957552deb50efeeb5aa86f413e75e8ec0c"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789838407905945000.parquet",
+      "rows": null,
+      "sha256": "c2790230d72085130ef3263250b7245a98b9811c4aff477c7b8b16cd577f2d5b"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789838576056660000.parquet",
+      "rows": null,
+      "sha256": "e6e89e9f64d01db9d2aa8700d6a2409b8b3f82a8a015fe75070b45a415edf435"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789838642902231000.parquet",
+      "rows": null,
+      "sha256": "dbc006ab9c56a2825a1c8df116ed851295773a00e68a8e503dc7265892983d95"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789838717337988000.parquet",
+      "rows": null,
+      "sha256": "fa9ed03777f32dea44943010f3f2ac28dbfeda89ae24837ef062b40aae8862a0"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789838824263593000.parquet",
+      "rows": null,
+      "sha256": "c5d9ef0912189c95eccdd43f2cde3271f6a0c53c999defb135b970cf508ff448"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789838870220515000.parquet",
+      "rows": null,
+      "sha256": "a75a18ccbf56091c6ca1f03991b2b207c49615d6a7e0c34d8b7d5a899149e363"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789838949346343000.parquet",
+      "rows": null,
+      "sha256": "d211c7245adeccd7984bed7b3b4b37ff8fa52e4546e38b5bbd9a2c379dc17f1e"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789839069389319000.parquet",
+      "rows": null,
+      "sha256": "8b3bf1f4de4714c81ec81498f148696355add68505a7049eed64b0ab73b764b3"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789839239253574000.parquet",
+      "rows": null,
+      "sha256": "5f4137f28bffeb29bf0200dec14ac06c270e480d484618a2bb4d5a0380452ca1"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789839423690094000.parquet",
+      "rows": null,
+      "sha256": "cb35a435962765f6d07a7854b6810a2e8d716c7df006c32677ec5abf7cc89c57"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789839614103601000.parquet",
+      "rows": null,
+      "sha256": "5f28678fe0ae91bdc413a8c8b18f5c08c05dd1a1e3481e1f185b372546b8856e"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789839947528895000.parquet",
+      "rows": null,
+      "sha256": "4d1114d378929b7c84f574d0ba048aec55fb84e167a3da063cfcee9d9cf87ab1"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789840208741496000.parquet",
+      "rows": null,
+      "sha256": "26e8cecca91af59b2f4ba4333b68a6dd546881af13e32f245771d430aec6dc4e"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789840571713456000.parquet",
+      "rows": null,
+      "sha256": "689a9d17ddf27e67986e7e47302d6d33d409fd5244e3fba1d04e84f188be1587"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789840859998999000.parquet",
+      "rows": null,
+      "sha256": "180a4176215445d712cbcc55119cc8c0d6fa7483c3215f97647c72e8709ce041"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789841083640145000.parquet",
+      "rows": null,
+      "sha256": "3f85fb45ad5761771395b70036c26521b9dbae74be4007516bb535cc86feece5"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789841280750429000.parquet",
+      "rows": null,
+      "sha256": "efc72ef0d7a21e48ec7767ef1c05729d01720430f175b80a40efceef966a18e0"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789841422278787000.parquet",
+      "rows": null,
+      "sha256": "f164e02f46ae34f4ea54c698d790a5d6baed124a912e9bec04e02adad70d56bc"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789841570529341000.parquet",
+      "rows": null,
+      "sha256": "4ff44eb67becee9f745c2893ae74364b4a3589e8826efd4788312d51825d15ec"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789841656660822000.parquet",
+      "rows": null,
+      "sha256": "31abf1b00ded8acc1a1fb5acc6d1018bd9b8f4ee234762630202605efb1b0832"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789841819430207000.parquet",
+      "rows": null,
+      "sha256": "144a0f31d1206c1fddfa37a160c0137f8e83632fdde3461778b5cec3dc436517"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789842011862106000.parquet",
+      "rows": null,
+      "sha256": "0331347eb4ad9820af0fdb632226096a8b7e83585823ec238d33f8426fa1ed02"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789842233616204000.parquet",
+      "rows": null,
+      "sha256": "64d5a725c829bccdabfd836f21f5e966664f5d6356422d1ee3af63fc13929e34"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789842537802623000.parquet",
+      "rows": null,
+      "sha256": "8a08298b48519db4cb39e47945e0a88bc65b433a34e068cfe532a866d1aab4c3"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789842710548379000.parquet",
+      "rows": null,
+      "sha256": "c2c295327e1c775abc47b5af4469d8cee07843a515fabb2b6a5dd92e7d0b35f9"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789842938905562000.parquet",
+      "rows": null,
+      "sha256": "a42fc38c3fb5cf7d8c2559489186b3de2e30ecbfebbb5806881664574a187aec"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789843321782995000.parquet",
+      "rows": null,
+      "sha256": "36e91c4bebc139f3289cda2edd01548f6ea8f19cc03e3e5a31bd262788736aa8"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789843810941849000.parquet",
+      "rows": null,
+      "sha256": "f4b66d28b3e5fb068d151dcc089676bf10555c9d5a7bf9433e6a36b8d603d97f"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789844245774192000.parquet",
+      "rows": null,
+      "sha256": "0bf503396cf845ac64ae45d25860edf878dac010a040f8913ff01b4341219c5e"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789844831216063000.parquet",
+      "rows": null,
+      "sha256": "efb5e019776d41343829229637a6386d215cc3ff5488a2b02e82c051aab946ba"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789845180896540000.parquet",
+      "rows": null,
+      "sha256": "fa64210b1fe6fb26afd7b258526e76c06fa742ac2ece92263105f7d1e426a1c0"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789845529319078000.parquet",
+      "rows": null,
+      "sha256": "71fa0dca2e9d3390fda3c0e6d834a984f6d8a3142cb32e1582a44a12bd651bbe"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789845869720054000.parquet",
+      "rows": null,
+      "sha256": "af40a080d64509777d7af816c44e5004f1c942e81baa410102175e7d79923622"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789846452802649000.parquet",
+      "rows": null,
+      "sha256": "65220d11ea0293918d67c56ad0c3ee51c178a9a1257699a8c2c8627c3a4638e6"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789846924643790000.parquet",
+      "rows": null,
+      "sha256": "1ca5fddfbe6d91a878e7eea5ccc957c24fc13008d20b8854b5aa0f0f04b82701"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789847203058660000.parquet",
+      "rows": null,
+      "sha256": "ec280dd9b555532ead73772728ca705067075385238d9620825cb3786b912080"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789847784345411000.parquet",
+      "rows": null,
+      "sha256": "9353c91ae218fa77a2230133f4ead76619df6eb2a1a000516b1e3ca134af33bb"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789848055937835000.parquet",
+      "rows": null,
+      "sha256": "6b9aeaeec7d89de79e63d2b5f3e54d0e78b6a466e85561deb3c67f99b1dda254"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789848425550418000.parquet",
+      "rows": null,
+      "sha256": "3400da3b9a17851ecf4597bd1a4368cfd9aa95248900d484cd00c1034815025c"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789848951453183000.parquet",
+      "rows": null,
+      "sha256": "9f5b9aacce5640d0a9e177c1c746a678d16fe7726e38339b9a4ebbd7d8651c62"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789849259564730000.parquet",
+      "rows": null,
+      "sha256": "1e1c0dc5991e11959ab2d5d5e9829583df93f69dca972c62d7cfe0e49ae6483c"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789849587938522000.parquet",
+      "rows": null,
+      "sha256": "50325bdf4ef1e212c22d6760ae1b5da799ce247080876be690c886cd41123d76"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789849806531245000.parquet",
+      "rows": null,
+      "sha256": "528648626fe6d86cc93a0d5aaf496bba32c020fa4ba1e821d0b2fcb1a73880c5"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789850232617347000.parquet",
+      "rows": null,
+      "sha256": "0df3af1786e06a138b9562223a58301581cc936a4b48ab913b91cc9c8b4122c9"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789850757076686000.parquet",
+      "rows": null,
+      "sha256": "67113bbb13933a9d7bff640551452cbe10991a6b3552d46e0632121efdf55328"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789851018775267000.parquet",
+      "rows": null,
+      "sha256": "07e7ff7e90a6d3b2d210060b7ccf3714e698c6777e55d323b8c1f1178ef27377"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789851083747373000.parquet",
+      "rows": null,
+      "sha256": "fe4331d08269240da883e6d547dbd2e4e210a6ce32b6f0902750e75393963cae"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789851202791198000.parquet",
+      "rows": null,
+      "sha256": "0a915f618b1ccc1181465add810e171ceb97a54064ffa75976eb91b2d62be770"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789851412799636000.parquet",
+      "rows": null,
+      "sha256": "ded5fdb521c259a5a49e7d3bdfeedbdbc1785363601782c707be54e22f49d4c8"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789851555216854000.parquet",
+      "rows": null,
+      "sha256": "627800c8bde13c25a0baa828d5aa97fe1fd7526567cc04747a2b93d30288a008"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789851867508052000.parquet",
+      "rows": null,
+      "sha256": "9bfd2a31dbd26ba0df9c5d71e3a1dd78b103b2bf71ee5f63225922e63452a40f"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789852083046260000.parquet",
+      "rows": null,
+      "sha256": "9bf584e426d12c74516f1a90f6752d6bc81c6f17f61838be305302687cc1e20a"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789852262569890000.parquet",
+      "rows": null,
+      "sha256": "ffabff8aa4cc7d233c80ba0d6f3aa51772e98f94a89a3e5129f59691474ad144"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789852437316106000.parquet",
+      "rows": null,
+      "sha256": "8787507ce18a032abf4ac2dd7b60033f3dbb42a6b5f6230af0e032d96b27081a"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789852504194320000.parquet",
+      "rows": null,
+      "sha256": "93cc2e2d56190088986f31cb8a6777867fb965b15b55422bcbbefe518c5d8eb4"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789852650755102000.parquet",
+      "rows": null,
+      "sha256": "f970da5627ec7cd169344e6020a40a33e299451dfdbfa640a7ab1de1ae2fe0e3"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789852856882403000.parquet",
+      "rows": null,
+      "sha256": "1a19c65e1aec25322016e191ed4f66ccb2ee5dab3244525a6ecd6f910a879cec"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789852906105399000.parquet",
+      "rows": null,
+      "sha256": "129e73cbb4ba5997d413ddac91fa624902def85cc456c8402329691a65101675"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789853075041660000.parquet",
+      "rows": null,
+      "sha256": "efc3b3f51181fbec346b53060c429e354114d3e91d20d381b01a8d1f03942000"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789853355406911000.parquet",
+      "rows": null,
+      "sha256": "26cf41448892abaffefe4f428d2ecbad5802f7207dc33a7310aa68b05d50c6f6"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789853567254857000.parquet",
+      "rows": null,
+      "sha256": "0dd6b90f056e34cf8819b4f455ea105811d3585408db633b5e981640de35d435"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789853781222387000.parquet",
+      "rows": null,
+      "sha256": "f5c96188eb0ebe7ef3c12bb0555eba49b1c979153b43730546a79a784db9550f"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789854025403844000.parquet",
+      "rows": null,
+      "sha256": "20a75ef83bff63a40ea590b72bdc3a40274b6d2b8d8afd3e480208610422e4c5"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789854334345266000.parquet",
+      "rows": null,
+      "sha256": "7b10943da210e4518b830e4a57a5a50a593030a3403ac65f68286b93146eb477"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789854665425497000.parquet",
+      "rows": null,
+      "sha256": "08d74774c611f76bc60d4fa4b32ba26f76d40ae560c4a89dd498ffd80bc53aeb"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789854923753019000.parquet",
+      "rows": null,
+      "sha256": "cc401afdf0fd0f9e11d666e3b6695763aa884f583bae58654b2e6838533a7922"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789855192769803000.parquet",
+      "rows": null,
+      "sha256": "4b4644ca9e963fb3ce16f88140a49da8f8bff76df70f12f58550514f478d3a7d"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789855390605689000.parquet",
+      "rows": null,
+      "sha256": "574619b07e9341041df43636f3f2ac6f3e6b3f6b3e13b72a53081e65fb8f4730"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789855637932402000.parquet",
+      "rows": null,
+      "sha256": "747aadc33e34d1627614fb95f84f6bc7536947a9cee39ed16389904ba6754a89"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789855835255814000.parquet",
+      "rows": null,
+      "sha256": "5ca5a7eb3678674caba4a47505e13276934b5e8302492d28ef44a1563da555c0"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789856036356187000.parquet",
+      "rows": null,
+      "sha256": "7b54f3c6439797d4064c1daaaf0065f0e8107fe862ea45fd05876d39bccbb1d0"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789856433405794000.parquet",
+      "rows": null,
+      "sha256": "bbfd9ede1e70dcff8496b9547f2bbf2f2037ae51d43582e024f4299a70178b3a"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789856873194666000.parquet",
+      "rows": null,
+      "sha256": "3d4e7b7f04bd4e654180df869e803832e0863e7bb612a0ace9e8cc6aed4b49a6"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789857302645882000.parquet",
+      "rows": null,
+      "sha256": "ddb684ce5d31f43501e0958b766629b62a79968434bb62b37643ae3e403f2b92"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789857488204505000.parquet",
+      "rows": null,
+      "sha256": "1fccc35a9a83123c0cc4c29bc4dedff1f3644a8eae9890787692258f74f83db6"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789857848515578000.parquet",
+      "rows": null,
+      "sha256": "0986a5bc9c11f581404a63c20d663eeff592717a764d3b3c0483de39e97e8fcb"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789858321906442000.parquet",
+      "rows": null,
+      "sha256": "f764f61c4c301a25d390ab8f724358872e28ef92f9d686e5b2d857a2ff602c95"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789858838430876000.parquet",
+      "rows": null,
+      "sha256": "6b079cd5ed7baf89f5ca793eb1c3e99c1cb0edb395c5b1b46d9f3413a5673fc0"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789859420181909000.parquet",
+      "rows": null,
+      "sha256": "50ea3904f0f199c917353577ace6a7b4e84b0966fbed45d1a4b0a539f5638969"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789859771605652000.parquet",
+      "rows": null,
+      "sha256": "25e584e073177f1a2b29b2bdbd4b84214e5c5f5086a090ca06b74ecdda60885f"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789860197307925000.parquet",
+      "rows": null,
+      "sha256": "b5e3cabe06d1cdf18cc5e7e435925cd402e4da02645547f8c561c7c510a8e798"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789860525094950000.parquet",
+      "rows": null,
+      "sha256": "d622ff995cac207e7534872212224875798a96b447d3c52373eb3e73dc11c9ba"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789860816808871000.parquet",
+      "rows": null,
+      "sha256": "331ebe700da21b8759e00d64250a3b783a99fbefd2ab31977d2f8b499ce34520"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789861202812948000.parquet",
+      "rows": null,
+      "sha256": "b0d45339ee86fa087a539ae703991c4cb51566ad4ef214c2f6f1ca39dceeb81d"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789861752342076000.parquet",
+      "rows": null,
+      "sha256": "fe5687f8c41dbba4991414f1c062b419ad988930279f7d097bf0d5db0ec8435b"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789862293350495000.parquet",
+      "rows": null,
+      "sha256": "ae2c225c547cf79dabef17169c5fac48f2d7f074e82b1195eae01390dcd212e4"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789862397832963000.parquet",
+      "rows": null,
+      "sha256": "85c45bb88feb2762bdbd81509ef4e481c0e567c2a8b5f9d9689dae88c39118c6"
+    },
+    {
+      "path": "/Volumes/ProjectsSSD/aihedgefund/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789862763835696000.parquet",
+      "rows": null,
+      "sha256": "99b0bcee1fdde46ce6b9d48c71aaa3480e26872be03ed8b993d686d16cfc0e67"
+    }
+  ],
+  "manifest_id": "b72f2a05c62987eafb1ca4384f2c126ce3bc5f666260505ea926202ac278234b",
+  "partitions": [
+    {
+      "date": "2026-09-19",
+      "etime_max": 1789862399508000000,
+      "etime_min": 1789776000141000000,
+      "mtime_ns": 1789963682273345598,
+      "path": "curated/symbol=BTCUSDT/stream=trade/date=2026-09-19/part-1789963682095557000.parquet",
+      "rows": 1522978,
+      "sha256": "8b3d37a92b3787ba5ee0c2184db900367420788afa4bef53b659eda051f778c1",
+      "size_bytes": 17442131
+    }
+  ],
+  "row_count": 1522978,
+  "schema_version": 2,
+  "stream": "trade",
+  "symbol": "BTCUSDT",
+  "tier": "curated"
+}

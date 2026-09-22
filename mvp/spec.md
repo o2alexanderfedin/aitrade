@@ -361,6 +361,108 @@ from this exact rule, not from `mvp.md`'s struck pseudocode.
   inflates HFT-style Sharpe into meaninglessness and must never be reported as the
   gating metric (see DONTs).
 
+## Fold harness
+
+> Phase 5 (05-fold-harness-overfitting-controls). No CI hook enforces this section's
+> presence or content against code drift — `check_spec_diff` compares only
+> `features.toml`/`labels.toml` against their rendered catalogue tables (05-RESEARCH.md
+> Q12). Keeping this section honest is a human/process discipline, not a mechanical
+> guarantee.
+
+**Segments as data.** A fold layout (which rows are `train` / `val` / `held_out`, plus
+`compressed_3seg`'s inner purged+embargoed k-fold `oof_block` entries) is a
+git-committed, content-addressed manifest — `mvp/data/lake_registry/segments/<id>.json`,
+`id = sha256(canonicalize_manifest(body))`, same rule `manifests/` uses, but never
+written through `data.store.issue_manifest` (a segment names no partition bytes of its
+own, so the body omits `partitions` entirely rather than naming an empty list). The
+249-cell errata list (below) lives in its own sibling registry,
+`mvp/data/lake_registry/errata/<id>.json`. Both are covered by the
+`check_manifest_append_only` and `check_manifest_id_integrity` guardrails; neither is
+covered by `check_no_manifest_rewrite`, which flags any manifest with a falsy
+`partitions` key by design — every segment/errata manifest is exactly that shape
+(D-05-07).
+
+**Purge and embargo are two different quantities.** Purge is two-sided and *derived*,
+never hardcoded: `PURGE_HORIZON_NS = max(LABEL_HORIZON_NS.values())` (600 s today) —
+any training row whose label-evaluation window would reach into a validation or
+held-out segment's rows is excluded on both sides of that segment. `FOLD_EMBARGO_NS` is
+a **separate, smaller** declared policy constant (`= TRADE_FLOW_WINDOW_NS`, 1 s) that
+closes the fold-boundary dead zone after a validation segment before the next training
+segment may start — it is **not** the same knob as any catalogue label's own embargo
+(`spec/information_set.py:parse_embargo`, one entry per label, always exactly that
+label's horizon): widening a catalogue embargo to close a purge-style leak is forbidden
+and fails CI by design (D-05-04, D-05-05).
+
+**Selection-bias budget.** MLflow is the durable look counter, keyed on the pair
+`(segment_manifest_id, segment_name)`, summed across every run/model class/stage — see
+`### Multi-testing / selection bias` above for the pitfall this closes; this section
+adds the mechanism. A "look" is the materialization of validation rows through the
+harness accessor, counted before any metric is computed. Exhaustion is a hard refusal
+naming the segment, the looks spent, the allowance, and the remedy (a new segment
+manifest whose validation interval does not overlap the exhausted one) — enforced
+*both* at look-time (`harness.budget.record_look`) *and* at issuance-time
+(`harness.segments.issue_segment_manifest` self-discovers every existing manifest and
+refuses a candidate whose validation window overlaps an already-exhausted one)
+(D-05-11..15).
+
+**Negative-result log.** A failed configuration is an MLflow run tagged with an outcome,
+a reason string, and a config fingerprint — `compute_manifest_id` of the canonicalized
+config dict, the *same* canonicalizer segment manifests use, never a second one.
+Re-running a fingerprint already logged negative **warns loudly and proceeds**; it never
+refuses — `code_hash`/`data_hash` distinguish a legitimate re-run from a re-explored
+dead end (D-05-22).
+
+**Row admission (D-05-21).** The harness declares a stale-book admission policy: the age
+of a row is nanoseconds since the last `decision_source_rank == 0` (quote) row at or
+before it, computed from the partition alone. `STALE_BOOK_MAX_AGE_NS = 5 s` (same
+constant as the capture gap ledger's `gap_threshold_seconds` default — one project-wide
+"the feed went quiet" number, not two). The default policy counts and excludes rows
+whose age exceeds the threshold, and separately excludes rows with **no** prior quote
+in the partition at all (undefined age, never conflated with "age zero"). Applied only
+to `val`/`oof_block` reads, before errata masking; the per-entry exclusion counts are
+derived at issuance (never caller-supplied) and recorded in the segment manifest's own
+`admission.counts`.
+
+**Errata list (D-05-20).** The `null_stale` staleness-rule fix (`spec/labels.toml`)
+retroactively invalidates 249 label cells on the three original built days
+(2026-09-12/13/14) that were committed as fabricated finite `0.0` under the old,
+unbounded-carry rule — 180 `ret_1s_mid` (153 on 09-12, 27 on 09-13) + 69 `ret_10s_mid`
+(all on 09-12). Rather than rebuild those partitions (write-once by design; a rebuild
+means a human moving directories and every existing feature manifest failing
+`resolve_manifest`), the harness masks exactly those `(date, etime, decision_seq,
+label_column)` cells to null at read time, and every segment manifest names the errata
+list id it applies. The accessor resolves this itself, from the segment manifest's own
+`errata_id` — never caller-supplied: the named errata manifest is self-hash re-verified
+and `symbol`/`version` cross-checked against the segment manifest naming it, and FAILS
+CLOSED (raises, never silently masks nothing) if that errata manifest is missing or
+tampered. `errata_id: null` is the only way a segment genuinely applies no errata
+(05-VERIFICATION-FIX.md Gap 2).
+
+**The held-out window (D-05-16..18).** A future date `D_lock` is declared at Phase 8's
+v0 gate, forward in time — never carved out of the three original built days (09-13's
+`ret_10min_mid` tail reconstructs 09-14's prevailing mids to 1.5e-11 USDT, so the two
+cannot be separated). Declaration moves **both** `D_lock` and `D_lock − 1` into the
+lockbox tier (`D_lock − 1`'s label tail carries `D_lock`'s prices), then writes
+`holdout.json`. Phase 5 ships the declaration tool and its `--dry-run`; it does not
+declare — locking one of four built L1 days away now would starve training. A segment
+with `role="held_out"` is refused by the harness accessor **unconditionally**, regardless
+of whether `holdout.json` is armed, so Phases 5–7 can never train on rows Phase 8 will
+later declare held out.
+
+**The guarantee, stated honestly (D-05-15).** The harness accessor plus a static
+tripwire (`tools/check_harness_accessor_only.py`) is same-uid accident-proofing for a
+non-adversarial actor, not an adversarial control. A bare `features.tier.load_features`
+call plus a hand-rolled `etime` filter bypasses the budget counter entirely, exactly as
+a bare `read_parquet` bypasses `load_features` itself — the tripwire flags such a caller
+by name, it does not prevent one.
+
+**The 44% point mass at zero (D-05-23).** `ret_10s_mid` is exactly `0.0` on 43.9% of
+decision rows (measured per decision row, 04-CONTEXT.md); `ret_1s_mid` on 80.8%. Phase 5
+computes no metric of any kind — a look is row materialization (D-05-11), nothing more.
+This constraint is recorded here so Phases 7–9 choose a tie-aware rank IC and a loss
+function *knowing* the target has a large point mass at zero, rather than discovering it
+after a metric has already been reported.
+
 ## MLflow tag schema
 
 - Every MLflow run carries exactly these eight mandatory tags:
