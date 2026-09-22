@@ -13,7 +13,7 @@ import inspect
 import pytest
 from data.time_ns import NS_PER_SECOND
 from harness import segments as segments_module
-from harness.budget import record_look
+from harness.budget import BudgetError, record_look
 from harness.purge_embargo import (
     FOLD_EMBARGO_NS,
     PURGE_HORIZON_NS,
@@ -550,3 +550,34 @@ def test_issuance_allows_a_non_overlapping_fresh_window(
         budget_allowance=1,
     )
     assert manifest2["manifest_id"] != manifest1["manifest_id"]
+
+
+def test_issuance_propagates_an_mlflow_query_exception_unmodified(
+    lake_root, registry_root, tracking_root, tmp_path
+):
+    """D-05-12: once a non-empty discovery genuinely needs to ask MLflow
+    how many looks a segment has spent, a query failure must surface
+    UNCHANGED through `_refuse_overlap_with_exhausted_segments` ->
+    `exhausted_segments` -> `look_count` -> `issue_segment_manifest` --
+    never collapsed to "nothing is exhausted" (which would silently let a
+    new manifest reuse an exhausted window)."""
+    manifest1, _span = _build_fixture(
+        lake_root, registry_root, tracking_root, budget_allowance=1
+    )
+    # manifest1 now sits under registry_root/segments/ -- self-discovery
+    # WILL find it, so this second issuance genuinely reaches look_count.
+    non_canonical_root = tmp_path / "not_canonical_mlflow_root"
+    non_canonical_root.mkdir()
+
+    with pytest.raises(BudgetError) as exc_info:
+        _build_fixture(
+            lake_root,
+            registry_root,
+            non_canonical_root,
+            date="2026-09-14",
+            budget_allowance=1,
+        )
+    # Identity, not isinstance: a future wrap into a plain ValueError
+    # (BudgetError's own base class) must fail this assertion.
+    assert exc_info.type is BudgetError
+    assert "not the project's canonical MLflow store" in str(exc_info.value)

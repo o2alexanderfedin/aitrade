@@ -4,10 +4,13 @@
 from __future__ import annotations
 
 import logging
+import os
 
 import pytest
+from data.lake_paths import MLFLOW_TRACKING_ROOT_ENV
 from data.store import compute_manifest_id
 from harness.negative_log import (
+    NegativeLogError,
     config_fingerprint,
     query_negative_results,
     record_negative_result,
@@ -195,3 +198,24 @@ def test_cli_lists_all_negative_results(tracking_root, capsys):
     filtered_out = capsys.readouterr().out
     assert "loss diverged" in filtered_out
     assert "nan loss" not in filtered_out
+
+
+def test_warn_if_already_negative_propagates_a_query_failure(tmp_path):
+    """D-05-12's own honesty rule, applied to the warn path: a query
+    failure must never become silence. `warn_if_already_negative` proceeds
+    (never raises) ONLY when the underlying query genuinely succeeded and
+    found nothing -- an uninitialised/non-canonical store must surface
+    UNCHANGED through `warn_if_already_negative` -> `query_negative_results`,
+    exactly as `harness.budget.look_count`'s own propagation contract
+    requires (mirrors test_budget.py::
+    test_look_count_propagates_a_query_failure's shape)."""
+    empty_root = tmp_path / "no_store_here"
+    empty_root.mkdir()
+    os.environ[MLFLOW_TRACKING_ROOT_ENV] = str(empty_root)
+
+    with pytest.raises(NegativeLogError) as exc_info:
+        warn_if_already_negative({"layout": "5seg"}, tracking_root=str(empty_root))
+    # Identity, not isinstance: a future wrap into a plain ValueError
+    # (NegativeLogError's own base class) must fail this assertion.
+    assert exc_info.type is NegativeLogError
+    assert "mlflow.db" in str(exc_info.value)
