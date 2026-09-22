@@ -93,11 +93,19 @@ def materialize(
     )
 
     if entry["role"] == "train":
+        # D-05-04 (05-02-PLAN.md Task 2 fix): a train entry's own purge/
+        # embargo "others" are `val`/`held_out` roles ONLY -- never
+        # `oof_block`. A `compressed_3seg` train's own nested `oof_block`
+        # children partition that very train (harness.kfold,
+        # computed once at issuance); they are not a validation window
+        # against it, and including them here would starve `materialize(
+        # ..., "train")` to zero rows by construction (every row is inside
+        # SOME block's own purge zone). See harness.purge_embargo's module
+        # docstring for the full citation of this scoping rule.
         other_entries = [
             other
             for other in manifest["segments"]
-            if other["name"] != segment_name
-            and other["role"] in ("val", "held_out", "oof_block")
+            if other["name"] != segment_name and other["role"] in ("val", "held_out")
         ]
         df = filter_train_rows(
             df,

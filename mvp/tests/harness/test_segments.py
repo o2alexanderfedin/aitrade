@@ -342,8 +342,14 @@ def test_issue_segment_manifest_records_every_d05_09_field(lake_root, registry_r
         assert name in manifest["embargoed_row_count"]
 
 
-def test_compressed_3seg_not_yet_implemented(lake_root, registry_root):
-    with pytest.raises(NotImplementedError, match="05-02-PLAN"):
+def test_compressed_3seg_refuses_a_malformed_top_level_shape(lake_root, registry_root):
+    # Task 2 (05-02-PLAN.md) implements compressed_3seg for real -- this
+    # supersedes P1's own "raises NotImplementedError" test (the NEW
+    # behaviour under the same layout name is that a malformed top-level
+    # shape is refused instead; a fully-issued compressed_3seg manifest is
+    # exercised end to end in tests/harness/test_kfold.py, which owns this
+    # layout's own file per the plan's wave-2 file ownership rule).
+    with pytest.raises(ValueError, match="requires exactly three top-level segments"):
         issue_segment_manifest(
             layout="compressed_3seg",
             segments=[],

@@ -26,8 +26,14 @@ had nothing to read).
 
 Task 2 (05-02-PLAN.md) adds `compressed_3seg`'s inner purged+embargoed
 k-fold OOF blocks (`harness/kfold.py`) and wires them through this same
-validation/derivation pipeline; until then `issue_segment_manifest(
-layout="compressed_3seg", ...)` still raises `NotImplementedError`.
+validation/derivation pipeline: `issue_segment_manifest(
+layout="compressed_3seg", ...)` calls `harness.kfold.
+purged_embargoed_blocks` ONCE at issuance to populate named `oof_block`
+entries, then runs them through the identical `_validate_segments`/
+`_derive_purge_embargo_fields` pipeline `5seg` uses -- a `train` entry's
+own `effective_intervals` are computed against its `val`/`held_out`
+neighbours only, NEVER its own nested `oof_block` children (D-05-04;
+see `harness.purge_embargo`'s module docstring).
 """
 
 from __future__ import annotations
@@ -41,6 +47,7 @@ import polars as pl
 from data import store
 from data.store import FEATURES_TIER, compute_manifest_id
 from features.tier import load_features
+from harness import kfold
 from harness.purge_embargo import (
     FOLD_EMBARGO_NS,
     PURGE_HORIZON_NS,
@@ -119,6 +126,56 @@ def _validate_5seg(segments: list[dict]) -> None:
             f"{FIVE_SEG_NAMES} with roles {FIVE_SEG_ROLES} exactly, in that "
             f"order; got names={names} roles={roles}."
         )
+
+
+#: `compressed_3seg`'s three top-level entries, in declaration order
+#: (D-05-06/08) -- `harness.kfold.purged_embargoed_blocks` fills in
+#: `oof_block_0..k-1` from the `train` entry's own range, at issuance.
+COMPRESSED_3SEG_NAMES: tuple[str, ...] = ("train", "val", "held_out")
+COMPRESSED_3SEG_ROLES: tuple[str, ...] = ("train", "val", "held_out")
+
+
+def _validate_compressed_3seg_shape(segments: list[dict]) -> None:
+    names = tuple(s.get("name") for s in segments)
+    roles = tuple(s.get("role") for s in segments)
+    if names != COMPRESSED_3SEG_NAMES or roles != COMPRESSED_3SEG_ROLES:
+        raise ValueError(
+            "issue_segment_manifest: layout='compressed_3seg' requires "
+            f"exactly three top-level segments named {COMPRESSED_3SEG_NAMES} "
+            f"with roles {COMPRESSED_3SEG_ROLES}, in that order (the "
+            "`oof_block_0..k-1` entries are computed by this function, "
+            f"never caller-supplied); got names={names} roles={roles}"
+        )
+
+
+def _derive_oof_training_row_counts(
+    oof_blocks: list[dict],
+    *,
+    upstream_feature_manifest_ids: list[str],
+    symbol: str,
+    registry_root: Path,
+    lake_root: Path,
+) -> dict[str, int]:
+    """D-05-08's per-block training eligibility, measured against REAL
+    upstream partitions: for every `oof_block`, the row count
+    `harness.kfold.training_rows_for_block` retains as that block's own
+    training set -- the SAME two-sided-purge/one-sided-embargo formula the
+    segment-level accessor uses (checker iteration 1 blocker 1), never a
+    second implementation."""
+    dataset = f"{symbol}.{FEATURES_TIER}"
+    frames = [
+        load_features(
+            manifest_id, dataset, registry_root=registry_root, lake_root=lake_root
+        )
+        for manifest_id in upstream_feature_manifest_ids
+    ]
+    df = pl.concat(frames, how="vertical")
+    return {
+        block["name"]: kfold.training_rows_for_block(
+            df, oof_blocks, i, purge_ns=PURGE_HORIZON_NS, embargo_ns=FOLD_EMBARGO_NS
+        ).height
+        for i, block in enumerate(oof_blocks)
+    }
 
 
 def _intervals_overlap(a: dict, b: dict) -> bool:
@@ -391,6 +448,7 @@ def issue_segment_manifest(
     code_hash: str,
     registry_root: Path,
     lake_root: Path,
+    k: int = 5,
 ) -> dict:
     """Issue a segment manifest for one fold layout (D-05-07..09).
 
@@ -413,20 +471,28 @@ def issue_segment_manifest(
     them. There is no optional/opt-out variant -- every issued manifest
     carries real, measured fields, never a caller-supplied placeholder.
 
+    `k` (default 5, `compressed_3seg` only) is the number of inner
+    purged+embargoed OOF blocks `harness.kfold.purged_embargoed_blocks`
+    splits the `train` entry into, ONCE, at issuance (D-05-08) -- ignored
+    for `layout="5seg"`.
+
     Body OMITS `partitions` entirely (D-05-07) -- not an empty list, so no
     downstream `manifest.get("partitions", [])` mistakes this for a
     zero-partition manifest `data.store.issue_manifest` would have
     refused.
     """
-    if layout == "compressed_3seg":
-        raise NotImplementedError(
-            "issue_segment_manifest(layout='compressed_3seg'): the inner "
-            "purged+embargoed k-fold OOF split is 05-02-PLAN.md Task 2's job, "
-            "not Task 1's"
+    oof_blocks: list[dict] = []
+    if layout == "5seg":
+        _validate_5seg(segments)
+    elif layout == "compressed_3seg":
+        _validate_compressed_3seg_shape(segments)
+        train_entry = next(s for s in segments if s["role"] == "train")
+        oof_blocks = kfold.purged_embargoed_blocks(
+            train_entry["start_ns"], train_entry["end_ns"], k
         )
-    if layout != "5seg":
+        segments = [*segments, *oof_blocks]
+    else:
         raise ValueError(f"issue_segment_manifest: unknown layout {layout!r}")
-    _validate_5seg(segments)
 
     covered_start_ns, covered_end_ns = _covered_range(
         upstream_feature_manifest_ids,
@@ -444,6 +510,14 @@ def issue_segment_manifest(
         registry_root=registry_root,
         lake_root=lake_root,
     )
+    if layout == "compressed_3seg":
+        derived["oof_training_row_counts"] = _derive_oof_training_row_counts(
+            oof_blocks,
+            upstream_feature_manifest_ids=upstream_feature_manifest_ids,
+            symbol=symbol,
+            registry_root=registry_root,
+            lake_root=lake_root,
+        )
 
     body = {
         "layout": layout,
