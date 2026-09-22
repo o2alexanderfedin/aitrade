@@ -752,6 +752,53 @@ def test_materialize_refuses_tampered_errata_manifest(
     )
 
 
+def test_materialize_refuses_errata_manifest_whose_manifest_id_field_disagrees(
+    lake_root, registry_root, tracking_root
+):
+    """Isolates `read_errata_manifest`'s SECOND self-hash check: the body's
+    own `manifest_id` field is rewritten to a different (but still
+    64-hex-char-shaped) value while EVERY OTHER key stays untouched --
+    `compute_manifest_id` excludes the `manifest_id` key from what it
+    hashes, so `recomputed` alone would NOT catch this (it still equals
+    `errata_id`, the filename stem, because `cells`/`symbol`/`version` are
+    unchanged). Only the `body_manifest_id != errata_id` half of the check
+    fires here -- `test_materialize_refuses_tampered_errata_manifest`
+    above exercises the OTHER half (a genuinely different `recomputed`).
+    """
+    partition = _build_admission_errata_fixture(lake_root, registry_root)
+    errata_id = _write_errata_manifest(
+        registry_root,
+        symbol="BTCUSDT",
+        version=1,
+        cells=[
+            {
+                "date": "2026-09-13",
+                "etime": partition["etimes"][1],
+                "decision_seq": 1,
+                "label_column": "ret_1s_mid",
+            }
+        ],
+    )
+    path = errata_manifest_path(registry_root, errata_id)
+    body = json.loads(path.read_text())
+    body["manifest_id"] = "0" * 64
+    path.write_text(json.dumps(body, sort_keys=True, indent=2))
+
+    manifest = _write_probe_manifest(
+        registry_root, partition, admission=_probe_admission(), errata_id=errata_id
+    )
+
+    with pytest.raises(ErrataManifestError, match="hash mismatch"):
+        materialize(
+            manifest["manifest_id"],
+            "val_probe",
+            registry_root=registry_root,
+            lake_root=lake_root,
+            tracking_root=str(tracking_root),
+            run_tags=dict(RUN_TAGS),
+        )
+
+
 def test_materialize_refuses_errata_manifest_with_wrong_symbol(
     lake_root, registry_root, tracking_root
 ):
