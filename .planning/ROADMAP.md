@@ -131,7 +131,7 @@ Plans:
 - [x] 05-06-PLAN.md — static tripwire (check_harness_accessor_only), the 19th guardrail hook
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 05-03-PLAN.md — budget exhaustion + issuance-time overlap refusal, negative-result log and CLI
+- [x] 05-03-PLAN.md — budget exhaustion + issuance-time overlap refusal, negative-result log and CLI
 
 **Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 05-07-PLAN.md — guardrail extension for segments/errata, the first real committed segment and errata manifests, fold_config reason wiring, spec.md Fold harness section

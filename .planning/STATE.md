@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 05-06-PLAN.md
-last_updated: "2026-09-22T09:17:19.453Z"
+stopped_at: Completed 05-03-PLAN.md
+last_updated: "2026-09-22T09:59:31.339Z"
 last_activity: 2026-09-22
 progress:
   total_phases: 11
   completed_phases: 4
   total_plans: 29
-  completed_plans: 28
-  percent: 97
+  completed_plans: 29
+  percent: 100
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 5 (Fold Harness & Overfitting Controls) — EXECUTING
-Plan: 7 of 8
+Plan: 8 of 8
 Status: Ready to execute
 Last activity: 2026-09-22
 
-Progress: [██████████] 97%
+Progress: [██████████] 100%
 
 > That 100% is `state.update-progress`'s definition -- SUMMARY files over PLAN files on disk (22 summaries over 21 plans, capped at 100%). Every one of the 21 plans now has a summary; the 22nd is `03-07-GAPS-SUMMARY.md`, which has no plan of its own. It is NOT milestone completion: phases 5-11 have no plans on disk yet, and 3 of 11 phases are marked complete -- Phase 4's seven plans are all executed, and the phase closes at its verification/merge step, exactly as Phases 1-3 did.
 
@@ -74,6 +74,7 @@ Progress: [██████████] 97%
 | Phase 05 P04 | 55min | 2 tasks | 8 files |
 | Phase 05 P05 | 50min | 2 tasks | 9 files |
 | Phase 05 P06 | 55min | 1 tasks | 4 files |
+| Phase 05 P03 | 11min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -152,6 +153,9 @@ Recent decisions affecting current work:
 - [Phase 05]: data/dates.py gained prev_utc_date (Rule 3 deviation) -- the D-1 mirror next_utc_date was missing
 - [Phase 05]: declare()'s holdout.json dates field stays the caller's original list, never the expanded D/D-1 candidate set
 - [Phase 05]: check_harness_accessor_only.py sanctions four test files, not the three 05-06-PLAN.md named — A grep at plan-authoring time found three; a grep at execution time found a fourth real caller, tests/harness/test_kfold.py, added by 05-02's kfold tests -- named individually, not sanctioned as a directory, so the anti-vacuity fifth-file test still holds
+- [Phase 05]: 05-03: record_look's budget_allowance is a required keyword (no default); accessor.materialize passes the segment manifest's own budget_allowance, closing the gap between counting a look and refusing one
+- [Phase 05]: 05-03: issue_segment_manifest's issuance-time overlap refusal is unconditional -- no existing_manifests opt-out parameter, tracking_root has no default, self-discovery globs registry_root/segments/ itself
+- [Phase 05]: 05-03: negative-result configs are identified by compute_manifest_id(config), never a second fingerprint implementation; re-running a known-negative fingerprint warns and proceeds, never refuses
 
 ### Pending Todos
 
@@ -186,7 +190,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-22T09:17:19.445Z
-Stopped at: Completed 05-06-PLAN.md
+Last session: 2026-09-22T09:59:31.316Z
+Stopped at: Completed 05-03-PLAN.md
 Resume file: None
 Resumed: 2026-09-19 -- session restored at the Phase 4/5 boundary. Verified live, not read: develop at 9898e4d clean and level with origin, no PLAN without a SUMMARY, capture daemon PID 72546 alive at 2d14h, SleepDisabled=1 (the LaunchDaemon is holding), 844 GiB free. HANDOFF.json kept until Phase 5 actually starts.
