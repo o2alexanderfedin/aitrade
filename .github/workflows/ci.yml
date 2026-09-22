@@ -76,6 +76,11 @@ jobs:
       - name: check_manifest_append_only
         run: uv run --locked --directory mvp python -m tools.check_manifest_append_only
 
+      # D-05-15's static tripwire -- see the matching comment in
+      # `.pre-commit-config.yaml`.
+      - name: check_harness_accessor_only
+        run: uv run --locked --directory mvp python -m tools.check_harness_accessor_only
+
       # FEAT-03's gate. Deliberately redundant with the full-suite step
       # below -- see the matching comment in `.pre-commit-config.yaml`.
       # A leakage proof with no name of its own in the CI log is a claim,
