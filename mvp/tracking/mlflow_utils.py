@@ -29,7 +29,7 @@ import subprocess
 import mlflow
 from mlflow.utils.validation import MAX_TAG_VAL_LENGTH
 
-from data.capture.config import DEFAULT_MIN_FREE_GB, DataRootError, validate_data_root
+from data.capture.config import DataRootError, validate_data_root
 from tools.git_env import scrubbed_git_env
 
 PKG_ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -40,6 +40,7 @@ PKG_ROOT = pathlib.Path(__file__).resolve().parents[1]
 __all__ = [
     "MANDATORY_TAG_KEYS",
     "MAX_PROVENANCE_TAG_VALUE_CHARS",
+    "MLFLOW_MIN_FREE_GB",
     "PROVENANCE_TAG_KEYS",
     "MissingTagError",
     "ProvenanceValueTooLong",
@@ -51,6 +52,23 @@ __all__ = [
     "read_provenance_tag",
     "start_tracked_run",
 ]
+
+#: The tracking root's OWN disk-space floor -- deliberately NOT
+#: `data.capture.config.DEFAULT_MIN_FREE_GB` (05-VERIFICATION-FIX.md Gap 1).
+#: That 50 GiB constant exists so the CAPTURE DAEMON refuses to start
+#: writing continuous L1/trade data onto a nearly-full volume -- a
+#: multi-day, multi-GB-per-day continuous write workload. An MLflow run
+#: directory (a `mlflow.db` SQLite row plus a handful of tag/param files)
+#: is kilobytes; reusing capture's threshold for the tracking root was a
+#: category error, not a tuning choice -- the shared GitHub Actions runner
+#: has ~12.5 GiB free and every real look-issuing test on this project
+#: reaches `start_tracked_run` on that runner. 1.0 GiB floor exists only
+#: to refuse a volume that is EFFECTIVELY FULL (this project's own
+#: standard "a bad thing must be structurally impossible, not just
+#: documented" posture) -- it is not sized to the write volume, because an
+#: MLflow run's write volume does not scale with anything this project
+#: does at MVP scale.
+MLFLOW_MIN_FREE_GB = 1.0
 
 # The 8 mandatory tag keys, verbatim from mvp/spec.md's "MLflow tag schema"
 # section -- mvp/tests/tracking/test_mlflow_utils.py asserts these never drift
@@ -199,7 +217,7 @@ def start_tracked_run(
     tracking_root: str,
     tags: dict[str, str],
     experiment_name: str,
-    min_free_gb: float = DEFAULT_MIN_FREE_GB,
+    min_free_gb: float = MLFLOW_MIN_FREE_GB,
     *,
     dq_ack_ids: list[str] | None = None,
 ):

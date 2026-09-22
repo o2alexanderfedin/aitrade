@@ -539,9 +539,15 @@ def _open_locked(
         "lockbox_purpose": purpose,
     }
 
-    with start_tracked_run(
-        str(tracking_root), tags, "lockbox_access", min_free_gb=min_free_gb
-    ) as run:
+    # `min_free_gb` governs `resolved_lake_root` above ONLY (the physical
+    # SSD lake -- multi-GB parquet partitions, legitimately sized like
+    # capture's own DEFAULT_MIN_FREE_GB). The tracking root is a different
+    # kind of root (kilobytes, an MLflow run) and gets its OWN floor from
+    # `start_tracked_run`'s default (`tracking.mlflow_utils.
+    # MLFLOW_MIN_FREE_GB`) -- passing this function's `min_free_gb` through
+    # here would be the same category error 05-VERIFICATION-FIX.md's Gap 1
+    # fixed in `harness.budget`/`harness.negative_log`; not reproduced here.
+    with start_tracked_run(str(tracking_root), tags, "lockbox_access") as run:
         # (6) run_id written back immediately -- before the read.
         token["mlflow_run_id"] = run.info.run_id
         _atomic_write_json(path, token)

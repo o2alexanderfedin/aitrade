@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import os
+import shutil
 
 import pytest
+from data.capture.config import DataRootError, validate_data_root
 from data.lake_paths import MLFLOW_TRACKING_ROOT_ENV
 from harness.budget import (
     BudgetError,
@@ -175,3 +177,52 @@ def test_exhausted_segments_lists_manifest_and_name_pairs(tracking_root):
     assert result == [
         {"manifest_id": "mid-1", "segment_name": "val_s1", "start_ns": 0, "end_ns": 100}
     ]
+
+
+# --------------------------------------------------------------------------
+# 05-VERIFICATION-FIX.md Gap 1: the tracking root's own disk-space floor
+# (`tracking.mlflow_utils.MLFLOW_MIN_FREE_GB`) is independent of capture's
+# `DEFAULT_MIN_FREE_GB` -- record_look's real caller (harness.accessor.
+# materialize) never passes min_free_gb, so the regression this guards is
+# specifically about record_look's OWN DEFAULT, not an explicit override.
+# --------------------------------------------------------------------------
+
+
+def test_record_look_default_min_free_gb_is_independent_of_captures_threshold(
+    tracking_root, monkeypatch
+):
+    """Reproduces the exact free-space number the failing CI runs measured
+    (`DataRootError: ... has only 12.4{8,9} GiB free, below the required
+    50.00 GiB free`, GH Actions runs 35694486557..35722771928): with the
+    disk reporting ~12.5 GiB free, `record_look` (called with NO
+    `min_free_gb` kwarg -- its default is the property under test) must
+    still succeed, while `data.capture.config.validate_data_root` at ITS
+    OWN default (50.0 GiB, unchanged, still sized for the capture daemon's
+    continuous multi-GB/day write workload) must still refuse the SAME
+    free-space number. Two independent thresholds, proven independent on
+    one faked disk reading."""
+    fake_free_bytes = int(12.48 * 1024**3)
+    real_disk_usage = shutil.disk_usage
+
+    def _fake_disk_usage(path):
+        real = real_disk_usage(path)
+        return shutil._ntuple_diskusage(real.total, real.used, fake_free_bytes)
+
+    monkeypatch.setattr(shutil, "disk_usage", _fake_disk_usage)
+
+    # Capture's own 50 GiB threshold still refuses this free-space number
+    # -- unchanged by this fix; the other half of the independence proof.
+    with pytest.raises(DataRootError, match="50.00 GiB"):
+        validate_data_root(str(tracking_root))
+
+    # The harness's own MLflow path succeeds at the SAME free-space number
+    # -- through record_look's DEFAULT min_free_gb, no kwarg passed here.
+    run_id = record_look(
+        "gap1-mid",
+        "val_probe",
+        tracking_root=str(tracking_root),
+        run_tags=dict(BASE_RUN_TAGS),
+        budget_allowance=UNLIMITED_ALLOWANCE,
+    )
+    assert run_id
+    assert look_count("gap1-mid", "val_probe", tracking_root=str(tracking_root)) == 1

@@ -39,8 +39,11 @@ from mlflow.entities import ViewType
 from mlflow.tracking import MlflowClient
 
 from data import lake_paths
-from data.capture.config import DEFAULT_MIN_FREE_GB
-from tracking.mlflow_utils import build_tracking_uri, start_tracked_run
+from tracking.mlflow_utils import (
+    MLFLOW_MIN_FREE_GB,
+    build_tracking_uri,
+    start_tracked_run,
+)
 
 __all__ = [
     "BudgetError",
@@ -240,7 +243,7 @@ def record_look(
     run_tags: dict,
     budget_allowance: int,
     experiment_name: str = "harness-looks",
-    min_free_gb: float = DEFAULT_MIN_FREE_GB,
+    min_free_gb: float = MLFLOW_MIN_FREE_GB,
 ) -> str:
     """Record one look (D-05-11) as an MLflow run tagged
     `segment_manifest_id` and `stage="val_look"` (filled here), plus --

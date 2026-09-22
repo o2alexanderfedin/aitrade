@@ -34,9 +34,12 @@ from mlflow.tracking import MlflowClient
 from mlflow.utils.validation import MAX_TAG_VAL_LENGTH
 
 from data import lake_paths
-from data.capture.config import DEFAULT_MIN_FREE_GB
 from data.store import compute_manifest_id
-from tracking.mlflow_utils import build_tracking_uri, start_tracked_run
+from tracking.mlflow_utils import (
+    MLFLOW_MIN_FREE_GB,
+    build_tracking_uri,
+    start_tracked_run,
+)
 
 __all__ = [
     "NegativeLogError",
@@ -146,7 +149,7 @@ def record_negative_result(
     tracking_root: str,
     run_tags: dict,
     experiment_name: str = "harness-negative-results",
-    min_free_gb: float = DEFAULT_MIN_FREE_GB,
+    min_free_gb: float = MLFLOW_MIN_FREE_GB,
 ) -> str:
     """Record `config` as a negative result (D-05-22): an MLflow run
     tagged `stage="negative_result"`, `outcome="negative"`, `reason`, and
