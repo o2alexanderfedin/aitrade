@@ -82,10 +82,10 @@ completed: 2026-09-22
 
 ## Performance
 
-- **Duration:** ~11 min between the Task 1 and Task 2 commits (research and file-reading before the first commit not included in this figure)
+- **Duration:** ~11 min between the Task 1 and Task 2 commits (research and file-reading before the first commit, and the post-advisor-review test-gap fix after Task 2, are not included in this figure)
 - **Completed:** 2026-09-22
-- **Tasks:** 2/2
-- **Files modified:** 10 (3 created, 7 modified)
+- **Tasks:** 2/2 (plus one advisor-review-driven test-gap commit, see below)
+- **Files modified:** 10 (3 created, 7 modified) across the two tasks; 2 further test files touched by the post-review gap-fix commit
 
 ## Accomplishments
 - `harness.budget.record_look` now refuses a look once a segment's `budget_allowance` is spent, and `harness.budget.exhausted_segments` answers the same question in bulk over a list of manifests
@@ -97,8 +97,9 @@ completed: 2026-09-22
 
 1. **Task 1: budget exhaustion, and the UNCONDITIONAL issuance-time overlap refusal** - `aa2e36f` (feat)
 2. **Task 2: negative-result log, query function, and CLI** - `5eb8fc5` (feat)
+3. **Post-review gap fix: exception-propagation tests** - `ace8e57` (test) -- added after an advisor review found the plan's own exception-propagation requirement was exercised only for P1's `look_count` directly, not for the two new call chains this plan added (`issue_segment_manifest`'s overlap refusal, and `warn_if_already_negative`). See "Issues Encountered" below.
 
-**Plan metadata:** (this commit, following this Summary)
+**Plan metadata:** `5153446` (docs: complete plan) -- **amended once**, see "Issues Encountered" below.
 
 _Note: prior 05-* plans in this phase fold RED+GREEN into one `feat(...)` commit per task rather than separate `test(...)`/`feat(...)` commits; this plan matched that established convention -- see "TDD Gate Compliance" below._
 
@@ -109,9 +110,9 @@ _Note: prior 05-* plans in this phase fold RED+GREEN into one `feat(...)` commit
 - `mvp/harness/negative_log.py` - `config_fingerprint`, `record_negative_result`, `query_negative_results`, `warn_if_already_negative`
 - `mvp/tools/harness_negative_log_cli.py` - `--tracking-root`/`--fingerprint` CLI over `query_negative_results`
 - `mvp/tests/harness/test_budget.py` - exhaustion + `exhausted_segments` tests; existing `record_look` calls updated with `budget_allowance`
-- `mvp/tests/harness/test_segments.py` - self-discovery, overlap refusal, required-keyword, no-opt-out, and no-special-treatment tests; existing `_build_fixture`/direct `issue_segment_manifest` calls updated with `tracking_root`
+- `mvp/tests/harness/test_segments.py` - self-discovery, overlap refusal, required-keyword, no-opt-out, and no-special-treatment tests; existing `_build_fixture`/direct `issue_segment_manifest` calls updated with `tracking_root`; plus (post-review, `ace8e57`) `test_issuance_propagates_an_mlflow_query_exception_unmodified`
 - `mvp/tests/harness/test_accessor.py`, `mvp/tests/harness/test_kfold.py` - `_build_fixture`/`_build_compressed_3seg_fixture` helpers updated with the new required `tracking_root` parameter (deviation, see below)
-- `mvp/tests/harness/test_negative_log.py` - all 6 planned behaviors plus 2 extra tests (over-long `reason` refusal, silent no-op for an unrecorded fingerprint)
+- `mvp/tests/harness/test_negative_log.py` - all 6 planned behaviors plus 2 extra tests (over-long `reason` refusal, silent no-op for an unrecorded fingerprint); plus (post-review, `ace8e57`) `test_warn_if_already_negative_propagates_a_query_failure`
 
 ## Decisions Made
 - `record_look`'s exhaustion check queries `look_count` BEFORE `start_tracked_run`, so a refused look never creates a run -- the count after a refusal stays exactly at the allowance, never one over
@@ -155,9 +156,14 @@ _Note: prior 05-* plans in this phase fold RED+GREEN into one `feat(...)` commit
 ## Issues Encountered
 - The first `config_fingerprint` mutation attempt (re-hashing `json.dumps(config)` with plain sha256 instead of calling `compute_manifest_id`) turned out to be accidentally EQUIVALENT for every test fixture, because none of them carry a `manifest_id` key for `canonicalize_manifest` to strip -- the mutated test passed instead of failing, which would have been a false "mutation caught" claim. Replaced with an md5-based mutation, which genuinely diverges from `compute_manifest_id`'s sha256 output and correctly failed `test_config_fingerprint_matches_compute_manifest_id` before being restored. Recorded here as a near-miss: a mutation that "looks different" in the diff is not the same as one that changes the OBSERVED behavior against the test's own fixtures.
 - Two overlap tests in `test_segments.py` initially issued a second manifest against the same `lake_root`/`registry_root` on the same calendar date, hitting `features.tier`'s write-once-per-date refusal (`FileExistsError`) -- unrelated to the segment-overlap logic under test. Fixed by adding a `date` override to `_build_fixture` and using a distinct date (`2026-09-14`) for the second issuance in both tests.
+- An advisor review after Task 2's commit found that the plan's own `<absolute_rules>` require an exception-propagation test showing "the exception type surfacing unchanged," but only P1's `test_look_count_propagates_a_query_failure` existed anywhere in the tree -- nothing exercised the two new call chains this plan added (`issue_segment_manifest` -> `_refuse_overlap_with_exhausted_segments` -> `exhausted_segments` -> `look_count`, and `warn_if_already_negative` -> `query_negative_results`). Fixed with two new tests, both asserting `exc_info.type is <ErrorClass>` (identity, not `isinstance`), committed as `ace8e57`.
+- The metadata commit `317e840` (SUMMARY + STATE + ROADMAP) was made via `gsd-sdk query commit`, which has no parameter for the mandatory attribution trailer this plan's `<absolute_rules>` require. Caught immediately, before any further work: amended in place to `5153446` with the correct trailer (`git commit --amend`). This is a deviation from the harness's general "always create new commits, never amend" default -- justified here because the commit was unpushed, docs-only, and objectively malformed against a hard, plan-stated requirement; no other commit was touched.
 
 ## TDD Gate Compliance
 Every prior plan in this phase (05-01 through 05-06) folds RED and GREEN into a single `feat(...)` commit per task rather than separate `test(...)`/`feat(...)` commits (confirmed via `git log --oneline | grep -E "\(05-0[1-6]"` before starting -- no `test(05-...)` commits exist anywhere in this phase's history). This plan matched that established convention: for both tasks, the named tests were written and run RED (confirmed failing with the exact expected error, e.g. `TypeError: record_look() missing 1 required keyword-only argument: 'budget_allowance'` before Task 1's implementation existed) before the implementation was written, then committed together once GREEN. No separate `test(...)` commit exists, matching prior plans' own pattern rather than deviating from it.
+
+## Pre-commit Hook Count (verified, per plan constraint 5)
+19 hooks are configured in `.pre-commit-config.yaml`; 18 execute on `git commit` (all shown Passed on every commit in this plan). The 19th, `check-no-manifest-rewrite-full`, is `stages: [pre-push]` in its own config block and correctly does not run at commit time -- this is not a hook that silently skipped; it is a hook that runs at a different stage by design (its `pre-commit`-stage sibling, `check-no-manifest-rewrite`, and the CI-fixture-lake variant `check-no-manifest-rewrite-fixture`, both did run and pass). Both task commit messages say "19 pre-commit hooks green," which should be read as "19 configured, 18 executed and passed at this stage" -- imprecise phrasing, not a false claim about what ran; recorded here for the record rather than by amending already-made commits.
 
 ## Known Stubs
 None. Both tasks' artifacts (`exhausted_segments`, the overlap refusal, and the full negative-result log + CLI) are wired end to end and exercised by real tests against real `tmp_path` MLflow stores -- no hardcoded empty return, no placeholder string, no unwired component.
@@ -184,4 +190,4 @@ None - no external service configuration required. Everything in this plan runs 
 
 ## Self-Check: PASSED
 
-All 10 files referenced above (3 created, 7 modified) confirmed present on disk; both task commit hashes (`aa2e36f`, `5eb8fc5`) confirmed present in `git log --oneline --all`. No missing items.
+All 10 files referenced above (3 created, 7 modified) confirmed present on disk; all four commit hashes (`aa2e36f`, `5eb8fc5`, `ace8e57`, `5153446`) confirmed present in `git log --oneline --all`. No missing items.
