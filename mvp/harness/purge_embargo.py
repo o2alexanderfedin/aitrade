@@ -56,16 +56,41 @@ def effective_train_intervals(
 ) -> list[tuple[int, int]]:
     """The sub-intervals of `[train_start_ns, train_end_ns)` that remain
     after excluding, for every entry in `other_entries`, its two-sided
-    purge zone `(start_ns - purge_ns, end_ns + purge_ns)` UNIONED with its
-    one-sided trailing embargo `[end_ns + purge_ns, end_ns + purge_ns +
-    embargo_ns)` (D-05-04) -- the two clauses are adjacent at
-    `end_ns + purge_ns`, so together they form one combined excluded band
-    `[start_ns - purge_ns, end_ns + purge_ns + embargo_ns)`. The two
-    clauses stay named separately in this docstring (not collapsed into
-    one formula upstream of here) so the boundary stays traceable to
-    D-05-04's own two-mechanism text; a half-open representation makes
-    their combined exclusion exactly this one band, which is what the
-    implementation below computes directly.
+    purge zone UNIONED with its one-sided trailing embargo (D-05-04) --
+    the two clauses are adjacent at `end_ns + purge_ns`, so together they
+    form one combined excluded band.
+
+    THE EXACT BOUNDARY, STATED PRECISELY (05-REVIEW.md IN-02). The
+    combined excluded band is HALF-OPEN, LEFT-CLOSED:
+    `[start_ns - purge_ns, end_ns + purge_ns + embargo_ns)` -- a train row
+    with `etime` exactly equal to `start_ns - purge_ns` IS excluded (the
+    left boundary belongs to the excluded band); a row exactly at
+    `end_ns + purge_ns + embargo_ns` is NOT (the right boundary belongs to
+    the surviving train range). This is what the implementation below
+    computes directly (`excl_start <= cursor` / `clipped_start`'s
+    survivor-splitting logic), and is the authoritative statement of the
+    convention.
+
+    THIS IS MORE CONSERVATIVE THAN D-05-04's OWN DECISION TEXT, WHICH
+    DESCRIBES AN OPEN INTERVAL `(start_ns - purge_ns, end_ns + purge_ns)`
+    for the purge zone alone (a row exactly at `start_ns - purge_ns`
+    would, per that text, survive). The implementation here excludes that
+    boundary row instead -- purging by one instant more than the decision
+    text's literal wording, never less. This is the SAFE direction (over-
+    purging can only remove a genuinely eligible training row, never admit
+    a leaking one), so it is not a leakage risk, but it is a real,
+    deliberate deviation from D-05-04's literal text; the decision record
+    itself is left as-is (a historical artifact, not re-issued for this),
+    and this docstring is the authoritative statement of what the CODE
+    actually does. A future reader must not "fix" the implementation to
+    match the open-interval text -- doing so would introduce genuine
+    under-purging at that one boundary instant.
+
+    The two clauses (purge, embargo) stay named separately in this
+    docstring (not collapsed into one formula upstream of here) so the
+    boundary stays traceable to D-05-04's own two-mechanism text; a
+    half-open representation makes their combined exclusion exactly one
+    band, which is what the implementation below computes directly.
 
     `other_entries` is caller-filtered (D-05-04: purge/embargo apply
     relative to `val`/`held_out`/`oof_block` entries, never another

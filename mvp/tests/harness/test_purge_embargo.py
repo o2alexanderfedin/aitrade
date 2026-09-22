@@ -63,6 +63,39 @@ def test_effective_train_intervals_empty_when_fully_covered():
     assert result == []
 
 
+def test_effective_train_intervals_exact_boundary_is_half_open_left_closed():
+    """05-REVIEW.md IN-02: the existing boundary test
+    (`test_filter_train_rows_excludes_the_right_rows` below) only ever
+    probes `val_start - purge_ns - 1` and `val_start - purge_ns + 1` --
+    never the EXACT boundary value itself. This test closes that gap
+    directly against `effective_train_intervals`: a row at exactly
+    `val_start - purge_ns` must be EXCLUDED (the left boundary belongs to
+    the excluded band, per the docstring's own precise statement), while
+    `val_start - purge_ns - 1` (one ns earlier) must survive."""
+    purge_ns = 600_000_000_000
+    embargo_ns = 1_000_000_000
+    val_start = 4_000_000_000_000
+    val_end = 5_000_000_000_000
+    other = {"start_ns": val_start, "end_ns": val_end, "role": "val"}
+
+    exact_boundary = val_start - purge_ns
+    one_before = exact_boundary - 1
+
+    result = effective_train_intervals(
+        0,
+        10_000_000_000_000,
+        [other],
+        purge_ns=purge_ns,
+        embargo_ns=embargo_ns,
+    )
+    # The train's own surviving interval ends exactly at the boundary
+    # (half-open, so `exact_boundary` itself is NOT in the surviving
+    # range -- it belongs to the excluded band instead).
+    assert result[0] == (0, exact_boundary)
+    assert exact_boundary not in range(result[0][0], result[0][1])
+    assert one_before in range(result[0][0], result[0][1])
+
+
 def test_filter_train_rows_excludes_the_right_rows():
     purge_ns = 600_000_000_000
     embargo_ns = 1_000_000_000
