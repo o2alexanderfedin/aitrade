@@ -7,6 +7,7 @@ ci_conclusion: success
 commits:
   - a3711f2: "fix(05-verify-fix): give the MLflow tracking root its own disk-space floor"
   - 6f219ef: "fix(05-verify-fix): materialize auto-resolves and fail-closes on a segment's own errata_id"
+  - dafefe1: "test(05-verify-fix): isolate read_errata_manifest's manifest_id-field check"
 ---
 
 # Phase 5 Verification Fix Report
@@ -39,18 +40,23 @@ one `min_free_gb` parameter and used it for TWO different roots: `lake_paths.
 lake_root(min_free_gb=...)` (the physical SSD lake — legitimately sized like capture's
 own threshold) AND `start_tracked_run(..., min_free_gb=...)` (the tracking root — the
 same category error as Gap 1). I grepped every `open_lockbox` call site before
-deciding (`grep -c "lake_root=" tests/lockbox/test_token_one_look.py` → 14 of ~17
-sites, `test_containment.py` → 3 of 3): every single site passes `lake_root=` AND
-`min_free_gb=0.0` explicitly, which means `min_free_gb=0.0` was ALWAYS there only to
-satisfy `start_tracked_run`'s 50 GiB default — the identical bug, masked by tests
-rather than absent, never actually exercising `lake_paths.lake_root()`'s own disk
-check at all in that branch. Fixed: `min_free_gb` now governs only
-`lake_paths.lake_root()`'s physical disk check; the `start_tracked_run` call no longer
-forwards it, so the tracking root gets its own independent `MLFLOW_MIN_FREE_GB`
-default. All 20 `min_free_gb=0.0` call sites become harmless no-ops (they were already
-only exercising the lake-root branch's now-decoupled parameter, which itself is never
-reached when `lake_root=` is passed explicitly, as every one of them does) — confirmed
-by running the full `tests/lockbox/` suite (all pass unchanged).
+deciding: `tests/lockbox/test_token_one_look.py` has 14 call sites (confirmed by an
+`awk` pass over each, not just a line count), `test_containment.py` has 2 more — 16
+total. Every single one passes `lake_root=` explicitly AND `min_free_gb=0.0`. Before
+the fix, that `0.0` was live-forwarded into `start_tracked_run` and was the ONLY
+reason these tests didn't hit capture's 50 GiB threshold on the tracking root — the
+identical bug Gap 1 fixed elsewhere, masked here by every test overriding it rather
+than the code being correct. Fixed: `min_free_gb` now governs only
+`lake_paths.lake_root()`'s physical disk check (never reached in these tests anyway,
+since `lake_root=` is always supplied directly); the `start_tracked_run` call no
+longer forwards `min_free_gb` at all, so the tracking root gets its own independent
+`MLFLOW_MIN_FREE_GB` default. All 16 `min_free_gb=0.0` lockbox call sites become
+harmless no-ops post-fix — confirmed by running the full `tests/lockbox/` suite (all
+pass unchanged). (The remaining `min_free_gb=0.0` sites found by the broader grep — in
+`tests/tracking/test_mlflow_utils.py` and `tests/dq/test_pause_enforcement.py` — call
+`start_tracked_run` directly and are unrelated to the lockbox conflation; they stay
+valid explicit overrides, now of `MLFLOW_MIN_FREE_GB` rather than
+`DEFAULT_MIN_FREE_GB`.)
 
 I also verified `harness.budget.look_count`'s other MLflow root call
 (`lake_paths.mlflow_tracking_root(...)`) does **not** call `validate_data_root` at
@@ -148,7 +154,16 @@ column and an untouched row's both columns survive.
   extends to the budget, not just the data).
 - `test_materialize_refuses_tampered_errata_manifest`: writes a real errata manifest,
   then mutates its `cells` list in place after computing its id → raises
-  `ErrataManifestError` matching "hash mismatch"; `look_count(...) == 0`.
+  `ErrataManifestError` matching "hash mismatch" (the `recomputed != errata_id` half
+  of the check).
+- `test_materialize_refuses_errata_manifest_whose_manifest_id_field_disagrees`:
+  isolates the OTHER half — rewrites only the body's own `manifest_id` field (every
+  other key, including `cells`, untouched), so `recomputed` alone still equals
+  `errata_id` (`compute_manifest_id` excludes the `manifest_id` key from what it
+  hashes) and only `body_manifest_id != errata_id` fires. Added after review found the
+  tampered-manifest test above trips `recomputed` first and never isolates this
+  branch; sanity-checked by dropping the `body_manifest_id` clause locally (this test
+  alone goes red: "DID NOT RAISE"), then restoring.
 - `test_materialize_refuses_errata_manifest_with_wrong_symbol`: errata manifest
   written for `"ETHUSDT"`, segment manifest for `"BTCUSDT"` → raises matching
   "symbol".
@@ -162,12 +177,12 @@ Mutation 1 — `read_errata_manifest` degrades to "mask nothing" on a missing fi
 BEFORE: harness/errata.py sha256 = 186430d68066b50c27ca112b9bba4e3101c41da7a057fdc4604302e0530ec5bf
 MUTATED: `if not path.exists(): raise ErrataManifestError(...)` replaced with
   `if not path.exists(): return []`
-AFTER (mutated): harness/errata.py sha256 = 49855ee7332a54721a8866edea640832de30faa710cd190ca777e216cce12b2a
+AFTER (mutated): harness/errata.py sha256 = a14687c77948eb23b488e76476d64021a71e4798bbfd48a3db4732fcb172bd17
 RESULT: pytest tests/harness/test_accessor.py -q -k errata →
-  1 failed, 5 passed: test_materialize_refuses_missing_errata_manifest
+  1 failed, 6 passed, 6 deselected: test_materialize_refuses_missing_errata_manifest
   "Failed: DID NOT RAISE ErrataManifestError"
 RESTORED: hash back to 186430d68066b50c27ca112b9bba4e3101c41da7a057fdc4604302e0530ec5bf
-RE-RUN: 12 passed
+RE-RUN: 7 passed, 6 deselected (all 7 errata-matching tests in this file)
 ```
 
 Mutation 2 — `materialize` never resolves `errata_id` at all (the ORIGINAL bug,
@@ -176,15 +191,16 @@ reproduced directly in the accessor):
 BEFORE: harness/accessor.py sha256 = 7e87bf7bb9f18506251888e61859d7bb4c529c48f64ed41b6b9b83eb5043e790
 MUTATED: the errata_id-resolution block replaced with `resolved_errata_cells = []`
   unconditionally (never calls read_errata_manifest, regardless of errata_id)
-AFTER (mutated): harness/accessor.py sha256 = ad8626d1f8a2418fac685f250bd20740aa3f367bdca9e16ab35a04226df6e4e0
+AFTER (mutated): harness/accessor.py sha256 = efb9f1b065566d178c416cc52bddfab0d28f39b2304f6afdd7d8fca93be59104
 RESULT: pytest tests/harness/test_accessor.py -q -k errata →
-  4 failed, 2 passed:
+  5 failed, 2 passed, 6 deselected:
   test_accessor_applies_admission_and_errata_gates            ← proof (a)'s own test
   test_materialize_refuses_missing_errata_manifest
   test_materialize_refuses_tampered_errata_manifest
+  test_materialize_refuses_errata_manifest_whose_manifest_id_field_disagrees
   test_materialize_refuses_errata_manifest_with_wrong_symbol
 RESTORED: hash back to 7e87bf7bb9f18506251888e61859d7bb4c529c48f64ed41b6b9b83eb5043e790
-RE-RUN: tests/harness/ (full directory) → 83 passed
+RE-RUN: tests/harness/ (full directory) → 84 passed
 ```
 Mutation 2 confirms `test_accessor_applies_admission_and_errata_gates` — proof (a) — is
 itself a genuine regression test for the gap the verifier found (unmasked rows on the
@@ -192,12 +208,19 @@ documented default), not merely exercising the fail-closed path.
 
 ## Full suite, hooks, and CI
 
-- `./.venv/bin/pytest tests -x -q` (mvp/): **1064 passed** (1059 pre-existing + 5 new:
-  1 in `test_budget.py`, 4 in `test_accessor.py`).
-- Both commits' pre-commit hooks: all 19 configured hooks ran and passed on each
-  commit (`ruff check`, `ruff format --check`, `uv lock --check`, 10 `check_*` tools,
-  `check_no_manifest_rewrite --full` ×2, `check_manifest_id_integrity`,
+- `./.venv/bin/pytest tests -x -q` (mvp/): **1065 passed** (1059 pre-existing + 6 new:
+  1 in `test_budget.py`, 5 in `test_accessor.py` — the 5th isolates
+  `read_errata_manifest`'s `body_manifest_id != errata_id` check specifically, added
+  after review; sanity-checked by dropping that clause locally and confirming the new
+  test alone goes red, then restoring — same hash-proof discipline as the two mutation
+  checks below, hash `186430d6...` unchanged after restore).
+- Both commits' pre-commit hooks: **18 of the 19 configured hooks** ran and passed at
+  `git commit` (`ruff check`, `ruff format --check`, `uv lock --check`, 10 `check_*`
+  tools, `check_no_manifest_rewrite --full` ×2, `check_manifest_id_integrity`,
   `check_manifest_append_only`, `check_harness_accessor_only`, both `pytest` steps).
+  The 19th, `check-no-manifest-rewrite-full`, is `stages: [pre-push]` by design (same
+  distinction 05-03-SUMMARY.md and 05-VERIFICATION.md both note) — it ran, and passed,
+  at `git push` instead (visible in the push output above each push).
 - `find mvp/features -name '*.nb[ci]'` — empty before each commit (no numba cache
   stragglers).
 - CI: `https://github.com/o2alexanderfedin/aitrade/actions/runs/35729636694` —
@@ -210,6 +233,7 @@ documented default), not merely exercising the fail-closed path.
 |---|---|
 | `a3711f2` | fix(05-verify-fix): give the MLflow tracking root its own disk-space floor |
 | `6f219ef` | fix(05-verify-fix): materialize auto-resolves and fail-closes on a segment's own errata_id |
+| `dafefe1` | test(05-verify-fix): isolate read_errata_manifest's manifest_id-field check |
 
 ## What was NOT done
 
