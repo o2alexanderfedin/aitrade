@@ -11,7 +11,11 @@ from data.store import compute_manifest_id
 from data.time_ns import NS_PER_SECOND
 from harness.accessor import materialize
 from harness.budget import look_count
-from harness.purge_embargo import effective_train_intervals
+from harness.purge_embargo import (
+    FOLD_EMBARGO_NS,
+    PURGE_HORIZON_NS,
+    effective_train_intervals,
+)
 from harness.segments import (
     FIVE_SEG_NAMES,
     FIVE_SEG_ROLES,
@@ -20,7 +24,32 @@ from harness.segments import (
 )
 from tests.fixtures.harness_span import build_span_partition
 
+#: Kept for the synthetic oof_block entry in
+#: `test_materialize_counts_val_and_oof_block_but_not_train_as_a_look`
+#: below -- 900s is still a valid sub-range of `train_s1`'s widened 1800s
+#: span, so that test's own geometry needs no change.
 SEGMENT_WIDTH_NS = 900 * NS_PER_SECOND
+
+#: 05-02 (coordinator decision, Option A): widened from P1's uniform 900s.
+#: A uniform 900s width starves `train_s2` under the real 600s purge
+#: horizon -- `val_s1`'s trailing embargo band ∪ `val_s2`'s leading purge
+#: band together cover [1800s, 2700s) exactly, verified against the real
+#: `effective_train_intervals` before this change, not assumed (05-02-
+#: PLAN.md Task 1 added a starvation refusal at issuance that fires on
+#: exactly that geometry). 1800s train / 600s val leaves every train
+#: entry's own effective range non-empty (asserted directly below, in the
+#: fixture itself) while still exercising the naive-filter-vs-purge
+#: property this file's own tests rely on.
+TRAIN_WIDTH_NS = 1800 * NS_PER_SECOND
+VAL_WIDTH_NS = 600 * NS_PER_SECOND
+HELD_OUT_WIDTH_NS = 600 * NS_PER_SECOND
+SEGMENT_WIDTHS_NS = (
+    TRAIN_WIDTH_NS,
+    VAL_WIDTH_NS,
+    TRAIN_WIDTH_NS,
+    VAL_WIDTH_NS,
+    HELD_OUT_WIDTH_NS,
+)
 
 ADMISSION_DEFAULT = {
     "policy": "stale_book",
@@ -39,7 +68,9 @@ RUN_TAGS = {
 
 
 def _five_seg_segments(start_ns: int = 0) -> list[dict]:
-    boundaries = [start_ns + i * SEGMENT_WIDTH_NS for i in range(6)]
+    boundaries = [start_ns]
+    for width in SEGMENT_WIDTHS_NS:
+        boundaries.append(boundaries[-1] + width)
     return [
         {
             "name": name,
@@ -51,7 +82,7 @@ def _five_seg_segments(start_ns: int = 0) -> list[dict]:
     ]
 
 
-def _build_fixture(lake_root, registry_root, *, rows: int = 4_500):
+def _build_fixture(lake_root, registry_root, *, rows: int = 6_000):
     span = build_span_partition(
         lake_root,
         registry_root,
@@ -74,6 +105,26 @@ def _build_fixture(lake_root, registry_root, *, rows: int = 4_500):
         f"fixture span ends at {span['etime_max']} but held_out ends at "
         f"{segments[-1]['end_ns']} -- the fixture does not cover the last segment"
     )
+    # 05-02 Task 1 (coordinator decision, Option A): the widened geometry's
+    # OWN non-starvation, asserted in the fixture itself -- every train
+    # entry's real `effective_train_intervals` against its own val/held_out
+    # neighbours must be non-empty, or `issue_segment_manifest` below would
+    # refuse the whole layout as starved before any test in this file ever
+    # ran.
+    for entry in (s for s in segments if s["role"] == "train"):
+        others = [
+            other
+            for other in segments
+            if other["name"] != entry["name"] and other["role"] in ("val", "held_out")
+        ]
+        intervals = effective_train_intervals(
+            entry["start_ns"],
+            entry["end_ns"],
+            others,
+            purge_ns=PURGE_HORIZON_NS,
+            embargo_ns=FOLD_EMBARGO_NS,
+        )
+        assert intervals, f"{entry['name']} is starved under this fixture's geometry"
 
     manifest = issue_segment_manifest(
         layout="5seg",
@@ -86,6 +137,7 @@ def _build_fixture(lake_root, registry_root, *, rows: int = 4_500):
         version=1,
         code_hash="deadbeef",
         registry_root=registry_root,
+        lake_root=lake_root,
     )
     return manifest, span
 

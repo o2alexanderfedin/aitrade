@@ -71,6 +71,25 @@ def effective_train_intervals(
     relative to `val`/`held_out`/`oof_block` entries, never another
     `train` entry) -- this function does not itself inspect `role`.
 
+    ONE EXCEPTION TO THAT ROLE LIST, SCOPED BY THE CALLER, NOT HERE
+    (05-02-PLAN.md Task 1/2): when `train_start_ns`/`train_end_ns` name a
+    `compressed_3seg` layout's shared `train` entry, its own nested
+    `oof_block` children (D-05-08: they partition that very `train`
+    entry, computed once at issuance) are NEVER included in `other_entries`
+    for THAT call -- a train's own sub-partitions are not a validation
+    window against itself, and including them would starve the train
+    entirely (every row is inside some block's own purge zone by
+    construction). `oof_block` entries remain a legitimate purge/embargo
+    SOURCE elsewhere: `harness.kfold.training_rows_for_block` calls this
+    same function with a single target block as the sole `other_entries`
+    member to compute THAT block's own candidate training rows -- a
+    different call, over a different (non-`train`-role) target range,
+    unaffected by this exclusion. The callers in `harness/segments.py`
+    (`_train_effective_intervals`/`_derive_purge_embargo_fields`) and
+    `harness/accessor.py` (`materialize`'s train-role purge/embargo call)
+    are what apply the train-vs-its-own-blocks exclusion; this function
+    stays role-agnostic by design.
+
     Returns `[]` when every candidate row is excluded (the "starved" case
     a later issuer refuses on, D-05-14's own remedy path).
     """
