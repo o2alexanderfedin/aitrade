@@ -128,7 +128,7 @@ Plans:
 - [x] 05-02-PLAN.md — D-05-02 geometric refusals, purged+embargoed inner k-fold OOF (kfold.py), compressed_3seg issuance
 - [x] 05-04-PLAN.md — stale-book row admission (29,058 reproduction) and errata computation (249-cell reproduction), wired into the accessor
 - [x] 05-05-PLAN.md — held-out declaration tool (--dry-run), the new data.lockbox quarantine function, the holdout.json writer
-- [ ] 05-06-PLAN.md — static tripwire (check_harness_accessor_only), the 19th guardrail hook
+- [x] 05-06-PLAN.md — static tripwire (check_harness_accessor_only), the 19th guardrail hook
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 05-03-PLAN.md — budget exhaustion + issuance-time overlap refusal, negative-result log and CLI
