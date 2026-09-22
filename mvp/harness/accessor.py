@@ -58,10 +58,16 @@ def materialize(
     4. Filter to `start_ns <= etime < end_ns` for the named segment
        (D-05-03, half-open).
     5. For a `train` role: apply `harness.purge_embargo.filter_train_rows`
-       against every OTHER `val`/`held_out`/`oof_block` entry in the same
-       manifest (D-05-04) -- real, not deferred. Another `train` entry is
-       never a purge/embargo source (D-05-04 names only validation/
-       held-out label windows as the leakage concern).
+       against every OTHER `val`/`held_out` entry in the same manifest
+       (D-05-04) -- real, not deferred. Another `train` entry is never a
+       purge/embargo source (D-05-04 names only validation/held-out label
+       windows as the leakage concern), and NEITHER is a `train`'s own
+       nested `oof_block` children (05-02-PLAN.md Task 2): they partition
+       that very train (`harness.kfold`, computed once at issuance), not a
+       validation window against it -- including them would starve this
+       gate to zero rows for every `compressed_3seg` train by
+       construction. See `harness.purge_embargo`'s module docstring for
+       the full D-05-04 citation of this scoping rule.
     6. Row-admission exclusion (D-05-21) and errata null-masking (D-05-20)
        are NOT YET WIRED for `val`/`oof_block` rows -- pass through
        unchanged; a later plan wires both.
