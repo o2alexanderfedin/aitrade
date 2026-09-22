@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import threading
 
 import pytest
 from data.capture.config import DataRootError, validate_data_root
@@ -226,3 +227,50 @@ def test_record_look_default_min_free_gb_is_independent_of_captures_threshold(
     )
     assert run_id
     assert look_count("gap1-mid", "val_probe", tracking_root=str(tracking_root)) == 1
+
+
+# --------------------------------------------------------------------------
+# 05-REVIEW.md CR-01: record_look's check-then-act race
+# --------------------------------------------------------------------------
+
+
+def test_record_look_is_race_safe_under_real_concurrency(tracking_root):
+    """Reproduces 05-REVIEW.md CR-01's own reproduction (8 threads,
+    budget_allowance=1, all 8 previously succeeded, final count 8) and
+    asserts the race is closed: exactly ONE thread's record_look succeeds,
+    the other 7 raise BudgetExhaustedError, and look_count afterward is
+    exactly 1 -- never more."""
+    n_threads = 8
+    allowance = 1
+    barrier = threading.Barrier(n_threads)
+    successes: list[str] = []
+    failures: list[Exception] = []
+    lock = threading.Lock()
+
+    def _worker() -> None:
+        barrier.wait()  # every thread reaches record_look at the same instant
+        try:
+            run_id = record_look(
+                "cr01-mid",
+                "val_race",
+                tracking_root=str(tracking_root),
+                run_tags=dict(BASE_RUN_TAGS),
+                budget_allowance=allowance,
+            )
+            with lock:
+                successes.append(run_id)
+        except BudgetExhaustedError as exc:
+            with lock:
+                failures.append(exc)
+
+    threads = [threading.Thread(target=_worker) for _ in range(n_threads)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+
+    assert len(successes) == 1, f"expected exactly 1 success, got {len(successes)}"
+    assert len(failures) == n_threads - 1
+    assert look_count("cr01-mid", "val_race", tracking_root=str(tracking_root)) == 1, (
+        "the race is closed only if the durable count matches the single winner"
+    )

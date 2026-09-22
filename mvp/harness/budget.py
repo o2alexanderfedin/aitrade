@@ -21,6 +21,38 @@ overlap refusal (D-05-14's other half: a NEW manifest whose validation
 interval overlaps an already-exhausted one is refused at issuance, not
 merely at the next look).
 
+THE RACE (05-REVIEW.md CR-01), AND ITS CLOSE. `look_count` (read) and
+`start_tracked_run` (write) are two independent MLflow queries; without a
+lock spanning both, two callers that each read the same `spent` value
+before either write commits can both pass the `spent >= budget_allowance`
+check and both record a look -- the allowance is exceeded, silently, no
+error to either caller (reproduced empirically: 8 threads racing
+`budget_allowance=1` all succeeded, final count 8). `record_look` now
+holds an OS-level exclusive lock (`fcntl.flock(LOCK_EX)`, see `_look_lock`
+below) across the ENTIRE check-then-act sequence -- `look_count` through
+`start_tracked_run`'s run creation -- keyed on `(segment_manifest_id,
+segment_name)` (D-05-13's own granularity). `flock` was chosen over
+`os.O_CREAT | os.O_EXCL` deliberately: an `O_EXCL` lock file left behind by
+a crashed holder wedges every future `record_look` for that pair forever
+(a worse failure than the race it replaces) with no automatic recovery;
+`flock` is released by the kernel the instant the holding process's file
+descriptor closes -- on a clean exit, an uncaught exception, or a killed
+process alike -- so there is no stale-lock state to design around.
+
+THE GUARANTEE, STATED EXACTLY. Serialises `record_look` calls sharing one
+`(segment_manifest_id, segment_name)` pair, across THREADS (each thread's
+own `os.open` of the lock file is a distinct open-file-description, so
+`flock` genuinely contends between them, not merely between processes) AND
+PROCESSES, as long as they share one local filesystem underneath
+`tracking_root`. NOT COVERED, stated honestly: `flock` semantics are
+unreliable-to-absent on NFS/SMB-mounted tracking roots (a lock granted on
+one client is not guaranteed visible to another), and `fcntl.flock` does
+not exist on Windows. Two machines sharing a tracking root over a network
+filesystem, or a Windows host, are both outside this guarantee -- the same
+scope limit D-05-15 already states for the budget as a whole (a
+same-uid/same-host accident-proofing mechanism, not a distributed
+transaction).
+
 THE GUARANTEE, STATED HONESTLY (D-05-15, unchanged by this addition): the
 budget counts looks that pass through `record_look` -- which only
 `harness.accessor.materialize` calls. A bare `features.tier.load_features`
@@ -31,6 +63,10 @@ the static tripwire that catches such a caller, not this module.
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
+import hashlib
+import os
 import sqlite3
 from pathlib import Path
 
@@ -131,6 +167,42 @@ def _require_canonical_tracking_root(tracking_root: str, allowed_root: Path) -> 
             f"store {allowed} -- refusing to ask a different store how many "
             "looks have been spent, and refusing to log a look there"
         )
+
+
+def _look_lock_path(
+    tracking_root: str, segment_manifest_id: str, segment_name: str
+) -> Path:
+    """`<tracking_root>/.locks/look-<sha256>.lock` -- a sibling of
+    `mlflow.db` (so `_require_canonical_tracking_root`'s own resolution of
+    `tracking_root` still applies to everything under it), hashed rather
+    than built from the raw id/name so neither can inject a path
+    separator or collide via mere formatting (`f"{a}/{b}"` vs `f"{a}-{b}"`
+    naming the same file for two different pairs)."""
+    key = hashlib.sha256(f"{segment_manifest_id}\0{segment_name}".encode()).hexdigest()
+    return Path(tracking_root).resolve() / ".locks" / f"look-{key}.lock"
+
+
+@contextlib.contextmanager
+def _look_lock(tracking_root: str, segment_manifest_id: str, segment_name: str):
+    """Hold an exclusive `fcntl.flock` for the `(segment_manifest_id,
+    segment_name)` pair across the whole check-then-act window (CR-01,
+    see this module's docstring for the full rationale and the exact
+    scope of the guarantee). Each call does its own `os.open` -- a fresh
+    open-file-description every time, which is what makes `flock`
+    contend correctly between THREADS in one process, not only between
+    processes. The lock is released by the kernel the moment this
+    process's fd closes (the `finally` below, or a crash), so a dead
+    holder can never wedge a future caller -- unlike an `O_CREAT |
+    O_EXCL` lock file, which would."""
+    lock_path = _look_lock_path(tracking_root, segment_manifest_id, segment_name)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
 
 
 def look_count(
@@ -267,6 +339,13 @@ def record_look(
     segment, how many looks were spent, the allowance, and the remedy (a
     new segment manifest whose validation interval does not overlap this
     one) -- no run is logged for a refused look.
+
+    THE CHECK AND THE WRITE ARE NOW ATOMIC (CR-01): both run inside
+    `_look_lock`, an exclusive `fcntl.flock` keyed on `(segment_manifest_id,
+    segment_name)` -- see this module's docstring for the exact guarantee
+    and its scope. A concurrent caller for the SAME pair blocks until this
+    one either raises `BudgetExhaustedError` or finishes creating its run;
+    a caller for a DIFFERENT pair is never blocked by this one.
     """
     if "fold_config" not in run_tags:
         raise BudgetError(
@@ -274,20 +353,23 @@ def record_look(
             "the caller (harness.accessor) sets it from the segment "
             "manifest's own layout name before calling record_look"
         )
-    spent = look_count(segment_manifest_id, segment_name, tracking_root=tracking_root)
-    if spent >= budget_allowance:
-        raise BudgetExhaustedError(
-            f"record_look: segment {segment_name!r} of manifest "
-            f"{segment_manifest_id!r} is exhausted -- {spent} looks spent "
-            f"of {budget_allowance} allowed; issue a new segment manifest "
-            "whose validation interval does not overlap this one (D-05-14)"
+    with _look_lock(tracking_root, segment_manifest_id, segment_name):
+        spent = look_count(
+            segment_manifest_id, segment_name, tracking_root=tracking_root
         )
-    tags = dict(run_tags)
-    tags["segment_manifest_id"] = segment_manifest_id
-    tags["stage"] = "val_look"
-    with start_tracked_run(
-        str(tracking_root), tags, experiment_name, min_free_gb=min_free_gb
-    ) as run:
-        mlflow.set_tag("segment_name", segment_name)
-        run_id = run.info.run_id
+        if spent >= budget_allowance:
+            raise BudgetExhaustedError(
+                f"record_look: segment {segment_name!r} of manifest "
+                f"{segment_manifest_id!r} is exhausted -- {spent} looks spent "
+                f"of {budget_allowance} allowed; issue a new segment manifest "
+                "whose validation interval does not overlap this one (D-05-14)"
+            )
+        tags = dict(run_tags)
+        tags["segment_manifest_id"] = segment_manifest_id
+        tags["stage"] = "val_look"
+        with start_tracked_run(
+            str(tracking_root), tags, experiment_name, min_free_gb=min_free_gb
+        ) as run:
+            mlflow.set_tag("segment_name", segment_name)
+            run_id = run.info.run_id
     return run_id
