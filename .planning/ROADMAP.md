@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Stage 0 — Living Spec, CI Guardrails & Tracking** - spec.md seeded with corrected policy math, catalogues wired into CI, MLflow foundation
 - [x] **Phase 3: Data Layer — Backfill, Ingest & Lockbox** - Trades backfill, side correction, manifest-addressed store, DQ reports, mechanical lockbox quarantine (completed 2026-09-17)
 - [x] **Phase 4: Feature & Label Engine** - Single numba streaming code path, catalogued L1 features, leakage-proven labels (completed 2026-09-19)
-- [ ] **Phase 5: Fold Harness & Overfitting Controls** - 5-segment walk-forward with embargo, OOF fallback, selection-bias budget, negative-result log
+- [x] **Phase 5: Fold Harness & Overfitting Controls** - 5-segment walk-forward with embargo, OOF fallback, selection-bias budget, negative-result log
 - [ ] **Phase 6: Event-Driven Simulator** - Numba flip-only sim with integer-tick accounting and oracle tests
 - [ ] **Phase 7: Regression Track & Vertical Slice** - Cheapest model class wires Trainer protocol, frozen predictors, prediction tables end-to-end
 - [ ] **Phase 8: Trees, Transformer & v0 Gate** - All three classes on same folds, cross-class protocol, held-out locked, v0 smoke gate
@@ -117,7 +117,7 @@ Plans:
   2. Compressed 3-segment fallback with purged+embargoed inner k-fold OOF is selectable per run, with the choice and reason recorded in MLflow
   3. Every validation look increments the selection-bias budget in MLflow; budget exhaustion forces a fresh window
   4. Negative-result log records failed configs in queryable form
-**Plans:** 3/8 plans executed
+**Plans:** 8/8 plans executed (COMPLETE 2026-09-22)
 
 Plans:
 **Wave 1**
