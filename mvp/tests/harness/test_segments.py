@@ -365,7 +365,25 @@ def test_issue_segment_manifest_records_every_d05_09_field(
     assert manifest["purge_ns"] == PURGE_HORIZON_NS
     assert manifest["embargo_ns"] == FOLD_EMBARGO_NS
     assert manifest["upstream_feature_manifest_ids"] == [span["manifest_id"]]
-    assert manifest["admission"] == ADMISSION_DEFAULT
+    # 05-07-PLAN.md Task 2: admission.counts is DERIVED, never the
+    # caller-supplied ADMISSION_DEFAULT["counts"] (== {}) -- every policy
+    # field the caller DID supply survives untouched.
+    assert manifest["admission"]["policy"] == ADMISSION_DEFAULT["policy"]
+    assert manifest["admission"]["max_age_ns"] == ADMISSION_DEFAULT["max_age_ns"]
+    assert (
+        manifest["admission"]["exclude_undefined_age"]
+        == ADMISSION_DEFAULT["exclude_undefined_age"]
+    )
+    assert set(manifest["admission"]["counts"]) == {
+        s["name"] for s in manifest["segments"]
+    }
+    for name, counts in manifest["admission"]["counts"].items():
+        entry = next(s for s in manifest["segments"] if s["name"] == name)
+        width_rows = entry["end_ns"] - entry["start_ns"]  # 1 row/second fixture
+        assert (
+            counts["excluded_stale"] + counts["excluded_undefined"] + counts["admitted"]
+            == width_rows // NS_PER_SECOND
+        )
     assert manifest["errata_id"] is None
     assert manifest["budget_allowance"] == 1
     assert manifest["fold_config_reason"] == (
@@ -379,6 +397,37 @@ def test_issue_segment_manifest_records_every_d05_09_field(
         assert name in manifest["effective_intervals"]
         assert name in manifest["purged_row_count"]
         assert name in manifest["embargoed_row_count"]
+
+
+def test_issue_segment_manifest_discards_a_hard_coded_admission_counts(
+    lake_root, registry_root, tracking_root
+):
+    """05-07-PLAN.md Task 2 (D-05-09/21, checker iteration 1 blocker 3): a
+    caller-supplied `admission["counts"]` is DISCARDED, never written --
+    the manifest's own `admission.counts` is always the REAL, derived
+    value, regardless of what the caller passed in."""
+    hard_coded = {
+        "policy": "stale_book",
+        "max_age_ns": None,
+        "exclude_undefined_age": True,
+        "counts": {
+            "train_s1": {
+                "excluded_stale": 999,
+                "excluded_undefined": 999,
+                "admitted": 999,
+            }
+        },
+    }
+    manifest, _span = _build_fixture(
+        lake_root, registry_root, tracking_root, admission=hard_coded
+    )
+    assert manifest["admission"]["counts"] != hard_coded["counts"]
+    assert manifest["admission"]["counts"]["train_s1"]["admitted"] != 999
+    # Anti-vacuity: the derived value is the REAL row count for train_s1's
+    # own declared range (1800s wide, 1 row/second fixture).
+    train_s1 = next(s for s in manifest["segments"] if s["name"] == "train_s1")
+    width_rows = (train_s1["end_ns"] - train_s1["start_ns"]) // NS_PER_SECOND
+    assert manifest["admission"]["counts"]["train_s1"]["admitted"] == width_rows
 
 
 def test_compressed_3seg_refuses_a_malformed_top_level_shape(

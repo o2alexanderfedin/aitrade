@@ -47,7 +47,7 @@ import polars as pl
 from data import store
 from data.store import FEATURES_TIER, compute_manifest_id
 from features.tier import load_features
-from harness import budget, kfold
+from harness import budget, kfold, row_admission
 from harness.purge_embargo import (
     FOLD_EMBARGO_NS,
     PURGE_HORIZON_NS,
@@ -148,20 +148,18 @@ def _validate_compressed_3seg_shape(segments: list[dict]) -> None:
         )
 
 
-def _derive_oof_training_row_counts(
-    oof_blocks: list[dict],
-    *,
+def _load_upstream_frame(
     upstream_feature_manifest_ids: list[str],
+    *,
     symbol: str,
     registry_root: Path,
     lake_root: Path,
-) -> dict[str, int]:
-    """D-05-08's per-block training eligibility, measured against REAL
-    upstream partitions: for every `oof_block`, the row count
-    `harness.kfold.training_rows_for_block` retains as that block's own
-    training set -- the SAME two-sided-purge/one-sided-embargo formula the
-    segment-level accessor uses (checker iteration 1 blocker 1), never a
-    second implementation."""
+) -> pl.DataFrame:
+    """The single concatenated upstream frame every derivation below reads
+    (05-07-PLAN.md Task 2: loaded ONCE per `issue_segment_manifest` call
+    and threaded through `_derive_purge_embargo_fields`,
+    `_derive_oof_training_row_counts` and `_derive_admission_counts` --
+    was three separate loads of the same ~22M rows before this revision)."""
     dataset = f"{symbol}.{FEATURES_TIER}"
     frames = [
         load_features(
@@ -169,13 +167,61 @@ def _derive_oof_training_row_counts(
         )
         for manifest_id in upstream_feature_manifest_ids
     ]
-    df = pl.concat(frames, how="vertical")
+    return pl.concat(frames, how="vertical")
+
+
+def _derive_oof_training_row_counts(
+    oof_blocks: list[dict], df: pl.DataFrame
+) -> dict[str, int]:
+    """D-05-08's per-block training eligibility, measured against REAL
+    upstream partitions: for every `oof_block`, the row count
+    `harness.kfold.training_rows_for_block` retains as that block's own
+    training set -- the SAME two-sided-purge/one-sided-embargo formula the
+    segment-level accessor uses (checker iteration 1 blocker 1), never a
+    second implementation. `df` is the shared upstream frame
+    `issue_segment_manifest` loads once via `_load_upstream_frame`."""
     return {
         block["name"]: kfold.training_rows_for_block(
             df, oof_blocks, i, purge_ns=PURGE_HORIZON_NS, embargo_ns=FOLD_EMBARGO_NS
         ).height
         for i, block in enumerate(oof_blocks)
     }
+
+
+def _derive_admission_counts(
+    segments: list[dict], df_with_age: pl.DataFrame, admission: dict
+) -> dict[str, dict]:
+    """D-05-21's per-entry admission counts (`{"excluded_stale",
+    "excluded_undefined", "admitted"}`), measured against REAL upstream
+    rows at issuance -- NEVER caller-supplied (checker iteration 1 blocker
+    3's decided shape; 05-04-PLAN.md's own SUMMARY named this gap: the
+    manifest body's `admission.counts` stayed whatever the caller passed,
+    an empty `{}` under every existing caller. This function closes it: a
+    caller-supplied `counts` value is DISCARDED, never written).
+
+    `df_with_age` must already carry `row_admission.STALE_BOOK_AGE_COLUMN`,
+    computed on the FULL, pre-slice upstream frame (the same gate-order
+    requirement `harness.accessor.materialize` follows, 05-04-PLAN.md Task
+    2's own finding) -- computing it per-entry on an already-sliced frame
+    would misread a segment's own first rows as "no prior quote in this
+    partition" whenever the true prior quote sits just outside that
+    entry's own window; a segment boundary is not a book reset. Only
+    `admission["max_age_ns"]`/`admission["exclude_undefined_age"]` (the
+    declared POLICY, still caller-supplied) feed `apply_admission_policy`
+    -- never `admission["counts"]` itself, which this function computes
+    and OVERWRITES."""
+    policy = {
+        "max_age_ns": admission.get("max_age_ns"),
+        "exclude_undefined_age": admission.get("exclude_undefined_age", True),
+    }
+    counts: dict[str, dict] = {}
+    for entry in segments:
+        sliced = df_with_age.filter(
+            (pl.col("etime") >= entry["start_ns"]) & (pl.col("etime") < entry["end_ns"])
+        )
+        _kept, entry_counts = row_admission.apply_admission_policy(sliced, policy)
+        counts[entry["name"]] = entry_counts
+    return counts
 
 
 def _intervals_overlap(a: dict, b: dict) -> bool:
@@ -405,21 +451,15 @@ def _train_effective_intervals(
     return result
 
 
-def _derive_purge_embargo_fields(
-    segments: list[dict],
-    *,
-    upstream_feature_manifest_ids: list[str],
-    symbol: str,
-    registry_root: Path,
-    lake_root: Path,
-) -> dict:
+def _derive_purge_embargo_fields(segments: list[dict], df: pl.DataFrame) -> dict:
     """D-05-09's derived fields, measured against REAL upstream partitions,
     never a caller-supplied number: per train entry, `effective_intervals`
     (via the identical `harness.purge_embargo.effective_train_intervals`
     P1's accessor calls at read time -- the starvation refusal fires here,
     before any partition is read), plus `purged_row_count`/
     `embargoed_row_count` measured over that train entry's own
-    declared-range rows.
+    declared-range rows. `df` is the shared upstream frame
+    `issue_segment_manifest` loads once via `_load_upstream_frame`.
 
     PURGE TAKES PRECEDENCE. A row can fall in one neighbour's embargo
     clause and simultaneously in a DIFFERENT neighbour's purge clause (the
@@ -429,15 +469,6 @@ def _derive_purge_embargo_fields(
     never a double-count.
     """
     effective_intervals = _train_effective_intervals(segments)
-
-    dataset = f"{symbol}.{FEATURES_TIER}"
-    frames = [
-        load_features(
-            manifest_id, dataset, registry_root=registry_root, lake_root=lake_root
-        )
-        for manifest_id in upstream_feature_manifest_ids
-    ]
-    df = pl.concat(frames, how="vertical")
 
     purged_row_count: dict[str, int] = {}
     embargoed_row_count: dict[str, int] = {}
@@ -509,13 +540,20 @@ def issue_segment_manifest(
 ) -> dict:
     """Issue a segment manifest for one fold layout (D-05-07..09).
 
-    Every D-05-09 field is written from this plan's first version, even
-    where the VALUE is an honest placeholder: `admission` and `errata_id`
-    are caller-supplied (this function does not validate `admission`'s
-    shape beyond presence -- 05-04-PLAN.md owns the real policy
-    semantics), and a caller with nothing to say passes the documented
-    honest defaults (`{"policy": "stale_book", "max_age_ns": None,
-    "exclude_undefined_age": True, "counts": {}}`, `errata_id=None`).
+    `admission` and `errata_id` are caller-supplied for `policy`/
+    `max_age_ns`/`exclude_undefined_age`/`errata_id` (this function does
+    not validate `admission`'s shape beyond presence -- 05-04-PLAN.md owns
+    the real policy semantics), and a caller with nothing to say passes
+    the documented honest defaults (`{"policy": "stale_book", "max_age_ns":
+    None, "exclude_undefined_age": True}`, `errata_id=None`).
+    `admission["counts"]` is the ONE exception (05-07-PLAN.md Task 2,
+    checker iteration 1 blocker 3: 05-04-PLAN.md's own SUMMARY named this
+    gap): it is DERIVED here, unconditionally, via
+    `harness.row_admission.apply_admission_policy` against every segment
+    entry's REAL upstream rows (stale-book age computed on the full,
+    pre-slice frame, same gate-order requirement `harness.accessor.
+    materialize` follows) -- any `counts` value the caller supplies is
+    DISCARDED and OVERWRITTEN, never written to the body.
 
     `purge_ns`/`embargo_ns` are NOT caller parameters: they are set here,
     unconditionally, from `harness.purge_embargo`'s own constants -- a
@@ -582,21 +620,34 @@ def issue_segment_manifest(
     _validate_segments(
         segments, covered_start_ns=covered_start_ns, covered_end_ns=covered_end_ns
     )
-    derived = _derive_purge_embargo_fields(
-        segments,
-        upstream_feature_manifest_ids=upstream_feature_manifest_ids,
+
+    # Loaded ONCE (05-07-PLAN.md Task 2: was three separate loads of the
+    # same ~22M rows across the purge/embargo, oof-training-count and
+    # admission-count derivations below) and shared across all three.
+    df = _load_upstream_frame(
+        upstream_feature_manifest_ids,
         symbol=symbol,
         registry_root=registry_root,
         lake_root=lake_root,
     )
+
+    derived = _derive_purge_embargo_fields(segments, df)
     if layout == "compressed_3seg":
         derived["oof_training_row_counts"] = _derive_oof_training_row_counts(
-            oof_blocks,
-            upstream_feature_manifest_ids=upstream_feature_manifest_ids,
-            symbol=symbol,
-            registry_root=registry_root,
-            lake_root=lake_root,
+            oof_blocks, df
         )
+
+    # Admission's per-entry counts (D-05-21) are DERIVED here, never
+    # caller-supplied (checker iteration 1 blocker 3) -- stale-book age
+    # computed on the FULL, pre-slice frame (same gate-order requirement
+    # `harness.accessor.materialize` follows), then sliced per entry.
+    df_with_age = df.with_columns(
+        row_admission.stale_book_age_ns(df).alias(row_admission.STALE_BOOK_AGE_COLUMN)
+    )
+    admission = {
+        **admission,
+        "counts": _derive_admission_counts(segments, df_with_age, admission),
+    }
 
     _refuse_overlap_with_exhausted_segments(
         segments, registry_root=registry_root, tracking_root=tracking_root
