@@ -26,6 +26,7 @@ make it.
 from __future__ import annotations
 
 import logging
+import re
 import sqlite3
 from pathlib import Path
 
@@ -72,6 +73,30 @@ _SQLITE_HEADER = b"SQLite format 3\x00"
 #: The stage/outcome this module's own runs are tagged with -- what
 #: `query_negative_results` filters on.
 NEGATIVE_RESULT_STAGE = "negative_result"
+
+#: Duplicated from `harness.budget` (05-PATTERNS.md: a private helper with
+#: a real behavioural contract, copied rather than cross-imported). A
+#: `config_fingerprint` is a sha256 hex digest by construction
+#: (`config_fingerprint` above, `data.store.compute_manifest_id`) -- this
+#: pattern accepts that shape with room to spare, and rejects anything
+#: containing a quote, backslash, or other character that could alter the
+#: MLflow filter DSL a future caller splices it into.
+_FILTER_SAFE_RE = re.compile(r"^[A-Za-z0-9_.\-]+$")
+
+
+def _require_filter_safe(value: str, label: str) -> None:
+    """Refuse (`NegativeLogError`) a value about to be spliced into an
+    MLflow `filter_string` via raw f-string interpolation (05-REVIEW.md
+    WR-04) -- see `harness.budget._require_filter_safe`'s identically
+    named function for the full rationale. Checked BEFORE any MLflow
+    client is constructed."""
+    if not _FILTER_SAFE_RE.match(value):
+        raise NegativeLogError(
+            f"query_negative_results: {label} {value!r} contains a "
+            f"character outside {_FILTER_SAFE_RE.pattern} -- refusing to "
+            "splice it into an MLflow filter_string unescaped "
+            "(05-REVIEW.md WR-04)"
+        )
 
 
 def _require_initialised_mlflow_store(store_file: Path) -> None:
@@ -211,6 +236,8 @@ def query_negative_results(
     here means "the query succeeded and found nothing", never "the query
     could not be run".
     """
+    if config_fingerprint is not None:
+        _require_filter_safe(config_fingerprint, "config_fingerprint")
     _require_canonical_tracking_root(
         tracking_root, lake_paths.mlflow_tracking_root(allowed_root)
     )

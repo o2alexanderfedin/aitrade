@@ -274,3 +274,23 @@ def test_record_look_is_race_safe_under_real_concurrency(tracking_root):
     assert look_count("cr01-mid", "val_race", tracking_root=str(tracking_root)) == 1, (
         "the race is closed only if the durable count matches the single winner"
     )
+
+
+# --------------------------------------------------------------------------
+# 05-REVIEW.md WR-04: filter_string values are validated BEFORE any MLflow
+# query, not spliced in raw
+# --------------------------------------------------------------------------
+
+
+def test_look_count_refuses_a_hostile_segment_name_before_any_query(tracking_root):
+    hostile = "val' or tags.segment_name != 'x"
+    with pytest.raises(BudgetError, match="filter_string"):
+        look_count("mid-1", hostile, tracking_root=str(tracking_root))
+
+
+def test_look_count_refuses_a_hostile_segment_manifest_id_before_any_query(
+    tracking_root,
+):
+    hostile = "mid' or '1'='1"
+    with pytest.raises(BudgetError, match="filter_string"):
+        look_count(hostile, "val_s1", tracking_root=str(tracking_root))

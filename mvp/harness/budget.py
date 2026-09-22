@@ -67,6 +67,7 @@ import contextlib
 import fcntl
 import hashlib
 import os
+import re
 import sqlite3
 from pathlib import Path
 
@@ -110,6 +111,38 @@ MLFLOW_STORE_REQUIRED_TABLES: frozenset[str] = frozenset(
 )
 
 _SQLITE_HEADER = b"SQLite format 3\x00"
+
+#: Every value `look_count` splices into an MLflow `filter_string` today
+#: is either a sha256 hex digest (`segment_manifest_id`) or an internally
+#: -generated name (`segment_name`, `oof_block_N`/`val_s1`-shaped, from
+#: `_validate_5seg`/`_validate_compressed_3seg_shape`'s own fixed
+#: vocabulary) -- this pattern accepts both with room to spare, and
+#: rejects anything containing a quote, backslash, or other character
+#: that could alter the filter DSL a future, less disciplined caller
+#: passes through.
+_FILTER_SAFE_RE = re.compile(r"^[A-Za-z0-9_.\-]+$")
+
+
+def _require_filter_safe(value: str, label: str) -> None:
+    """Refuse (`BudgetError`) a value about to be spliced into an MLflow
+    `filter_string` via raw f-string interpolation (05-REVIEW.md WR-04).
+
+    `segment_manifest_id`/`segment_name` are constrained to a fixed,
+    validated vocabulary at manifest-issuance time TODAY -- but that
+    constraint lives in the CALLER's discipline, not in `look_count`
+    itself. A future caller (a hand-rolled debugging script, or a later
+    phase that lets a human type a segment name) passing a value
+    containing a `'` could corrupt the filter: best case a syntax error
+    MLflow surfaces, worst case a broader-than-intended match that
+    silently reports the wrong `look_count` -- under- or over-counting a
+    budget. Checked BEFORE any MLflow client is constructed, so a rejected
+    value never even reaches a query."""
+    if not _FILTER_SAFE_RE.match(value):
+        raise BudgetError(
+            f"look_count: {label} {value!r} contains a character outside "
+            f"{_FILTER_SAFE_RE.pattern} -- refusing to splice it into an "
+            "MLflow filter_string unescaped (05-REVIEW.md WR-04)"
+        )
 
 
 def _require_initialised_mlflow_store(store_file: Path) -> None:
@@ -225,6 +258,8 @@ def look_count(
     "the query succeeded and found nothing", never "the query could not be
     run".
     """
+    _require_filter_safe(segment_manifest_id, "segment_manifest_id")
+    _require_filter_safe(segment_name, "segment_name")
     _require_canonical_tracking_root(
         tracking_root, lake_paths.mlflow_tracking_root(allowed_root)
     )

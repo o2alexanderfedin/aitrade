@@ -65,6 +65,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import socket
 import sqlite3
 import time
@@ -201,6 +202,30 @@ MLFLOW_STORE_REQUIRED_TABLES: frozenset[str] = frozenset(
 
 _SQLITE_HEADER = b"SQLite format 3\x00"
 
+#: Duplicated from `harness.budget`/`harness.negative_log` (05-PATTERNS.md:
+#: a private helper with a real behavioural contract, copied rather than
+#: cross-imported). Unlike a segment name or a config fingerprint,
+#: `token_id` IS human-chosen at `issue_token` call time -- this is the
+#: module with the LARGEST exposure to 05-REVIEW.md WR-04's own finding
+#: (unescaped f-string interpolation into an MLflow `filter_string`), even
+#: though the review named only `harness.budget`/`harness.negative_log`;
+#: fixed here too, per the project's own standing rule that every error
+#: found gets fixed, not only the ones named.
+_FILTER_SAFE_RE = re.compile(r"^[A-Za-z0-9_.\-]+$")
+
+
+def _require_filter_safe(value: str, label: str) -> None:
+    """Refuse (`LockboxTokenError`) a value about to be spliced into an
+    MLflow `filter_string` via raw f-string interpolation -- see
+    `harness.budget._require_filter_safe`'s identically named function for
+    the full rationale. Checked BEFORE any MLflow client is constructed."""
+    if not _FILTER_SAFE_RE.match(value):
+        raise LockboxTokenError(
+            f"{label} {value!r} contains a character outside "
+            f"{_FILTER_SAFE_RE.pattern} -- refusing to splice it into an "
+            "MLflow filter_string unescaped (05-REVIEW.md WR-04)"
+        )
+
 
 def _require_initialised_mlflow_store(store_file: Path) -> None:
     """Refuse (`LockboxTokenError`) a `mlflow.db` that is not an already
@@ -317,6 +342,7 @@ def _mlflow_has_consumed(
     tell "never consumed" from "history destroyed". Either signal alone
     still catches it. Documented in `data/lockbox_POLICY.md`.
     """
+    _require_filter_safe(token_id, "token_id")
     _require_canonical_tracking_root(
         tracking_root, lake_paths.mlflow_tracking_root(allowed_root)
     )

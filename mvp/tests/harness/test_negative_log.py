@@ -219,3 +219,17 @@ def test_warn_if_already_negative_propagates_a_query_failure(tmp_path):
     # (NegativeLogError's own base class) must fail this assertion.
     assert exc_info.type is NegativeLogError
     assert "mlflow.db" in str(exc_info.value)
+
+
+# --------------------------------------------------------------------------
+# 05-REVIEW.md WR-04: filter_string values are validated BEFORE any MLflow
+# query, not spliced in raw
+# --------------------------------------------------------------------------
+
+
+def test_query_negative_results_refuses_a_hostile_config_fingerprint(tracking_root):
+    hostile = "fp' or tags.stage != 'x"
+    with pytest.raises(NegativeLogError, match="filter_string"):
+        query_negative_results(
+            tracking_root=str(tracking_root), config_fingerprint=hostile
+        )
