@@ -43,6 +43,7 @@ Listed roughly in the order they were given. Each is the human input that trigge
 - [Feature catalogue](#feature-catalogue)
 - [Label catalogue](#label-catalogue)
 - [Decision rule (Stage 2)](#decision-rule-stage-2)
+- [Simulator](#simulator)
 - [DOs](#dos)
 - [DONTs](#donts)
 - [Known HFT/MFT pitfalls](#known-hftmft-pitfalls)
@@ -190,6 +191,175 @@ expressed in price units at the current midprice.
 
 This is the authoritative decision rule. Phase 6's oracle tests re-derive Stage-2 P&L
 from this exact rule, not from `mvp.md`'s struck pseudocode.
+
+---
+
+## Simulator
+
+Phase 6's event-driven simulator (`mvp/sim/`) operationalizes the decision rule above as a
+SEQUENTIAL, integer-only, flip-only state machine over decision rows: one `@njit(cache=True)`
+kernel (`sim/kernel.py`), a pure-Python twin sharing no code with it (`sim/reference.py`), and a
+thin polars→numpy boundary (`sim/arrays.py`) that converts `bid_price`/`ask_price` to ticks and
+refuses any null column before the kernel ever sees it (D-06-01/D-06-15). It takes predictions
+as a parameter (`pred`, aligned row-for-row with the decision rows) — no model exists before
+Phase 7; every number in this section is measured against the four oracles below (D-06-09,
+SIM-02), never against a real model's output.
+
+### Tick constant and rounding
+
+The BTCUSDT perpetual futures tick is exactly **0.1 USDT**, measured (not assumed) as the gcd of
+every positive `bid_price`/`ask_price` difference across the first 2,000,000 rows of the real
+2026-09-13 curated `bookTicker` partition: `TICK_SIZE_SCALED = 10_000_000` (0.1 USDT at
+`PRICE_SCALE = 100_000_000`, the same 1e-8 fixed-point idiom `data/time_ns.py`'s `QTY_SCALE`
+already uses). The venue lot step is **0.001 BTC** (`LOT_STEP_SCALED = 100_000`), independently
+confirmed as the gcd of `trade.qty`, `bid_qty`, and `ask_qty` on the same partition — all three
+agree exactly (06-RESEARCH.md Q1). `price_to_ticks` converts a raw price to an int64 tick count
+via `round(price * PRICE_SCALE) // TICK_SIZE_SCALED`, asserting a round-trip within half a tick
+on every value — measured against all 34,334,580 real `bid_price`/`ask_price` values on
+2026-09-13, the maximum round-trip error is `1.455e-11`, and every one of four candidate rounding
+expressions (`np.round(price/0.1)`, `np.round(price*10)`, and two int64-scaled forms) agree
+bit-for-bit on every row (06-RESEARCH.md Q2) — there is no accuracy tradeoff among them, only a
+style one, and the codebase already has a style (`sim/ticks.py::price_to_ticks`).
+
+### Quantised threshold comparison
+
+`pred_mid` and `X_price` are converted to int64 ticks before either side of the decision-rule
+comparison is evaluated, so the entire trigger decision is integer (D-06-06/D-06-07) — no float
+ever reaches position, quantity, or P&L accounting. `X_price` is quantised as ONE formula,
+`x_ticks = (bid_ticks + ask_ticks) * x_bps // 20_000`, applied identically as `+x_ticks` on the
+long side and `-x_ticks` on the short side.
+
+`pred` (a raw price, the same scale as `bid_price`/`ask_price`, not already tick-exact the way
+bid/ask are) is quantised with a rule that is **symmetric by direction**, not by a shared value:
+the long trigger gates on `floor(pred)` (`s // TICK_SIZE_SCALED`), the short trigger gates on
+`ceil(pred)` (`-((-s) // TICK_SIZE_SCALED)`), each rounding AGAINST the trade it gates. A
+prediction sitting exactly on a half-tick boundary therefore triggers NEITHER direction — the
+conservative reading of D-06-07's own stated cost, "the rule becomes crosses by at least one
+tick beyond the threshold." An earlier version of this kernel shared a single round-half-up
+`pred_ticks` between both comparisons; because perfect-foresight `pred` sits exactly on a
+half-tick boundary 99.96% of the time on a real day (the mid of a one-tick spread always does),
+that shared value's tie-goes-up behaviour made the long side systematically easier to trigger
+than the short side — measured directly on the real 2026-09-13 v2 partition (6,864,853 decision
+rows): the asymmetric rule produced 1,924,947 long-triggering rows against 1,897,533
+short-triggering rows (a 1.44% long excess), and the fix (this section's rule) reduces the long
+count to 1,868,904 while leaving the short count exactly unchanged (short-side ties round the
+same way under both rules) — closing the mechanism-driven bias. This changed the measured
+real-day perfect-foresight ceiling from 2,212 trades / 293,844 closed_pnl_ticks (asymmetric rule)
+to **2,192 trades / 294,554 closed_pnl_ticks** (symmetric rule) — an exact match to
+06-RESEARCH.md Q3/Q4/Q5's own independently-computed prototype baseline.
+
+06-RESEARCH.md Q4's cost table (measured against a comparison consistent with this symmetric
+rule, X_bps=0/1/5) quantifies the accepted cost of quantising the comparison to ticks at all
+(versus comparing raw, unquantised floats): dozens of trades differ per day at tight thresholds
+(44 trades at X_bps=0, 2.0%), but the P&L impact stays under 0.5% at every threshold measured
+(-0.45% at X_bps=0). This table was not independently re-verified at X_bps=1/5 against the
+current (post-fix) kernel; only the X_bps=0 figure was.
+
+### Position sizing and the $100/lot-step dead zone
+
+Quantity is `floor(max_notional / price / lot_step) * lot_step`, recomputed FRESH at every
+entry and flip from the CURRENT fill price — never from a position's original entry price
+(D-06-08, 06-RESEARCH.md Q13's resolution of the ambiguity in `mvp.md`'s wording). At the MVP
+defaults (`MAX_NOTIONAL_SCALED` = $100, `LOT_STEP_SCALED` = 0.001 BTC), this floors to **zero
+lots for any BTC price above $100,000**. The kernel refuses loudly (`STATUS_ZERO_LOT`) rather
+than silently trading a zero quantity — a run with no trades is otherwise indistinguishable from
+a strategy that found no signal (D-06-20).
+
+This project's own captured data has never crossed that threshold: the 2026-09-13 partition's
+observed price range is $76,458.90–$77,427.40, and 06-RESEARCH.md's own measurement (Q1) puts
+that day's median at $77,061.35 — one lot, notional $77.06, comfortably below the dead zone. The
+refusal has therefore not yet fired on real data. A future pool day crossing $100,000 is a live
+risk flagged explicitly for Phase 9's threshold sweep (06-RESEARCH.md Open Question 2): at
+minimum, any oracle suite run against a new day should assert the lot size stays nonzero at that
+day's own price range before trusting a flat P&L as "no signal" rather than "silently refused
+and never actually simulated."
+
+### The four oracles
+
+D-06-09 names four oracles, each catching something the others cannot (D-06-10's own
+anti-vacuity rule: every oracle asserts an exact trade count, never merely `>= 0`):
+
+1. **Hand-computed scenario** (`tests/sim/test_oracles.py`, `tests/sim/test_path_dependence.py`)
+   — a 4-row fixture (06-RESEARCH.md Q7) worked out by hand in the test docstring, including a
+   flip and a no-trade row: `trades=3 flips=2 closed_pnl_ticks=4`. An adjacent-row swap of this
+   same fixture proves path dependence (D-06-11): `trades=2 flips=1 closed_pnl_ticks=1`.
+2. **Perfect foresight** (`pred = mid * (1 + ret_10s_mid)`, the label column) — the ceiling
+   every real model (Phase 7+) is compared against. On the real, schema-v2 2026-09-13 partition
+   (6,864,853 decision rows, `X_bps=0`, 0 rows dropped for label nullity): **`trades=2192
+   flips=2191 closed_pnl_ticks=294554`** (`$29.4554` actually realized at the traded 0.001-BTC
+   lot — NOT `$29,455.40`, which is research's own per-1-BTC convention; see "Outputs" below for
+   why the unit distinction matters). Proven bit-for-bit identical whether computed from the v2
+   manifest's own `mid`/`ret_10s_mid` or from v1's (`pred_v1 == pred_v2` bitwise, both manifests'
+   `ret_10s_mid` non-null on every one of this day's rows).
+3. **Zero prediction** (`pred = mid` exactly) — zero trades, zero P&L, proven STRUCTURALLY, not
+   just empirically: whenever `spread > 0`, `floor(mid)` is strictly less than `ask_ticks` and
+   `ceil(mid)` is strictly greater than `bid_ticks` (both as integers), so neither trigger can
+   ever fire, for any spread, not merely the ones a hypothesis sweep happens to generate.
+4. **Pure-Python twin** (`sim/reference.py::run_reference_sim`) — shares no arithmetic, buffer,
+   or state representation with the kernel; proven bitwise-identical to it via a hypothesis
+   sweep over randomly generated decision sequences, including — since the 2026-09-24
+   quantisation fix — predictions landing on both exact ticks and exact half-ticks (the dominant
+   real-day case).
+
+### Outputs: trade log, equity curve, counters
+
+A run returns a trade log (`etime`, `side`, `price_ticks`, `qty_scaled`, `position_after` — one
+row per fill), an equity curve (one int64 value per decision row, marked at `bid_ticks` for a
+long position / `ask_ticks` for a short, never a rounded mid), and three named counters
+(`trades`, `flips`, `rows_in_market`) — exactly what EVAL-05 (Phase 9) needs and nothing more
+(D-06-13). The trade log is preallocated at `n_decision_rows` (the only bound provable without
+assuming anything about a caller's prediction quality — a zero-skill predictor was measured
+trading 1,881,760 times on one real day, 858x the perfect-foresight count, 06-RESEARCH.md Q3),
+and its unfilled tail past `fill_count` is UNINITIALISED MEMORY: any caller that hashes or
+compares a trade log must slice every column to `[:fill_count]` first — `SimResult` names
+`fill_count` as its own field specifically so a caller cannot reach the trade log without also
+seeing the one number that makes reading it safe.
+
+This preallocation costs ≈275 MB for one day's trade log (6,864,853 rows × 8 bytes × 5
+int64/int8 columns) and ≈2.27 GiB for the current 7-day pool if ever run as a single
+preallocation — cheap at this phase's per-day, per-oracle scale, but flagged explicitly for
+Phase 9's Optuna threshold sweep, which would repeat this allocation once per trial, potentially
+dozens to hundreds of times (06-RESEARCH.md Q3's own recommendation: revisit the
+capped-array-with-explicit-overflow-guard pattern `features/kernel.py`'s `RING_CAPACITY` already
+established, sized per-run rather than reallocated at the full safe bound on every trial).
+
+`realized_pnl_scaled`/`out_equity_scaled` are an internal, exactly-reproducible integer
+accounting unit — ticks times `QTY_SCALE`-scaled BTC quantity — not yet a reported USD figure.
+Converting it requires knowing the lot size: at this project's traded 0.001-BTC lot,
+`closed_pnl_ticks * 0.1 * 0.001` is the actual realized USD (`$29.4554` for the real-day
+ceiling above); `closed_pnl_ticks * 0.1` alone is a DIFFERENT, easily-confused figure — the P&L
+at a full 1-BTC lot, not the 0.001-BTC lot this project actually trades — and appears in
+06-RESEARCH.md's own text under a "per one-lot" label that is mislabeled (it is per-1-BTC).
+Both figures are worth stating explicitly whenever this ceiling is cited, to avoid a 1000x
+misreading.
+
+### Determinism guarantee
+
+Every run is bit-identical: the same fixed (non-random) input, run twice in the same process and
+once in a fresh subprocess with its own `NUMBA_CACHE_DIR`, hashes identically via
+`hashlib.sha256(dtype.str + shape-as-bytes + arr.tobytes())` over the trade log (sliced to
+`[:fill_count]`), the equity curve, and the three counters, in one fixed declared column order
+(D-06-14, 06-RESEARCH.md Q8). A dedicated sentinel-poked-tail test proves the slicing discipline
+is load-bearing: hashing the UNSLICED trade log is sensitive to the uninitialised tail (two
+otherwise-identical runs hash differently), while the sliced hash `_hash_result` actually uses is
+not. Numba's `cache=True` compilation artifacts were independently measured byte-identical
+across two fresh subprocesses on this machine (06-RESEARCH.md Q8) — the cross-process guarantee
+is relied on, not merely hoped for.
+
+### Schema v2 migration
+
+The simulator's decision rule needs the best bid and ask directly; the feature tier's schema
+before this phase carried only `mid`, and reconstructing bid/ask as `mid ∓ half a tick` is wrong
+on 2.5% of real rows (the spread is wider than one tick that often). `FEATURE_SCHEMA_VERSION`
+moved 1 → 2, adding `bid_price`/`ask_price` as `BOOKKEEPING_COLUMNS` — raw observed state, like
+`etime`, not a catalogued feature with an information set (`spec/features.toml` is untouched by
+this migration; `check_spec_diff` sees zero catalogue drift). All 7 real BTCUSDT feature days
+(2026-09-12..18, 60,926,503 decision rows) were rebuilt at schema v2, additively beside the
+untouched v1 partitions (write-once semantics never overwrite a committed manifest). The rebuild
+is its own regression proof: the v1-vs-v2 label diff is measured at exactly 249 cells (180
+`ret_1s_mid`, 69 `ret_10s_mid`), matching Phase 5's independently-computed errata manifest
+cell-for-cell, and confined to 2026-09-12/13 as required — proving the migration changed only
+what it was supposed to change.
 
 ---
 
@@ -532,3 +702,4 @@ after a metric has already been reported.
 | --- | --- | --- | --- |
 | *seed* | Initial spec extracted from `mvp.md` Stage 0 | First version | TBD |
 | 2026-09-13 | Stage 0 corrections: decision rule, spot-L1 exception, side-exactness, Sharpe convention, MLflow tag schema, numba no-globals rule; catalogue markers added | SPEC-03/SPEC-04 | Claude (session) |
+| 2026-09-24 | Simulator section added: tick constant/rounding, quantised threshold comparison (including the 2026-09-24 symmetric floor/ceil fix), position sizing and the $100k dead zone, the four oracles, outputs/memory cost, determinism guarantee, schema-v2 migration note | SIM-01/02/03, Phase 6 close | Claude (session) |
