@@ -409,14 +409,29 @@ def test_reference_resumes_mid_stream_with_identical_output(chunk):
             ),
             *(
                 out[name][start:stop]
-                for name in ("mid", "imb_top", "ofi", "trade_flow")
+                for name in (
+                    "mid",
+                    "bid_price",
+                    "ask_price",
+                    "imb_top",
+                    "ofi",
+                    "trade_flow",
+                )
             ),
             out["warmup"][start:stop],
             state,
         )
         assert status == STATUS_OK
 
-    for name in ("mid", "imb_top", "ofi", "trade_flow", "warmup"):
+    for name in (
+        "mid",
+        "bid_price",
+        "ask_price",
+        "imb_top",
+        "ofi",
+        "trade_flow",
+        "warmup",
+    ):
         assert np.array_equal(whole[name], out[name], equal_nan=name != "warmup"), name
 
 

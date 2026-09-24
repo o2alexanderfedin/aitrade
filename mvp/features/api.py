@@ -108,6 +108,8 @@ FEATURE_PASS_SCHEMA: dict[str, pl.DataType] = {
     "etime": pl.Int64,
     "decision_source_rank": pl.Int8,
     "decision_seq": pl.Int64,
+    "bid_price": pl.Float64,
+    "ask_price": pl.Float64,
     **{name: pl.Float64 for name in FEATURE_COLUMNS},
     "warmup": pl.Boolean,
 }
@@ -121,7 +123,7 @@ _EMITTED_FROM_EVENTS = {
     "decision_source_rank": "source_rank",
     "decision_seq": "seq",
 }
-_EMITTED_FROM_OUTPUTS = (*FEATURE_COLUMNS, "warmup")
+_EMITTED_FROM_OUTPUTS = (*FEATURE_COLUMNS, "bid_price", "ask_price", "warmup")
 
 
 class NormalizationRequiredError(ValueError):

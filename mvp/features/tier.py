@@ -80,7 +80,7 @@ __all__ = [
     "load_features",
 ]
 
-FEATURE_SCHEMA_VERSION = 1
+FEATURE_SCHEMA_VERSION = 2
 
 # Every catalogue name below is a LITERAL argument to get_feature/get_label:
 # `tools/check_catalogue_completeness.py` rejects a dynamically-constructed
@@ -119,6 +119,8 @@ BOOKKEEPING_COLUMNS: frozenset[str] = frozenset(
         "etime",
         "decision_source_rank",
         "decision_seq",
+        "bid_price",
+        "ask_price",
         "warmup",
         "post_gap_warmup",
         "schema_version",
@@ -138,6 +140,8 @@ FEATURE_ROW_SCHEMA: dict[str, pl.DataType] = {
     "etime": pl.Int64,
     "decision_source_rank": pl.Int8,
     "decision_seq": pl.Int64,
+    "bid_price": pl.Float64,
+    "ask_price": pl.Float64,
     **{name: pl.Float64 for name in FEATURE_COLUMNS},
     **{name: pl.Float64 for name in LABEL_COLUMNS},
     "warmup": pl.Boolean,
@@ -146,20 +150,53 @@ FEATURE_ROW_SCHEMA: dict[str, pl.DataType] = {
 }
 
 
+def _part_glob(version: int) -> str:
+    """The write-once existence-check glob for schema `version` (D-06-18,
+    mirrored by `data/dq/feature_checks.py:feature_build_stats_path`'s
+    identical versioning rule).
+
+    Version 1 keeps the historical bare `"part-*.parquet"` pattern: those
+    files are already committed and immutable, and this function must keep
+    matching the exact shape they were written under. Version >= 2 returns
+    a version-scoped `f"part-v{version}-*.parquet"`.
+
+    THIS IS NOT A SYMMETRIC, MUTUALLY-EXCLUSIVE PAIR OF PATTERNS. `"part-
+    *.parquet"` (v1's glob) also matches a v2 file like
+    `"part-v2-123.parquet"` -- the glob wildcard `*` matches the literal
+    substring `"v2-123"`. What actually makes coexistence safe is
+    ONE-DIRECTIONAL: v2's SCOPED glob `"part-v2-*.parquet"` does NOT match
+    v1's bare-named file (no `"part-v2-"` prefix), so a v2 write never sees
+    v1's file and never refuses on its account. v1's unscoped glob would
+    incorrectly see a v2 file if `_part_glob(1)` were ever called again in a
+    directory that already has a v2 file -- but it never is, because
+    `FEATURE_SCHEMA_VERSION` moves forward permanently once bumped, and
+    every future write reads today's (now-current) version, never an
+    explicit `1`. The real, load-bearing invariant is: v1's bytes are never
+    rewritten (this module never calls `_part_glob(1)` from
+    `write_feature_partition` again), and v2's glob is what makes a v2
+    write ignore v1's presence -- not a mutual, symmetric exclusion.
+    """
+    if version == 1:
+        return "part-*.parquet"
+    return f"part-v{version}-*.parquet"
+
+
 def feature_partition_path(lake_root: Path, symbol: str, date: str) -> Path:
-    """`lake_root/features/symbol=<symbol>/date=<date>/part-<ns>.parquet`.
+    """`lake_root/features/symbol=<symbol>/date=<date>/part-<ns>.parquet`
+    at schema version 1, or `.../part-v<version>-<ns>.parquet` at version
+    >= 2 (D-06-18) -- read from `FEATURE_SCHEMA_VERSION` at call time, since
+    there is exactly one current version at any time.
 
     No `stream=` level, deliberately: a decision row is the merge of BOTH
     curated streams, and a per-stream path would invite a per-stream read
     that cannot exist.
     """
-    return (
-        Path(lake_root)
-        / FEATURES_TIER
-        / f"symbol={symbol}"
-        / f"date={date}"
-        / f"part-{time.time_ns()}.parquet"
+    name = (
+        f"part-{time.time_ns()}.parquet"
+        if FEATURE_SCHEMA_VERSION == 1
+        else f"part-v{FEATURE_SCHEMA_VERSION}-{time.time_ns()}.parquet"
     )
+    return Path(lake_root) / FEATURES_TIER / f"symbol={symbol}" / f"date={date}" / name
 
 
 #: The name a partition is written under BEFORE its manifest exists
@@ -300,7 +337,7 @@ def write_feature_partition(
     converted = _nan_to_null(df)
 
     final_path = feature_partition_path(lake_root, symbol, date)
-    existing = sorted(final_path.parent.glob("part-*.parquet"))
+    existing = sorted(final_path.parent.glob(_part_glob(FEATURE_SCHEMA_VERSION)))
     if existing:
         raise FileExistsError(
             f"feature partition {final_path.parent} already has a written part "

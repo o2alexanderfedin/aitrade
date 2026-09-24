@@ -182,13 +182,18 @@ STATUS_MESSAGES: dict[int, str] = {
 }
 
 #: The kernel's output columns. The first four are catalogue feature names
-#: (`spec/features.toml`); `warmup` is the D-04-09 flag that travels with
-#: the row.
+#: (`spec/features.toml`); `bid_price`/`ask_price` are BOOKKEEPING outputs
+#: mirroring the prevailing quote (D-06-17) -- raw observed state, not a
+#: derived quantity with an information set, so they are never passed to
+#: `spec.catalogue`; `warmup` is the D-04-09 flag that travels with the row,
+#: and stays last.
 FEATURE_OUTPUT_NAMES: tuple[str, ...] = (
     "mid",
     "imb_top",
     "ofi",
     "trade_flow",
+    "bid_price",
+    "ask_price",
     "warmup",
 )
 
@@ -264,6 +269,8 @@ def new_outputs(n: int) -> dict[str, np.ndarray]:
         "imb_top": np.empty(n, dtype=np.float64),
         "ofi": np.empty(n, dtype=np.float64),
         "trade_flow": np.empty(n, dtype=np.float64),
+        "bid_price": np.empty(n, dtype=np.float64),
+        "ask_price": np.empty(n, dtype=np.float64),
         "warmup": np.empty(n, dtype=np.bool_),
     }
 
@@ -278,6 +285,8 @@ def run_reference(
     trade_qty,
     trade_side,
     out_mid,
+    out_bid,
+    out_ask,
     out_imb,
     out_ofi,
     out_flow,
@@ -355,9 +364,13 @@ def run_reference(
         # --- emit ---
         if state.n_quotes_seen == 0:
             out_mid[i] = _NAN
+            out_bid[i] = _NAN
+            out_ask[i] = _NAN
             out_imb[i] = _NAN
         else:
             out_mid[i] = (state.prev_bid_price + state.prev_ask_price) / 2
+            out_bid[i] = state.prev_bid_price
+            out_ask[i] = state.prev_ask_price
             denominator = state.prev_bid_qty + state.prev_ask_qty
             if denominator == 0.0:
                 state.error_row = i
@@ -408,6 +421,8 @@ def run_reference_checked(
         events["trade_qty"],
         events["trade_side"],
         out["mid"],
+        out["bid_price"],
+        out["ask_price"],
         out["imb_top"],
         out["ofi"],
         out["trade_flow"],

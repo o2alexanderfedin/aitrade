@@ -414,6 +414,8 @@ def build_features_day(
             decision["decision_source_rank"], dtype=pl.Int8
         ),
         "decision_seq": pl.Series(decision["decision_seq"], dtype=pl.Int64),
+        "bid_price": pl.Series(decision["bid_price"], dtype=pl.Float64),
+        "ask_price": pl.Series(decision["ask_price"], dtype=pl.Float64),
         **{
             name: pl.Series(decision[name], dtype=pl.Float64)
             for name in FEATURE_COLUMNS

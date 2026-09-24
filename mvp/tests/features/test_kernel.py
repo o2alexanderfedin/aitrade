@@ -85,7 +85,15 @@ def _raw_call(events, out, state, start, stop):
         *(events[name][start:stop] for name in INPUT_NAMES),
         *(
             out[name][start:stop]
-            for name in ("mid", "imb_top", "ofi", "trade_flow", "warmup")
+            for name in (
+                "mid",
+                "bid_price",
+                "ask_price",
+                "imb_top",
+                "ofi",
+                "trade_flow",
+                "warmup",
+            )
         ),
         ring_t,
         ring_v,
@@ -108,6 +116,38 @@ def test_kernel_matches_the_reference_bitwise(stream):
         assert _same(expected[name], actual[name], name), (
             f"{stream}: {name} differs between the kernel and the reference"
         )
+
+
+def test_kernel_and_reference_emit_bid_and_ask():
+    """D-06-17: `bid_price`/`ask_price` are bookkeeping outputs mirroring the
+    prevailing quote -- bitwise identical between the two implementations on
+    every pinned fixture, and precise enough to reconstruct `mid` exactly
+    (never a half-tick guess) wherever `mid` is defined."""
+    for stream, events in sorted(STREAMS.items()):
+        expected = run_reference_checked(events)
+        actual = run_kernel_checked(events)
+        for name in ("bid_price", "ask_price"):
+            assert _same(expected[name], actual[name], name), (
+                f"{stream}: {name} differs between the kernel and the reference"
+            )
+        mid = expected["mid"]
+        defined = ~np.isnan(mid)
+        reconstructed = expected["bid_price"] + expected["ask_price"]
+        assert np.array_equal(reconstructed[defined], 2 * mid[defined]), (
+            f"{stream}: bid_price + ask_price does not reconstruct 2*mid "
+            "wherever mid is defined"
+        )
+
+
+def test_bid_ask_are_nan_before_first_quote():
+    """The fixture's first event is a trade -- no quote has been seen yet,
+    so `bid_price`/`ask_price` must be NaN at row 0, matching `mid`'s
+    existing NaN-before-first-quote rule."""
+    events = STREAMS["trade_only_before_the_first_quote"]
+    out = run_kernel_checked(events)
+    assert math.isnan(out["bid_price"][0])
+    assert math.isnan(out["ask_price"][0])
+    assert math.isnan(out["mid"][0])
 
 
 def test_the_equivalence_fixtures_cover_every_pinned_shape():
@@ -365,6 +405,8 @@ def test_mismatched_array_lengths_are_refused_not_read_out_of_bounds():
     status = run_kernel(
         *(events[name] for name in INPUT_NAMES),
         out["mid"],
+        out["bid_price"],
+        out["ask_price"],
         out["imb_top"],
         out["ofi"],
         out["trade_flow"],

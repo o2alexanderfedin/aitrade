@@ -128,6 +128,8 @@ def _build_ground_truth_frame(lake_root: Path, registry_root: Path) -> pl.DataFr
         "etime": built.frame["etime"],
         "decision_source_rank": built.frame["decision_source_rank"],
         "decision_seq": built.frame["decision_seq"],
+        "bid_price": built.frame["bid_price"],
+        "ask_price": built.frame["ask_price"],
         **{name: built.frame[name] for name in FEATURE_COLUMNS},
         **{name: pl.Series(labels[name], dtype=pl.Float64) for name in LABEL_COLUMNS},
         "warmup": built.frame["warmup"],

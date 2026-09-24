@@ -207,6 +207,8 @@ def run_kernel(
     trade_qty,
     trade_side,
     out_mid,
+    out_bid,
+    out_ask,
     out_imb,
     out_ofi,
     out_flow,
@@ -243,6 +245,8 @@ def run_kernel(
         or trade_qty.shape[0] != n
         or trade_side.shape[0] != n
         or out_mid.shape[0] != n
+        or out_bid.shape[0] != n
+        or out_ask.shape[0] != n
         or out_imb.shape[0] != n
         or out_ofi.shape[0] != n
         or out_flow.shape[0] != n
@@ -347,9 +351,13 @@ def run_kernel(
         # --- emit ---
         if n_quotes_seen == 0:
             out_mid[i] = np.nan
+            out_bid[i] = np.nan
+            out_ask[i] = np.nan
             out_imb[i] = np.nan
         else:
             out_mid[i] = (prev_bid_price + prev_ask_price) / 2
+            out_bid[i] = prev_bid_price
+            out_ask[i] = prev_ask_price
             denominator = prev_bid_qty + prev_ask_qty
             if denominator == 0.0:
                 status = STATUS_BOTH_TOP_SIZES_ZERO
@@ -428,6 +436,8 @@ def run_kernel_checked(
         events["trade_qty"],
         events["trade_side"],
         out["mid"],
+        out["bid_price"],
+        out["ask_price"],
         out["imb_top"],
         out["ofi"],
         out["trade_flow"],

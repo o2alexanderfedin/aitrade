@@ -391,6 +391,8 @@ def _build_admission_errata_fixture(
         "etime": etimes,
         "decision_source_rank": ranks,
         "decision_seq": list(range(ADMISSION_ROWS)),
+        "bid_price": [70_000.0 + float(i % 97) for i in range(ADMISSION_ROWS)],
+        "ask_price": [70_000.1 + float(i % 97) for i in range(ADMISSION_ROWS)],
     }
     for name in FEATURE_COLUMNS:
         columns[name] = [float(i % 97) for i in range(ADMISSION_ROWS)]

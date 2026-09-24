@@ -23,9 +23,13 @@ from tests.leakage.test_label_information_set import LABEL_NAMES
 
 #: Kernel output columns that are NOT catalogued features. `warmup` is
 #: D-04-09's flag travelling with the row, not a value a model reads; it has
-#: no catalogue entry by design. Anything else appearing in
-#: `FEATURE_OUTPUT_NAMES` is an undeclared feature and fails below.
-NON_FEATURE_OUTPUTS: frozenset[str] = frozenset({"warmup"})
+#: no catalogue entry by design. `bid_price`/`ask_price` are D-06-17's
+#: BOOKKEEPING outputs mirroring the prevailing quote -- raw observed state,
+#: not a derived quantity with an information set, so they too have no
+#: catalogue entry by design (mirroring `features/tier.py`'s
+#: `BOOKKEEPING_COLUMNS`). Anything else appearing in `FEATURE_OUTPUT_NAMES`
+#: is an undeclared feature and fails below.
+NON_FEATURE_OUTPUTS: frozenset[str] = frozenset({"warmup", "bid_price", "ask_price"})
 
 
 def _label_outputs() -> set[str]:
