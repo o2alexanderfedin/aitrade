@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 05-07-PLAN.md (phase close)
-last_updated: "2026-09-24T04:11:19.862Z"
-last_activity: 2026-09-24 -- Phase 6 planning complete
+stopped_at: Completed 06-01-PLAN.md
+last_updated: "2026-09-24T04:59:30.681Z"
+last_activity: 2026-09-24
 progress:
   total_phases: 11
   completed_phases: 5
   total_plans: 36
-  completed_plans: 30
-  percent: 83
+  completed_plans: 31
+  percent: 86
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-10)
 
 **Core value:** A reproducible, leakage-proof two-stage pipeline achieving Net P&L > 0 and annualized Sharpe > 5 on a locked held-out walk-forward window under stated simplifications — produced by a workflow where agentic iteration verifiably improves the model.
-**Current focus:** Phase 5 — Fold Harness & Overfitting Controls
+**Current focus:** Phase 6 — Event-Driven Simulator
 
 ## Current Position
 
-Phase: 5 — COMPLETE
-Plan: 8 of 8
+Phase: 6 (Event-Driven Simulator) — EXECUTING
+Plan: 2 of 7
 Status: Ready to execute
-Last activity: 2026-09-24 -- Phase 6 planning complete
+Last activity: 2026-09-24
 
-Progress: [██████████] 100%
+Progress: [█████████░] 86%
 
 > That 100% is `state.update-progress`'s definition -- SUMMARY files over PLAN files on disk (22 summaries over 21 plans, capped at 100%). Every one of the 21 plans now has a summary; the 22nd is `03-07-GAPS-SUMMARY.md`, which has no plan of its own. It is NOT milestone completion: phases 5-11 have no plans on disk yet, and 3 of 11 phases are marked complete -- Phase 4's seven plans are all executed, and the phase closes at its verification/merge step, exactly as Phases 1-3 did.
 
@@ -76,6 +76,7 @@ Progress: [██████████] 100%
 | Phase 05 P06 | 55min | 1 tasks | 4 files |
 | Phase 05 P03 | 11min | 2 tasks | 10 files |
 | Phase 05 P07 | 70min | 3 tasks | 12 files |
+| Phase 06 P01 | 41min | 3 tasks | 18 files |
 
 ## Accumulated Context
 
@@ -160,6 +161,9 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-07: admission.counts is derived by issue_segment_manifest at issuance, never caller-supplied (supersedes plan prose per orchestrator absolute_rules)
 - [Phase 05]: 05-07: guardrail Rule 5 vacuity check is scoped per-directory across manifests/segments/errata, with a global fallback if none exist at all
 - [Phase 05]: 05-07: first real segment manifest's held_out is the zero-width sentinel [covered_end_ns, covered_end_ns) since no held-out day exists among the three original built days
+- [Phase 06]: Tasks 1+2 landed in one commit (8aade50), not two: the pre-commit hook runs the full pytest suite with no --no-verify escape, and FEATURE_PASS_SCHEMA (Task 1) carrying bid_price forces build.py/FEATURE_ROW_SCHEMA (Task 2) to carry it too or test_the_built_partition_matches_features_api_bit_for_bit fails
+- [Phase 06]: check_harness_accessor_only.py's D-05-15 guardrail gained a fifth sanctioned test file (tests/dq/test_report.py) rather than routing 06-01's new load_features regression test through harness.accessor.materialize, which would need a full segment-manifest fixture from an unrelated subsystem
+- [Phase 06]: feature_build_stats_path (data/dq/feature_checks.py) reads features.tier.FEATURE_SCHEMA_VERSION via a module import, never a from-import, so a test that monkeypatches the global is not silently defeated by an import-time binding
 
 ### Pending Todos
 
@@ -194,7 +198,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-22T11:34:34.264Z
-Stopped at: Completed 05-07-PLAN.md (phase close)
+Last session: 2026-09-24T04:59:30.674Z
+Stopped at: Completed 06-01-PLAN.md
 Resume file: None
 Resumed: 2026-09-19 -- session restored at the Phase 4/5 boundary. Verified live, not read: develop at 9898e4d clean and level with origin, no PLAN without a SUMMARY, capture daemon PID 72546 alive at 2d14h, SleepDisabled=1 (the LaunchDaemon is holding), 844 GiB free. HANDOFF.json kept until Phase 5 actually starts.

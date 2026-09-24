@@ -149,7 +149,7 @@ Plans:
 
 Plans:
 **Wave 1**
-- [ ] 06-01-PLAN.md — Schema v2 migration code: kernel/reference/api emit bid_price/ask_price, tier.py version-scoped write-once identity, DQ-report multi-manifest fix (fixture-only)
+- [x] 06-01-PLAN.md — Schema v2 migration code: kernel/reference/api emit bid_price/ask_price, tier.py version-scoped write-once identity, DQ-report multi-manifest fix (fixture-only)
 - [ ] 06-02-PLAN.md — mvp/sim/ticks.py: tick constant + round-trip proof, lot-step measurement, $100-cap zero-lot dead zone
 
 **Wave 2** *(blocked on Wave 1 completion)*
@@ -235,7 +235,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 3. Data Layer — Backfill, Ingest & Lockbox | 7/6 | Complete    | 2026-09-17 |
 | 4. Feature & Label Engine | 7/7 | Complete    | 2026-09-19 |
 | 5. Fold Harness & Overfitting Controls | 3/8 | In Progress|  |
-| 6. Event-Driven Simulator | 0/TBD | Not started | - |
+| 6. Event-Driven Simulator | 1/7 | In Progress|  |
 | 7. Regression Track & Vertical Slice | 0/TBD | Not started | - |
 | 8. Trees, Transformer & v0 Gate | 0/TBD | Not started | - |
 | 9. Stage 2 Monetization & v1 Gate | 0/TBD | Not started | - |
