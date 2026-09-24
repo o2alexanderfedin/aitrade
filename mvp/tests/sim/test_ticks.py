@@ -28,8 +28,10 @@ from data.store import by_date_index_path, resolve_manifest
 from data.time_ns import QTY_SCALE
 from sim.ticks import (
     LOT_STEP_SCALED,
+    MAX_NOTIONAL_SCALED_INT64_BOUND,
     PRICE_SCALE,
     TICK_SIZE_SCALED,
+    NotionalOverflowError,
     ZeroLotError,
     position_size_ticks,
     price_to_ticks,
@@ -172,6 +174,28 @@ def test_position_size_raises_zero_lot_error_above_100k():
 
     price_ticks_at = int(price_to_ticks(np.array([100_000.0]))[0])
     assert position_size_ticks(price_ticks_at) == LOT_STEP_SCALED
+
+
+def test_position_size_at_the_int64_overflow_bound_succeeds_one_tick_over_raises():
+    """WR-01 (06-REVIEW.md): `MAX_NOTIONAL_SCALED_INT64_BOUND`'s own
+    docstring derives the exact boundary -- `max_notional_scaled *
+    QTY_SCALE` fits int64 at the bound, and overflows it one scaled unit
+    past the bound. `price_ticks=1` keeps the division trivial (no
+    zero-lot floor anywhere near this notional), so the ONLY thing this
+    test exercises is the overflow guard itself."""
+    price_ticks = 1
+
+    qty_at_bound = position_size_ticks(
+        price_ticks, max_notional_scaled=MAX_NOTIONAL_SCALED_INT64_BOUND
+    )
+    assert qty_at_bound > 0  # a real, non-zero-lot fill -- not vacuous
+
+    with pytest.raises(
+        NotionalOverflowError, match=str(MAX_NOTIONAL_SCALED_INT64_BOUND + 1)
+    ):
+        position_size_ticks(
+            price_ticks, max_notional_scaled=MAX_NOTIONAL_SCALED_INT64_BOUND + 1
+        )
 
 
 @settings(deadline=None, max_examples=300, suppress_health_check=[HealthCheck.too_slow])

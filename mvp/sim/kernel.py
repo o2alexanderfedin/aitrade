@@ -154,6 +154,7 @@ from sim.outputs import SimResult, new_trade_log
 from sim.ticks import (
     LOT_STEP_SCALED,
     MAX_NOTIONAL_SCALED,
+    MAX_NOTIONAL_SCALED_INT64_BOUND,
     PRICE_SCALE,
     TICK_SIZE_SCALED,
 )
@@ -165,6 +166,7 @@ __all__ = [
     "STATUS_ZERO_LOT",
     "STATUS_TRADE_LOG_OVERFLOW",
     "STATUS_NEGATIVE_PRED",
+    "STATUS_NOTIONAL_OVERFLOW",
     "STATUS_MESSAGES",
     "STATE_I64_SLOTS",
     "SimStatusError",
@@ -183,6 +185,7 @@ STATUS_NON_FINITE_PRED: int = -2
 STATUS_ZERO_LOT: int = -3
 STATUS_TRADE_LOG_OVERFLOW: int = -4
 STATUS_NEGATIVE_PRED: int = -5
+STATUS_NOTIONAL_OVERFLOW: int = -6
 
 STATUS_MESSAGES: dict[int, str] = {
     STATUS_OK: "ok",
@@ -205,6 +208,12 @@ STATUS_MESSAGES: dict[int, str] = {
         "quantisation formulas below are only proven correct for "
         "s >= 0, so a negative scaled prediction is refused loudly "
         "rather than quantised wrongly"
+    ),
+    STATUS_NOTIONAL_OVERFLOW: (
+        "max_notional_scaled exceeds sim.ticks.MAX_NOTIONAL_SCALED_INT64_BOUND "
+        "-- max_notional_scaled * QTY_SCALE would overflow int64 in this "
+        "kernel's inline position-sizing arithmetic (WR-01, 06-REVIEW.md); "
+        "refused before the scan starts rather than wrapped silently"
     ),
 }
 
@@ -291,6 +300,17 @@ def run_sim(
     ):
         state_i64[SLOT_ERROR_ROW] = -1
         return STATUS_ARRAY_LENGTH_MISMATCH
+
+    # WR-01 (06-REVIEW.md): loop-invariant -- max_notional_scaled never
+    # changes mid-scan, so this is checked once, before row 0, rather than
+    # inside the hot loop. sim.ticks.MAX_NOTIONAL_SCALED_INT64_BOUND is the
+    # largest value for which `max_notional_scaled * QTY_SCALE` (this
+    # kernel's own inline mirror of sim.ticks.position_size_ticks, line
+    # ~383 below) does not overflow int64; see that constant's own
+    # docstring for the derivation.
+    if max_notional_scaled > MAX_NOTIONAL_SCALED_INT64_BOUND:
+        state_i64[SLOT_ERROR_ROW] = -1
+        return STATUS_NOTIONAL_OVERFLOW
 
     position = state_i64[SLOT_POSITION]
     entry_price_ticks = state_i64[SLOT_ENTRY_PRICE_TICKS]

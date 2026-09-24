@@ -25,6 +25,7 @@ from hypothesis import strategies as st
 from sim.arrays import sim_arrays
 from sim.kernel import (
     STATE_I64_SLOTS,
+    STATUS_NOTIONAL_OVERFLOW,
     STATUS_TRADE_LOG_OVERFLOW,
     SimStatusError,
     new_state,
@@ -36,8 +37,10 @@ from sim.reference import run_reference_sim
 from sim.ticks import (
     LOT_STEP_SCALED,
     MAX_NOTIONAL_SCALED,
+    MAX_NOTIONAL_SCALED_INT64_BOUND,
     PRICE_SCALE,
     TICK_SIZE_SCALED,
+    NotionalOverflowError,
     position_size_ticks,
     price_to_ticks,
 )
@@ -306,6 +309,88 @@ def test_zero_lot_dead_zone_raises_a_named_status():
     message = str(exc_info.value)
     assert "row 0" in message
     assert "1000010" in message  # names the offending row's ask_ticks
+
+
+def test_notional_overflow_bound_kernel_succeeds_at_bound_raises_one_past_it():
+    """WR-01 (06-REVIEW.md): the kernel's `max_notional_scaled` guard is
+    checked ONCE, before row 0 (loop-invariant) -- so this test uses a
+    row that never triggers a fill at all; if the guard only fired at
+    sizing time this fixture would pass through unnoticed, which is
+    exactly the vacuity this test rules out."""
+    etime = np.array([1], dtype=np.int64)
+    bid_ticks = np.array([100], dtype=np.int64)
+    ask_ticks = np.array([101], dtype=np.int64)
+    pred = np.array([_price_at_ticks(100.5)], dtype=np.float64)  # inside the spread
+
+    ok = run_sim_checked(
+        etime,
+        bid_ticks,
+        ask_ticks,
+        pred,
+        x_bps=0,
+        max_notional_scaled=MAX_NOTIONAL_SCALED_INT64_BOUND,
+    )
+    assert ok.fill_count == 0  # anti-vacuity: confirms no trigger fired
+
+    with pytest.raises(SimStatusError, match="overflow") as exc_info:
+        run_sim_checked(
+            etime,
+            bid_ticks,
+            ask_ticks,
+            pred,
+            x_bps=0,
+            max_notional_scaled=MAX_NOTIONAL_SCALED_INT64_BOUND + 1,
+        )
+    # error_row is -1, matching STATUS_ARRAY_LENGTH_MISMATCH's own
+    # precedent (a parameter-validity refusal, not tied to any one row).
+    assert "status -6" in str(exc_info.value)
+
+    raw_status = run_sim(
+        etime,
+        bid_ticks,
+        ask_ticks,
+        pred,
+        0,
+        MAX_NOTIONAL_SCALED_INT64_BOUND + 1,
+        LOT_STEP_SCALED,
+        0,
+        0,
+        *new_trade_log(1).values(),
+        np.empty(1, dtype=np.int64),
+        new_state(),
+    )
+    assert raw_status == STATUS_NOTIONAL_OVERFLOW
+
+
+def test_notional_overflow_bound_kernel_and_twin_agree_on_an_actual_fill():
+    """The kernel's upfront guard and the twin's at-sizing-time guard
+    (`sim.ticks.position_size_ticks`, which `sim/reference.py` calls
+    directly) both refuse the SAME `max_notional_scaled` when a fill is
+    actually attempted -- the case that matters for P&L correctness."""
+    etime = np.array([1], dtype=np.int64)
+    bid_ticks = np.array([100], dtype=np.int64)
+    ask_ticks = np.array([101], dtype=np.int64)
+    pred = np.array([_price_at_ticks(103)], dtype=np.float64)  # well above ask
+
+    with pytest.raises(SimStatusError, match="overflow"):
+        run_sim_checked(
+            etime,
+            bid_ticks,
+            ask_ticks,
+            pred,
+            x_bps=0,
+            max_notional_scaled=MAX_NOTIONAL_SCALED_INT64_BOUND + 1,
+        )
+
+    with pytest.raises(NotionalOverflowError):
+        run_reference_sim(
+            etime,
+            bid_ticks,
+            ask_ticks,
+            pred,
+            x_bps=0,
+            max_notional_scaled=MAX_NOTIONAL_SCALED_INT64_BOUND + 1,
+        )
 
 
 def test_zero_fee_and_zero_latency_are_true_defaults():

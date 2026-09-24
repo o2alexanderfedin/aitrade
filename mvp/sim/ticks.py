@@ -32,9 +32,11 @@ __all__ = [
     "TICK_SIZE_SCALED",
     "LOT_STEP_SCALED",
     "MAX_NOTIONAL_SCALED",
+    "MAX_NOTIONAL_SCALED_INT64_BOUND",
     "price_to_ticks",
     "position_size_ticks",
     "ZeroLotError",
+    "NotionalOverflowError",
 ]
 
 #: Reuse the project's one 1e-8 fixed-point idiom for prices too (D-06-05,
@@ -57,6 +59,29 @@ LOT_STEP_SCALED: int = 100_000
 #: $100 USD at `PRICE_SCALE` -- the MVP default notional cap (D-06-08,
 #: mvp.md). A caller may override it per call; this is the default only.
 MAX_NOTIONAL_SCALED: int = 100 * PRICE_SCALE
+
+#: WR-01 (06-REVIEW.md): the largest `max_notional_scaled` for which the
+#: intermediate product `max_notional_scaled * QTY_SCALE` -- computed both
+#: here and, inline, by `sim/kernel.py`'s `@njit` mirror -- does not
+#: overflow a signed int64.
+#:
+#: Derivation: the product must satisfy
+#: `max_notional_scaled * QTY_SCALE <= INT64_MAX`, i.e.
+#: `max_notional_scaled <= INT64_MAX // QTY_SCALE`. At
+#: `QTY_SCALE=100_000_000`: `9_223_372_036_854_775_807 // 100_000_000 =
+#: 92_233_720_368` (`PRICE_SCALE`-scaled units) -- `92_233_720_368 /
+#: PRICE_SCALE = $922.34` of notional cap.
+#:
+#: NOTE ON 06-REVIEW.md's OWN WR-01 TEXT: the review's prose says "$922
+#: billion... 9.2 billion times today's $100 MVP default." That arithmetic
+#: stopped at the scaled-units number (`92_233_720_368`) and reported it
+#: directly as a dollar figure, without the second division by
+#: `PRICE_SCALE` needed to leave fixed-point units. The corrected bound
+#: above is ~9.22x today's $100 default, not ~9.2 billion times it --
+#: reachable by a single caller-chosen `max_notional_scaled` far short of
+#: "orders of magnitude", contrary to the review's "not reachable in
+#: practice" framing. See `06-REVIEW-FIX.md` for this correction.
+MAX_NOTIONAL_SCALED_INT64_BOUND: int = (2**63 - 1) // QTY_SCALE
 
 #: The largest discrepancy tolerated between a price and its nearest
 #: `PRICE_SCALE` grid point before it is judged "not representable at this
@@ -126,6 +151,24 @@ def price_to_ticks(price: np.ndarray) -> np.ndarray:
     return ticks
 
 
+class NotionalOverflowError(ValueError):
+    """WR-01: `max_notional_scaled` is large enough that `max_notional_scaled
+    * QTY_SCALE` would overflow int64 -- refused loudly, never silently
+    wrapped. Mirrors `sim/kernel.py`'s `STATUS_NOTIONAL_OVERFLOW`, the
+    `@njit` kernel's equivalent guard on the same bound."""
+
+    def __init__(self, max_notional_scaled: int) -> None:
+        self.max_notional_scaled = max_notional_scaled
+        super().__init__(
+            f"position_size_ticks: max_notional_scaled={max_notional_scaled} "
+            f"exceeds MAX_NOTIONAL_SCALED_INT64_BOUND="
+            f"{MAX_NOTIONAL_SCALED_INT64_BOUND} -- max_notional_scaled * "
+            "QTY_SCALE would overflow int64 (D-06-08's caller-overridable "
+            "notional cap; see MAX_NOTIONAL_SCALED_INT64_BOUND's own "
+            "docstring for the derivation)"
+        )
+
+
 class ZeroLotError(ValueError):
     """D-06-20: the notional cap floors to zero lots at this price.
 
@@ -160,13 +203,16 @@ def position_size_ticks(
     naming the price and the cap when the floor lands on zero lots
     (D-06-20), rather than returning `0` silently.
     """
+    # WR-01 (06-REVIEW.md): re-derived and closed 2026-09-24 --
+    # `MAX_NOTIONAL_SCALED_INT64_BOUND`'s own docstring has the exact
+    # arithmetic. This module's plain Python ints would not overflow on
+    # their own, but `sim/kernel.py`'s `@njit` mirror uses int64 and must
+    # refuse the identical bound -- checked here so both the pure-Python
+    # oracle (this function, which `sim/reference.py` also calls) and the
+    # kernel (via its own inline `STATUS_NOTIONAL_OVERFLOW` check) agree.
+    if max_notional_scaled > MAX_NOTIONAL_SCALED_INT64_BOUND:
+        raise NotionalOverflowError(max_notional_scaled)
     price_scaled = price_ticks * TICK_SIZE_SCALED
-    # max_notional_scaled is ~1e10 and QTY_SCALE is 1e8 at MVP defaults, so
-    # this intermediate product is ~1e18 -- within int64's ~9.22e18
-    # ceiling. Re-check this if max_notional_scaled is ever raised by
-    # orders of magnitude post-MVP (this module uses plain Python ints,
-    # which do not overflow, but Plan 06-03's `@njit` mirror of this
-    # arithmetic will use int64 and must re-derive this bound).
     qty_scaled_unrounded = (max_notional_scaled * QTY_SCALE) // price_scaled
     qty_scaled = (qty_scaled_unrounded // lot_step_scaled) * lot_step_scaled
     if qty_scaled == 0:
