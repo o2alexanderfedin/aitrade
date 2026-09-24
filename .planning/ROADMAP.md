@@ -161,7 +161,7 @@ Plans:
 - [x] 06-06-PLAN.md — Path-dependence, flip-invariant, hand-computed/zero-prediction oracles, real-day perfect-foresight reconciliation
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 06-07-PLAN.md — spec.md Simulator section + phase-wide verification pass
+- [x] 06-07-PLAN.md — spec.md Simulator section + phase-wide verification pass
 
 ### Phase 7: Regression Track & Vertical Slice
 **Goal**: The cheapest model class proves the full Stage-1 plumbing — Trainer protocol, frozen predictors, prediction tables — end to end

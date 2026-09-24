@@ -53,9 +53,9 @@ Requirements for MVP exit. Each maps to roadmap phases. Source of truth: `mvp.md
 
 ### Simulator
 
-- [ ] **SIM-01**: Event-driven numba simulator: taker-only, zero fees, zero latency, $100 max notional, flip-only position logic, sequential scan (no vectorization — policy is path-dependent)
-- [ ] **SIM-02**: Oracle tests validate simulator policy math against hand-computed scenarios (catches decision-rule dimensional bugs)
-- [ ] **SIM-03**: Integer-tick price accounting in the hot path to avoid float-drift P&L errors
+- [x] **SIM-01**: Event-driven numba simulator: taker-only, zero fees, zero latency, $100 max notional, flip-only position logic, sequential scan (no vectorization — policy is path-dependent). Proof: `mvp/tests/sim/test_path_dependence.py::test_hypothesis_random_adjacent_swap_that_straddles_a_trigger_changes_the_result` (sequential/non-vectorized, proven by permutation-sensitivity) + `mvp/tests/sim/test_flip_invariant.py::test_flip_only_property` (flip-only, no risk-increasing order).
+- [x] **SIM-02**: Oracle tests validate simulator policy math against hand-computed scenarios (catches decision-rule dimensional bugs). Proof: `mvp/tests/sim/test_oracles.py::test_hand_computed_scenario_oracle` and `test_path_dependence.py::test_q7_adjacent_swap_changes_trade_count_and_pnl` (06-RESEARCH.md Q7 fixture, hand-derived in the test docstring, independently re-verified against the running kernel before transcription).
+- [x] **SIM-03**: Integer-tick price accounting in the hot path to avoid float-drift P&L errors. Proof: `mvp/tests/sim/test_determinism.py::test_two_same_process_runs_hash_identical` + `test_subprocess_run_hashes_identical_to_the_parent_process` (bit-identical same-process and cross-process sha256), plus `mvp/tests/sim/test_kernel.py::test_symmetric_quantisation_at_exact_half_tick` (the 2026-09-24 symmetric floor/ceil quantisation fix, integer throughout).
 
 ### Stage 2 — Monetization
 
@@ -155,9 +155,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FCST-04 | Phase 7 | Pending |
 | FCST-05 | Phase 8 | Pending |
 | FCST-06 | Phase 8 | Pending |
-| SIM-01 | Phase 6 | Pending |
-| SIM-02 | Phase 6 | Pending |
-| SIM-03 | Phase 6 | Pending |
+| SIM-01 | Phase 6 | Complete |
+| SIM-02 | Phase 6 | Complete |
+| SIM-03 | Phase 6 | Complete |
 | MON-01 | Phase 9 | Pending |
 | MON-02 | Phase 9 | Pending |
 | MON-03 | Phase 9 | Pending |

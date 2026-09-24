@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 06-06-PLAN.md
-last_updated: "2026-09-24T07:49:09.911Z"
+status: verifying
+stopped_at: Completed 06-07-PLAN.md (phase 6 close)
+last_updated: "2026-09-24T08:30:53.599Z"
 last_activity: 2026-09-24
 progress:
   total_phases: 11
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 36
-  completed_plans: 36
+  completed_plans: 37
   percent: 100
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 
 Phase: 6 (Event-Driven Simulator) — EXECUTING
 Plan: 7 of 7
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-24
 
 Progress: [██████████] 100%
@@ -82,6 +82,7 @@ Progress: [██████████] 100%
 | Phase 06 P04 | 30min | 2 tasks | 12 files |
 | Phase 06 P05 | 35min | 2 tasks | 2 files |
 | Phase 06 P06 | 16min | 3 tasks | 4 files |
+| Phase 06 P07 | 26min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -181,6 +182,7 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-06: path-dependence sweep exhaustively searches all adjacent pairs of a generated sequence for one that straddles a trigger, filtered via hypothesis.assume rather than passing vacuously when none straddles
 - [Phase 06]: 06-06: D-06-12's flat-or-opposite wording collapses to always-opposite for this no-flat-exit kernel -- position_after in the trade log is always +/-1, never 0
 - [Phase 06]: 06-06: the real-day perfect-foresight ceiling is 2,212 trades / 293,844 closed_pnl_ticks (X_bps=0, 2026-09-13, schema v2), NOT 06-RESEARCH.md's superseded 2,192/294,554 baseline -- the divergence was investigated (tie-break rule ruled out) and reported unexplained rather than papered over
+- [Phase 06]: Fixed the asymmetric round-half-up prediction quantisation (sim/kernel.py + sim/reference.py) to a symmetric floor(long)/ceil(short) rule; re-measured real-day ceiling now matches 06-RESEARCH.md exactly (2,192 trades / 294,554 ticks), resolving 06-06's unexplained divergence — A half-tick prediction (99.96% of real perfect-foresight predictions) rounded up under the shared round-half-up rule, favoring long triggers; rounding each direction against its own trade removes the bias and, as a byproduct, exactly reproduces research's original prototype baseline
 
 ### Pending Todos
 
@@ -215,7 +217,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-24T07:49:09.881Z
-Stopped at: Completed 06-06-PLAN.md
+Last session: 2026-09-24T08:30:53.591Z
+Stopped at: Completed 06-07-PLAN.md (phase 6 close)
 Resume file: None
 Resumed: 2026-09-19 -- session restored at the Phase 4/5 boundary. Verified live, not read: develop at 9898e4d clean and level with origin, no PLAN without a SUMMARY, capture daemon PID 72546 alive at 2d14h, SleepDisabled=1 (the LaunchDaemon is holding), 844 GiB free. HANDOFF.json kept until Phase 5 actually starts.
