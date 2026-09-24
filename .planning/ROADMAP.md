@@ -153,7 +153,7 @@ Plans:
 - [x] 06-02-PLAN.md — mvp/sim/ticks.py: tick constant + round-trip proof, lot-step measurement, $100-cap zero-lot dead zone
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 06-03-PLAN.md — mvp/sim/kernel.py: the sequential flip-only run_sim state machine, arrays.py boundary, outputs.py, reference.py twin, bitwise equivalence
+- [x] 06-03-PLAN.md — mvp/sim/kernel.py: the sequential flip-only run_sim state machine, arrays.py boundary, outputs.py, reference.py twin, bitwise equivalence
 - [ ] 06-04-PLAN.md — The real 7-day schema-v2 rebuild + the v1-vs-v2 label regression proof (249 errata cells, nowhere else)
 
 **Wave 3** *(blocked on Wave 2 completion)*
@@ -235,7 +235,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 3. Data Layer — Backfill, Ingest & Lockbox | 7/6 | Complete    | 2026-09-17 |
 | 4. Feature & Label Engine | 7/7 | Complete    | 2026-09-19 |
 | 5. Fold Harness & Overfitting Controls | 3/8 | In Progress|  |
-| 6. Event-Driven Simulator | 1/7 | In Progress|  |
+| 6. Event-Driven Simulator | 3/7 | In Progress|  |
 | 7. Regression Track & Vertical Slice | 0/TBD | Not started | - |
 | 8. Trees, Transformer & v0 Gate | 0/TBD | Not started | - |
 | 9. Stage 2 Monetization & v1 Gate | 0/TBD | Not started | - |
