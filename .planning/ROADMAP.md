@@ -150,7 +150,7 @@ Plans:
 Plans:
 **Wave 1**
 - [x] 06-01-PLAN.md — Schema v2 migration code: kernel/reference/api emit bid_price/ask_price, tier.py version-scoped write-once identity, DQ-report multi-manifest fix (fixture-only)
-- [ ] 06-02-PLAN.md — mvp/sim/ticks.py: tick constant + round-trip proof, lot-step measurement, $100-cap zero-lot dead zone
+- [x] 06-02-PLAN.md — mvp/sim/ticks.py: tick constant + round-trip proof, lot-step measurement, $100-cap zero-lot dead zone
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 06-03-PLAN.md — mvp/sim/kernel.py: the sequential flip-only run_sim state machine, arrays.py boundary, outputs.py, reference.py twin, bitwise equivalence

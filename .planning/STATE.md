@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-01-PLAN.md
-last_updated: "2026-09-24T04:59:30.681Z"
+stopped_at: Completed 06-02-PLAN.md
+last_updated: "2026-09-24T05:30:36.004Z"
 last_activity: 2026-09-24
 progress:
   total_phases: 11
   completed_phases: 5
   total_plans: 36
-  completed_plans: 31
-  percent: 86
+  completed_plans: 32
+  percent: 89
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 6 (Event-Driven Simulator) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 Status: Ready to execute
 Last activity: 2026-09-24
 
-Progress: [█████████░] 86%
+Progress: [█████████░] 89%
 
 > That 100% is `state.update-progress`'s definition -- SUMMARY files over PLAN files on disk (22 summaries over 21 plans, capped at 100%). Every one of the 21 plans now has a summary; the 22nd is `03-07-GAPS-SUMMARY.md`, which has no plan of its own. It is NOT milestone completion: phases 5-11 have no plans on disk yet, and 3 of 11 phases are marked complete -- Phase 4's seven plans are all executed, and the phase closes at its verification/merge step, exactly as Phases 1-3 did.
 
@@ -77,6 +77,7 @@ Progress: [█████████░] 86%
 | Phase 05 P03 | 11min | 2 tasks | 10 files |
 | Phase 05 P07 | 70min | 3 tasks | 12 files |
 | Phase 06 P01 | 41min | 3 tasks | 18 files |
+| Phase 06 P02 | 25min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -164,6 +165,8 @@ Recent decisions affecting current work:
 - [Phase 06]: Tasks 1+2 landed in one commit (8aade50), not two: the pre-commit hook runs the full pytest suite with no --no-verify escape, and FEATURE_PASS_SCHEMA (Task 1) carrying bid_price forces build.py/FEATURE_ROW_SCHEMA (Task 2) to carry it too or test_the_built_partition_matches_features_api_bit_for_bit fails
 - [Phase 06]: check_harness_accessor_only.py's D-05-15 guardrail gained a fifth sanctioned test file (tests/dq/test_report.py) rather than routing 06-01's new load_features regression test through harness.accessor.materialize, which would need a full segment-manifest fixture from an unrelated subsystem
 - [Phase 06]: feature_build_stats_path (data/dq/feature_checks.py) reads features.tier.FEATURE_SCHEMA_VERSION via a module import, never a from-import, so a test that monkeypatches the global is not silently defeated by an import-time binding
+- [Phase 06]: sim/ticks.py: TICK_SIZE_SCALED/LOT_STEP_SCALED re-derived by gcd from a bounded real-data head rather than copied literals — price_to_ticks refuses off-grid/non-representable values instead of truncating; position_size_ticks raises ZeroLotError (never a silent 0) above the measured ~$100,000 dead zone
+- [Phase 06]: The measured median mid price ($77,061.35) is a half-tick value, intentionally not round-tripped through price_to_ticks in tests — D-06-05's round-trip proof correctly refuses exact half-tick ties; the half-tick tie-break rule for D-06-07's pred_mid/X_price comparison is deferred to whichever plan implements it
 
 ### Pending Todos
 
@@ -198,7 +201,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-24T04:59:30.674Z
-Stopped at: Completed 06-01-PLAN.md
+Last session: 2026-09-24T05:30:35.998Z
+Stopped at: Completed 06-02-PLAN.md
 Resume file: None
 Resumed: 2026-09-19 -- session restored at the Phase 4/5 boundary. Verified live, not read: develop at 9898e4d clean and level with origin, no PLAN without a SUMMARY, capture daemon PID 72546 alive at 2d14h, SleepDisabled=1 (the LaunchDaemon is holding), 844 GiB free. HANDOFF.json kept until Phase 5 actually starts.
