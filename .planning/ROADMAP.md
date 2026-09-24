@@ -145,7 +145,23 @@ Plans:
   1. Numba event-driven simulator runs taker-only, zero-fee, zero-latency, $100-max-notional, flip-only logic as a sequential scan over decision rows (no vectorization)
   2. Oracle tests reproduce hand-computed scenario P&L exactly, including a realized-future-returns oracle that bounds the achievable ceiling — the test class that catches decision-rule dimensional bugs
   3. Integer-tick price accounting in the hot path yields bit-identical P&L across double runs (CI-enforced), with no float-drift errors
-**Plans**: TBD
+**Plans**: 7 plans, 4 waves
+
+Plans:
+**Wave 1**
+- [x] 06-01-PLAN.md — Schema v2 migration code: kernel/reference/api emit bid_price/ask_price, tier.py version-scoped write-once identity, DQ-report multi-manifest fix (fixture-only)
+- [x] 06-02-PLAN.md — mvp/sim/ticks.py: tick constant + round-trip proof, lot-step measurement, $100-cap zero-lot dead zone
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 06-03-PLAN.md — mvp/sim/kernel.py: the sequential flip-only run_sim state machine, arrays.py boundary, outputs.py, reference.py twin, bitwise equivalence
+- [x] 06-04-PLAN.md — The real 7-day schema-v2 rebuild + the v1-vs-v2 label regression proof (249 errata cells, nowhere else)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 06-05-PLAN.md — Cross-process determinism (sha256) + refuse-on-null/dropped-row contract
+- [x] 06-06-PLAN.md — Path-dependence, flip-invariant, hand-computed/zero-prediction oracles, real-day perfect-foresight reconciliation
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 06-07-PLAN.md — spec.md Simulator section + phase-wide verification pass
 
 ### Phase 7: Regression Track & Vertical Slice
 **Goal**: The cheapest model class proves the full Stage-1 plumbing — Trainer protocol, frozen predictors, prediction tables — end to end
@@ -219,7 +235,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 3. Data Layer — Backfill, Ingest & Lockbox | 7/6 | Complete    | 2026-09-17 |
 | 4. Feature & Label Engine | 7/7 | Complete    | 2026-09-19 |
 | 5. Fold Harness & Overfitting Controls | 3/8 | In Progress|  |
-| 6. Event-Driven Simulator | 0/TBD | Not started | - |
+| 6. Event-Driven Simulator | 3/7 | In Progress|  |
 | 7. Regression Track & Vertical Slice | 0/TBD | Not started | - |
 | 8. Trees, Transformer & v0 Gate | 0/TBD | Not started | - |
 | 9. Stage 2 Monetization & v1 Gate | 0/TBD | Not started | - |

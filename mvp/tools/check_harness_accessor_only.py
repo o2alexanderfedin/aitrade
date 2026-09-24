@@ -54,23 +54,37 @@ directory sanction is protection pointing at the one package the risk is
 already inside, matching `check_single_feature_path.py`'s own "used to be
 a file list, then a directory" reasoning.
 
-WHY FOUR NAMED TEST FILES, NOT A DIRECTORY, AND WHY FOUR RATHER THAN THE
-THREE 05-06-PLAN.md NAMED. D-05-15's own text says "four sanctioned test
-files." 05-06-PLAN.md, authored before 05-01..05-05 landed, re-grepped the
-repo at plan-authoring time and found only three:
-`tests/features/test_holdout_refusal.py`,
+WHY FIVE NAMED TEST FILES NOW, NOT FOUR. D-05-15's own text said "four
+sanctioned test files," true through Phase 5. 05-06-PLAN.md, authored
+before 05-01..05-05 landed, re-grepped the repo at plan-authoring time and
+found only three: `tests/features/test_holdout_refusal.py`,
 `tests/store/test_loader_tier_containment.py`, and
 `tests/store/test_features_tier_containment.py` (each verifies one of the
 tier's own gates and must call it directly to check it). A grep taken at
 THIS file's authoring time -- after 05-02-PLAN.md had already landed --
-found a fourth, real, already-committed caller:
-`tests/harness/test_kfold.py`, which builds a ground-truth feature frame
-via `load_features` and compares it against `harness.accessor.materialize`'s
-output for the purged+embargoed-OOF-block and `compressed_3seg` tests
-(05-02-PLAN.md Task 2) -- the same "must call the tier directly to check
-what wraps it" reason as the other three. Sanctioning it BY NAME (not
-sanctioning all of `tests/harness/`) keeps the promise
-`test_sanctions_the_named_test_files_and_no_others` makes: a FIFTH,
+found a fourth, real, already-committed caller: `tests/harness/test_kfold.py`,
+which builds a ground-truth feature frame via `load_features` and compares
+it against `harness.accessor.materialize`'s output for the
+purged+embargoed-OOF-block and `compressed_3seg` tests (05-02-PLAN.md
+Task 2) -- the same "must call the tier directly to check what wraps it"
+reason as the other three.
+
+06-01-PLAN.md Task 3 added a fifth: `tests/dq/test_report.py`, which
+verifies that `data.dq.report.build_feature_report_rows_for_date` judges
+EVERY manifest a date has ever had, not only the by-date pointer's current
+one, and its own regression test
+(`test_load_features_still_resolves_the_superseded_manifest_after_a_rebuild`)
+must call `features.tier.load_features` directly on the SUPERSEDED
+manifest to prove the DQ report regeneration did not silently pause it --
+going through `harness.accessor.materialize` instead was considered and
+rejected: `materialize` requires a fully-issued segment manifest naming an
+upstream feature manifest, role, and fold bounds, which is scaffolding
+belonging to a different subsystem (`harness/segments.py`) than the one
+this regression is about, and building one just to reach `load_features`
+would test the segment machinery as a side effect rather than the DQ
+report fix. Sanctioning each file BY NAME (never a directory, except
+`harness/` itself) keeps the promise
+`test_sanctions_the_named_test_files_and_no_others` makes: a SIXTH,
 unlisted file with the same import is still flagged.
 """
 
@@ -118,6 +132,15 @@ SANCTIONED_FILES: dict[str, str] = {
         "the purged+embargoed OOF-block and compressed_3seg tests "
         "(05-02-PLAN.md Task 2) -- the same 'must call the tier directly "
         "to check what wraps it' reason as the three test files above"
+    ),
+    "tests/dq/test_report.py": (
+        "verifies build_feature_report_rows_for_date judges every manifest "
+        "a date has ever had, not only the by-date pointer's current one "
+        "(06-01-PLAN.md Task 3); its regression test calls load_features "
+        "directly on a SUPERSEDED manifest to prove a DQ report "
+        "regeneration did not silently pause it -- the same 'must call the "
+        "tier directly to check what wraps it' reason as the four files "
+        "above"
     ),
 }
 

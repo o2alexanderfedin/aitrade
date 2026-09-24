@@ -56,6 +56,8 @@ def build_span_partition(
         "etime": etimes,
         "decision_source_rank": [0] * rows,
         "decision_seq": list(range(rows)),
+        "bid_price": [70_000.0 + float(i % 97) for i in range(rows)],
+        "ask_price": [70_000.1 + float(i % 97) for i in range(rows)],
     }
     for name in FEATURE_COLUMNS:
         columns[name] = [float(i % 97) for i in range(rows)]

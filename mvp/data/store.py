@@ -68,6 +68,7 @@ __all__ = [
     "validate_dq_acknowledgement",
     "load_curated",
     "manifest_path",
+    "manifests_for_dataset",
     "by_date_index_path",
     "partition_path_key",
     "partition_path_problem",
@@ -193,6 +194,25 @@ def by_date_index_path(
         / "by-date"
         / f"{symbol}__{stream}__{date}.json"
     )
+
+
+def manifests_for_dataset(registry_root: Path, dataset: str) -> list[dict]:
+    """Every manifest JSON directly under `registry_root/manifests/<dataset>/`,
+    parsed, sorted by filename (`manifest_id`) for deterministic ordering.
+
+    `[]` when the dataset directory does not exist yet -- no manifest has
+    ever been issued for it. `Path.glob("*.json")` is non-recursive by
+    construction, so it never descends into the `by-date/` subdirectory:
+    no extra filter is needed to exclude the mutable by-date pointers from
+    this immutable-manifest listing (T-06-02's discovery primitive --
+    `data/dq/report.py:build_feature_report_rows_for_date` uses this
+    instead of resolving only the by-date pointer's CURRENT manifest, so a
+    superseded manifest's DQ report row is regenerated too).
+    """
+    dataset_dir = Path(registry_root) / "manifests" / dataset
+    if not dataset_dir.exists():
+        return []
+    return [json.loads(path.read_text()) for path in sorted(dataset_dir.glob("*.json"))]
 
 
 def partition_path_key(path: str) -> str:

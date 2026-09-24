@@ -56,6 +56,52 @@ def test_feature_row_schema_is_exactly_the_catalogue_plus_bookkeeping():
     )
 
 
+def test_feature_row_schema_gains_bid_ask_as_bookkeeping():
+    """D-06-18: schema version 2 adds `bid_price`/`ask_price` as BOOKKEEPING
+    columns (D-06-17), not catalogued features."""
+    assert FEATURE_SCHEMA_VERSION == 2
+    assert FEATURE_ROW_SCHEMA["bid_price"] == pl.Float64
+    assert FEATURE_ROW_SCHEMA["ask_price"] == pl.Float64
+    assert "bid_price" in BOOKKEEPING_COLUMNS
+    assert "ask_price" in BOOKKEEPING_COLUMNS
+
+
+def test_v2_part_file_does_not_collide_with_an_existing_v1_file(tmp_path: Path):
+    """A v2 rebuild coexists with a standing v1 partition for the same date:
+    the version-scoped glob never sees the bare-named v1 file (D-06-18)."""
+    lake_root = tmp_path / "lake"
+    date_dir = lake_root / "features" / f"symbol={SYMBOL}" / f"date={DATE}"
+    date_dir.mkdir(parents=True)
+    v1_stand_in = date_dir / "part-1.parquet"
+    v1_stand_in.write_bytes(b"not a real v1 partition, just standing in for one")
+
+    entry = write_feature_partition(
+        feature_frame(), lake_root=lake_root, symbol=SYMBOL, date=DATE
+    )
+
+    written_path = lake_root / entry["path"]
+    assert written_path.name.startswith("part-v2-")
+    assert written_path.name.endswith(".parquet")
+    assert v1_stand_in.exists(), "the standing-in v1 file must be untouched"
+    assert (
+        v1_stand_in.read_bytes() == b"not a real v1 partition, just standing in for one"
+    )
+    assert written_path != v1_stand_in
+
+
+def test_v2_write_once_still_refuses_a_second_v2_write(tmp_path: Path):
+    """Write-once still holds WITHIN one schema version."""
+    lake_root = tmp_path / "lake"
+    first = write_feature_partition(
+        feature_frame(), lake_root=lake_root, symbol=SYMBOL, date=DATE
+    )
+    first_path = lake_root / first["path"]
+    with pytest.raises(FileExistsError, match=first_path.name):
+        write_feature_partition(
+            feature_frame(), lake_root=lake_root, symbol=SYMBOL, date=DATE
+        )
+
+
 def test_written_partition_has_no_nan_and_no_rtime(tmp_path: Path):
     lake_root = tmp_path / "lake"
     df = feature_frame(rows=3, nan_in="mid")
