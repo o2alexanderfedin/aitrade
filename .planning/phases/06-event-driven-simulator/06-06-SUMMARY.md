@@ -12,7 +12,7 @@ provides:
   - "tests/sim/test_path_dependence.py: the Q7 hand-computed 4-row fixture (D-06-09 #1/D-06-11), re-derived independently before transcription, plus a hypothesis adjacent-swap search proving the kernel is sequential, not vectorized (D-06-11)"
   - "tests/sim/test_flip_invariant.py: the flip-only property over random sequences, checked on the trade log's own position_after/qty_scaled columns, never internal state (D-06-12)"
   - "tests/sim/test_oracles.py: the hand-computed scenario oracle (reusing the Q7 fixture) and the zero-prediction oracle, proven structurally flat under the odd-spread tie-rounds-up case, each asserting an exact trade count (D-06-09 #1/#3, D-06-10)"
-  - ".planning/phases/06-event-driven-simulator/evidence/06-06-real-day-oracle.json: the measured real-day perfect-foresight ceiling (2,212 trades / 293,844 closed_pnl_ticks on 6,864,853 decision rows, X_bps=0), bit-for-bit reconciled against v1's own ret_10s_mid on the same surviving row set, with an honestly-reported, investigated-but-unexplained divergence from 06-RESEARCH.md's cited baseline"
+  - ".planning/phases/06-event-driven-simulator/evidence/06-06-real-day-oracle.json: the measured real-day perfect-foresight ceiling (2,212 trades / 293,844 closed_pnl_ticks on 6,864,853 decision rows, X_bps=0), bit-for-bit reconciled against v1's own ret_10s_mid on the same surviving row set, with an honestly-reported, investigated-but-unexplained divergence from 06-RESEARCH.md's cited baseline -- SUPERSEDED 2026-09-24 by Plan 06-07 Task 0's tie-break fix; corrected canonical figures (2192/294554, matching 06-RESEARCH.md exactly) are in this same evidence file's SUPERSEDED_BY block and in 06-07-SUMMARY.md"
 affects: [06-07-phase-close, 07-stage-1-regression-vertical-slice]
 
 # Tech tracking
@@ -48,6 +48,23 @@ completed: 2026-09-24
 ---
 
 # Phase 6 Plan 6: The oracle suite -- hand-computed, zero-prediction, path-dependence, flip-only, and the real-day perfect-foresight ceiling Summary
+
+> **SUPERSEDED 2026-09-24 by Plan 06-07 Task 0.** Every trade count, closed_pnl_ticks, and
+> USD figure below this notice was measured against the ASYMMETRIC round-half-up tie-break
+> this plan's own "half-tick tie-break asymmetry" finding (below) identified but did not fix.
+> Plan 06-07 Task 0 fixed `sim/kernel.py`/`sim/reference.py` to a symmetric floor(long)/
+> ceil(short) rule and re-measured on the SAME v2 2026-09-13 partition. The corrected,
+> canonical numbers are **`trades=2192 flips=2191 closed_pnl_ticks=294554`**
+> (`$29.4554` actual realized USD at the traded 0.001-BTC lot) --
+> **an EXACT match to `06-RESEARCH.md`'s baseline**, which this plan's own investigation
+> below could not explain (it tested 4 candidate tie-break rules, none of which split the
+> rounding direction by long/short side the way the actual fix does). The "unexplained
+> divergence" this plan reports below is therefore RESOLVED, not merely moot -- see
+> `.planning/phases/06-event-driven-simulator/evidence/06-06-real-day-oracle.json`'s
+> `SUPERSEDED_BY` block and `06-07-SUMMARY.md` for the full re-measurement, including the
+> vectorised trigger-row-count evidence that the long-side bias is what moved. This plan's
+> own text below is kept verbatim (not edited) as the historical record of what was measured
+> and investigated at the time.
 
 **Four fixture oracles (hand-computed Q7 scenario, zero-prediction structurally-flat, an adjacent-swap path-dependence proof, and a flip-only trade-log property) all pass against Plan 06-03's kernel with two mutation checks each observed biting and restored, and the real 2026-09-13 v2 partition's perfect-foresight ceiling is measured at 2,212 trades / 293,844 closed_pnl_ticks ($29.38 actual realized USD at the traded 0.001-BTC lot) -- bit-for-bit reconciled against v1's own label on the same row set, but NOT matching 06-RESEARCH.md's cited 2,192/294,554 baseline despite zero dropped rows, a real divergence investigated (four tick-quantization tie-break candidates tested and ruled out) and reported honestly as unexplained rather than papered over.**
 

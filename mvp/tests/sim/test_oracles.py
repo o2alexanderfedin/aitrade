@@ -106,24 +106,32 @@ def test_zero_prediction_oracle_is_structurally_flat():
 
     ONE WORKED VALUE, to show the unit conversion produces zero trades:
     `bid_ticks=100` ($10.00), `ask_ticks=101` ($10.10) -- the tightest,
-    ODD-spread (1 tick) case, the exact tie the structural argument below
-    must survive. `pred = (100+101) * 10_000_000 / (2 * 100_000_000)
-    = $10.05`. `s = round(10.05 * 100_000_000) = 1_005_000_000`.
-    `pred_ticks = (1_005_000_000 + 5_000_000) // 10_000_000 = 101` -- the
-    NEAREST-TICK rounding rule (D-06-07) rounds this tie UP to
-    `ask_ticks`, not down. `long_trigger`: `101 > 101 + 0` is FALSE (the
-    STRICT `>` is what saves it -- `>=` would trigger here, see this
-    plan's own `>=`-mutation check, transcribed in 06-06-SUMMARY.md).
+    ODD-spread (1 tick) case, which lands the mid exactly on a half-tick
+    boundary, the case the structural argument below must survive. `pred
+    = (100+101) * 10_000_000 / (2 * 100_000_000) = $10.05`. `s =
+    round(10.05 * 100_000_000) = 1_005_000_000`. Re-derived 2026-09-24
+    under the SYMMETRIC floor/ceil quantisation rule (`sim/kernel.py`'s
+    module docstring; the predecessor round-half-up rule reached the same
+    zero-trade conclusion here, by a different, tie-direction-dependent
+    argument -- see this test's own git history):
+    `pred_ticks_floor = 1_005_000_000 // 10_000_000 = 100`.
+    `long_trigger`: `100 > 101 + 0` is FALSE.
+    `pred_ticks_ceil = -((-1_005_000_000) // 10_000_000) = 101`.
     `short_trigger`: `101 < 100 - 0` is FALSE. Zero trades on this row.
 
-    STRUCTURAL, not a fixture accident (Q6's own distinction): because the
-    comparison is STRICT (`>`/`<`, never `>=`/`<=`), and `pred_ticks`
-    (nearest-tick-rounded mid) can NEVER exceed `ask_ticks` or fall below
-    `bid_ticks` regardless of which way a tie rounds -- the true mid sits
-    STRICTLY between `bid` and `ask` whenever `spread > 0`, so its nearest
-    tick is at most `ask_ticks` (when the tie rounds up, as the ODD-spread
-    case above demonstrates) or at least `bid_ticks` (when it rounds
-    down), never strictly beyond either -- zero trades is GUARANTEED BY
+    STRUCTURAL, not a fixture accident (Q6's own distinction), and now a
+    SINGLE unconditional argument rather than a tie-direction case split:
+    whenever `spread > 0`, the true mid sits STRICTLY between `bid_ticks`
+    and `ask_ticks` as a real number. `floor(mid)` is an integer `<= mid
+    < ask_ticks`, and since `ask_ticks` is itself an integer, `floor(mid)
+    < ask_ticks` as integers too -- `long_trigger` (`floor(mid) >
+    ask_ticks + x_ticks`, `x_ticks >= 0`) can therefore NEVER be true.
+    Symmetrically, `ceil(mid)` is an integer `>= mid > bid_ticks`, so
+    `ceil(mid) > bid_ticks` as integers -- `short_trigger` (`ceil(mid) <
+    bid_ticks - x_ticks`) can therefore NEVER be true either. This holds
+    for EVERY `spread > 0`, not merely the ones where a tie happens to
+    round a particular way (the predecessor rule's proof had to case-split
+    on tie direction; this one does not) -- zero trades is GUARANTEED BY
     CONSTRUCTION, not an artifact of this one fixture. A hypothesis sweep
     below confirms this holds on every generated example with `spread >
     0` (including odd spreads, which land the tie exactly on a half-tick),

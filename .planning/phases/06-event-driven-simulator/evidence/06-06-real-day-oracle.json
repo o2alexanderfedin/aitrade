@@ -34,5 +34,52 @@
     "actual_realized_usd_at_traded_0_001_btc_lot": 29.3844
   },
   "realized_pnl_scaled_v2": 29384400000,
-  "all_v2_fills_exactly_one_lot": true
+  "all_v2_fills_exactly_one_lot": true,
+  "SUPERSEDED_BY": {
+    "note": "All fields ABOVE this key are PRE-FIX (measured against the asymmetric round-half-up quantisation kernel that Plan 06-06 itself found and flagged in its own 'Deviations from Plan' -- 'a prediction sitting EXACTLY half a tick above the ask rounds UP and triggers a long; a prediction exactly half a tick below the bid also rounds UP and therefore does NOT trigger a short'). Plan 06-07 Task 0 (2026-09-24) fixed sim/kernel.py + sim/reference.py to a SYMMETRIC floor(long)/ceil(short) quantisation rule and re-measured. Kept here for audit trail, not deleted -- see this block for the corrected, canonical numbers.",
+    "fix_commit_note": "sim/kernel.py + sim/reference.py, Plan 06-07 Task 0, 2026-09-24",
+    "v2_perfect_foresight_POST_FIX": {
+      "trades": 2192,
+      "flips": 2191,
+      "closed_pnl_ticks": 294554
+    },
+    "v1_on_surviving_rows_perfect_foresight_POST_FIX": {
+      "trades": 2192,
+      "flips": 2191
+    },
+    "v2_equals_v1_on_surviving_rows_POST_FIX": true,
+    "pred_v1_bitwise_equal_to_pred_v2_POST_FIX": true,
+    "rows_dropped_for_nullity_POST_FIX": 0,
+    "MYSTERY_RESOLVED": "06-06's 'unexplained' divergence from 06-RESEARCH.md's baseline (2,192 trades / 294,554 ticks) is NOW EXPLAINED, not merely moot: the post-fix trades/closed_pnl_ticks above are an EXACT match to 06-RESEARCH.md's baseline. 06-06 ruled out 4 alternative candidate tie-break rules (06-RESEARCH.md Q2's own list) because every one of them applied ONE rounding rule uniformly to BOTH the long and short comparisons -- none of the 4 candidates tested was 'a DIFFERENT rounding rule per direction', which is the actual fix. The research prototype's own tie-break (whatever it was) evidently already matched the correct symmetric behaviour; the buggy kernel's shared round-half-up value did not.",
+    "usd_ceiling_POST_FIX": {
+      "ticks_times_tick_size_per_1_BTC_convention_MISLABELED_by_research_as_per_lot": 29455.4,
+      "actual_realized_usd_at_traded_0_001_btc_lot": 29.4554
+    },
+    "realized_pnl_scaled_v2_POST_FIX": 29455400000,
+    "trade_log_side_counts_POST_FIX": {
+      "long_fills": 1096,
+      "short_fills": 1096,
+      "note": "This kernel is flip-only, so trade-log side counts ALWAYS alternate 1:1 regardless of the quantisation rule -- this pair proves NOTHING about the bias and is recorded only because it was asked for. The actual before/after bias evidence is 'vectorised_trigger_row_counts_over_all_surviving_rows_PRE_VS_POST_FIX' below."
+    },
+    "closed_pnl_ticks_by_closed_leg_direction_POST_FIX": {
+      "from_long_legs": 145120,
+      "from_short_legs": 149434
+    },
+    "vectorised_trigger_row_counts_over_all_surviving_rows_PRE_VS_POST_FIX": {
+      "note": "Counted over ALL 6,864,853 surviving decision rows (not just fills) -- whether that row's pred WOULD trigger long/short under each rule, independent of the flip-only state machine. This is what actually shows the bias and its removal.",
+      "pre_fix_asymmetric_rule": {
+        "long_trigger_rows": 1924947,
+        "short_trigger_rows": 1897533,
+        "long_excess_rows": 27414,
+        "long_excess_pct_of_short": 1.445
+      },
+      "post_fix_symmetric_rule": {
+        "long_trigger_rows": 1868904,
+        "short_trigger_rows": 1897533,
+        "long_excess_rows": -28629,
+        "long_excess_pct_of_short": -1.509
+      },
+      "interpretation": "short_trigger_rows is IDENTICAL before and after (1,897,533 both) -- expected, because 99.96% of perfect-foresight pred values sit exactly on a half-tick boundary, and on an exact tie ceil(pred) (the new short-side rule) equals round-half-up(pred) (the old shared rule) by construction; only the long side's rounding direction changed (floor vs round-half-up-which-rounds-ties-up). long_trigger_rows dropped by 56,043 rows (2.91%) after the fix, removing the long-favoring bias the old shared rule introduced. The fixed rule is NOT guaranteed to produce exactly-equal long/short trigger counts (that would require the underlying market data's up-move vs down-move crossings to be exactly symmetric, which is a data property, not a rule property) -- post-fix, short now exceeds long by 1.51%, roughly the mirror image of the old 1.44% long excess, consistent with removing a directional mechanism bias rather than perfectly balancing the data."
+    }
+  }
 }

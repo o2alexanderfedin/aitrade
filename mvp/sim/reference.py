@@ -13,9 +13,9 @@ hypothesis sweep is only a real proof of independence if the two
 implementations cannot accidentally converge by sharing code.
 
 Re-derives every rule `sim/kernel.py`'s module docstring states: the same
-nearest-tick quantisation, the same flip-only state machine, the same
-fresh-at-fill-price sizing (Q13), the same bid/ask equity mark (never a
-rounded mid). If this module and the kernel ever disagree, one of them has
+symmetric-by-direction floor/ceil quantisation, the same flip-only state
+machine, the same fresh-at-fill-price sizing (Q13), the same bid/ask
+equity mark (never a rounded mid). If this module and the kernel ever disagree, one of them has
 a bug -- the hypothesis sweep is what would catch it.
 """
 
@@ -78,14 +78,20 @@ def run_reference_sim(
         s = int(round(p * PRICE_SCALE))
         if s < 0:
             raise ValueError(f"run_reference_sim: pred[{i}]={p!r} scales negative")
-        pred_ticks = (s + TICK_SIZE_SCALED // 2) // TICK_SIZE_SCALED
+        # Symmetric-by-direction quantisation (D-06-07, fixed
+        # 2026-09-24): floor(pred) gates the long side, ceil(pred) gates
+        # the short side -- see sim/kernel.py's module docstring for the
+        # full derivation and why a single round-half-up value (the
+        # predecessor rule) was asymmetric.
+        pred_ticks_floor = s // TICK_SIZE_SCALED
+        pred_ticks_ceil = -((-s) // TICK_SIZE_SCALED)
 
         b = int(bid_ticks[i])
         a = int(ask_ticks[i])
         x_ticks = (b + a) * int(x_bps) // 20_000
 
-        long_trigger = pred_ticks > a + x_ticks
-        short_trigger = pred_ticks < b - x_ticks
+        long_trigger = pred_ticks_floor > a + x_ticks
+        short_trigger = pred_ticks_ceil < b - x_ticks
 
         triggered = False
         is_flip = False

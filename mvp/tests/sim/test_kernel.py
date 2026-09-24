@@ -146,27 +146,40 @@ def test_no_same_direction_or_risk_increasing_order():
 
 def test_quantised_threshold_is_symmetric_at_0_4_ticks():
     """X_bps=0 so x_ticks=0. ask_ticks=101 ($10.10), bid_ticks=100
-    ($10.00).
+    ($10.00). Re-derived 2026-09-24 under the SYMMETRIC floor/ceil
+    quantisation rule (`sim/kernel.py`'s module docstring) -- the
+    predecessor round-half-up rule produced the SAME two zero-trade
+    outcomes here (transcribed in this test's git history), so this
+    fixture's own numbers do not move; only the mechanism producing them
+    does, and that mechanism is what this docstring now re-derives by
+    hand rather than assume-carries-forward.
 
     Row A: pred=$10.14 (101.4 ticks, i.e. 0.4 ticks ABOVE the long
-    threshold ask_ticks+x_ticks=101).
+    threshold ask_ticks+x_ticks=101). The LONG side gates on
+    `floor(pred)`.
         s = round(10.14 * PRICE_SCALE) = 1_014_000_000
-        pred_ticks = (1_014_000_000 + 5_000_000) // 10_000_000
-                   = 1_019_000_000 // 10_000_000 = 101
+        pred_ticks_floor = 1_014_000_000 // 10_000_000 = 101
         101 > 101 is FALSE -- no trade.
 
     Row B: pred=$9.96 (99.6 ticks, i.e. 0.4 ticks BELOW the short
-    threshold bid_ticks-x_ticks=100).
+    threshold bid_ticks-x_ticks=100). The SHORT side gates on
+    `ceil(pred) = -((-s) // TICK_SIZE_SCALED)`.
         s = round(9.96 * PRICE_SCALE) = 996_000_000
-        pred_ticks = (996_000_000 + 5_000_000) // 10_000_000
-                   = 1_001_000_000 // 10_000_000 = 100
+        pred_ticks_ceil = -((-996_000_000) // 10_000_000) = -(-100) = 100
         100 < 100 is FALSE -- no trade.
 
-    BOTH rows produce zero trades: nearest-tick rounding pulls a 0.4-tick
-    overshoot back to exactly the boundary in BOTH directions, and the
-    boundary itself never triggers under the strict >/< comparison -- this
-    is what makes the SAME +x_ticks/-x_ticks rule symmetric, not an
-    accident of one side's rounding direction.
+    BOTH rows produce zero trades: a 0.4-tick overshoot rounds AGAINST the
+    trade on both sides (floor pulls Row A's overshoot back down to
+    exactly the ask; ceil pulls Row B's overshoot back up to exactly the
+    bid), and the boundary itself never triggers under the strict >/<
+    comparison -- this is what makes the SAME +x_ticks/-x_ticks rule
+    symmetric, now by TWO SEPARATE formulas that are symmetric BY
+    CONSTRUCTION (mirror images of each other via the floor-ceil
+    identity), not by one shared rounded value that happened to land the
+    same on both sides at this particular offset. Contrast
+    `test_symmetric_quantisation_at_exact_half_tick` below, which is the
+    offset where the predecessor rule (one shared round-half-up value)
+    was NOT symmetric.
     """
     etime = np.array([1], dtype=np.int64)
     bid_ticks = np.array([100], dtype=np.int64)
@@ -181,6 +194,104 @@ def test_quantised_threshold_is_symmetric_at_0_4_ticks():
         etime, bid_ticks, ask_ticks, np.array([9.96], dtype=np.float64), x_bps=0
     )
     assert row_b.fill_count == 0
+
+
+def test_symmetric_quantisation_at_exact_half_tick():
+    """THE REGRESSION TEST for the 2026-09-24 fix (`sim/kernel.py`'s
+    module docstring, "QUANTISATION IS SYMMETRIC BY DIRECTION"). This is
+    the test that WOULD HAVE CAUGHT Plan 06-06's finding: under the
+    predecessor round-half-up rule, a prediction sitting exactly half a
+    tick above the ask triggered a long entry, while a prediction sitting
+    exactly half a tick below the bid did NOT trigger a short entry --
+    same distance from the opposite quote, opposite outcome. Perfect-
+    foresight `pred` sits on exactly this half-tick boundary 99.96% of the
+    time on a real day (06-06-SUMMARY.md), so this was not an edge case.
+
+    X_bps=0, bid_ticks=100 ($10.00), ask_ticks=101 ($10.10).
+
+    Row A: pred = ask + 0.5 tick = 101.5 ticks = $10.15.
+        s = round(10.15 * PRICE_SCALE) = 1_015_000_000
+        pred_ticks_floor = 1_015_000_000 // 10_000_000 = 101
+        long_trigger: 101 > 101 is FALSE.
+        pred_ticks_ceil = -((-1_015_000_000) // 10_000_000) = 102
+        short_trigger: 102 < 100 is FALSE.
+        -> ZERO trades. (Predecessor rule: round-half-up(101.5) = 102,
+        102 > 101 TRUE -- this row USED TO trigger a long entry.)
+
+    Row B: pred = bid - 0.5 tick = 99.5 ticks = $9.95.
+        s = round(9.95 * PRICE_SCALE) = 995_000_000
+        pred_ticks_ceil = -((-995_000_000) // 10_000_000) = 100
+        short_trigger: 100 < 100 is FALSE.
+        pred_ticks_floor = 995_000_000 // 10_000_000 = 99
+        long_trigger: 99 > 101 is FALSE.
+        -> ZERO trades. (Predecessor rule: round-half-up(99.5) = 100,
+        100 < 100 is FALSE too -- this row never triggered under either
+        rule; the asymmetry lived entirely on the long side, Row A.)
+
+    Row A and Row B produce the SAME (non-)decision -- zero trades in
+    both -- which is the symmetry the predecessor rule broke. Checked
+    against BOTH the kernel and the pure-Python twin, so a fix applied to
+    only one implementation is caught immediately.
+    """
+    etime = np.array([1], dtype=np.int64)
+    bid_ticks = np.array([100], dtype=np.int64)
+    ask_ticks = np.array([101], dtype=np.int64)
+
+    row_a_pred = np.array([10.15], dtype=np.float64)
+    row_a_kernel = run_sim_checked(etime, bid_ticks, ask_ticks, row_a_pred, x_bps=0)
+    row_a_twin = run_reference_sim(etime, bid_ticks, ask_ticks, row_a_pred, x_bps=0)
+    assert row_a_kernel.fill_count == 0
+    assert row_a_twin.fill_count == 0
+
+    row_b_pred = np.array([9.95], dtype=np.float64)
+    row_b_kernel = run_sim_checked(etime, bid_ticks, ask_ticks, row_b_pred, x_bps=0)
+    row_b_twin = run_reference_sim(etime, bid_ticks, ask_ticks, row_b_pred, x_bps=0)
+    assert row_b_kernel.fill_count == 0
+    assert row_b_twin.fill_count == 0
+
+
+def test_symmetric_quantisation_anti_vacuity_full_tick_beyond_triggers_both_sides():
+    """Anti-vacuity companion to `test_symmetric_quantisation_at_exact_
+    half_tick` (D-06-10's own "every oracle asserts a TRADE COUNT" rule,
+    applied to this regression test too): a prediction a FULL tick beyond
+    either quote DOES trigger, in BOTH directions, proving the half-tick
+    test above passes because of the symmetric quantisation rule and not
+    because this fixture never trades at all.
+
+    X_bps=0, bid_ticks=100 ($10.00), ask_ticks=101 ($10.10).
+
+    Row A: pred = ask + 1 tick = 102 ticks = $10.20.
+        s = round(10.20 * PRICE_SCALE) = 1_020_000_000
+        pred_ticks_floor = 1_020_000_000 // 10_000_000 = 102
+        long_trigger: 102 > 101 is TRUE -> long entry @ ask=101.
+
+    Row B (independent flat start, own fixture row): pred = bid - 1 tick
+    = 99 ticks = $9.90.
+        s = round(9.90 * PRICE_SCALE) = 990_000_000
+        pred_ticks_ceil = -((-990_000_000) // 10_000_000) = 99
+        short_trigger: 99 < 100 is TRUE -> short entry @ bid=100.
+
+    Checked against both the kernel and the pure-Python twin.
+    """
+    etime = np.array([1], dtype=np.int64)
+    bid_ticks = np.array([100], dtype=np.int64)
+    ask_ticks = np.array([101], dtype=np.int64)
+
+    row_a_pred = np.array([10.20], dtype=np.float64)
+    row_a_kernel = run_sim_checked(etime, bid_ticks, ask_ticks, row_a_pred, x_bps=0)
+    row_a_twin = run_reference_sim(etime, bid_ticks, ask_ticks, row_a_pred, x_bps=0)
+    assert row_a_kernel.fill_count == 1
+    assert row_a_twin.fill_count == 1
+    assert int(row_a_kernel.trade_log["side"][0]) == 1
+    assert int(row_a_kernel.trade_log["price_ticks"][0]) == 101
+
+    row_b_pred = np.array([9.90], dtype=np.float64)
+    row_b_kernel = run_sim_checked(etime, bid_ticks, ask_ticks, row_b_pred, x_bps=0)
+    row_b_twin = run_reference_sim(etime, bid_ticks, ask_ticks, row_b_pred, x_bps=0)
+    assert row_b_kernel.fill_count == 1
+    assert row_b_twin.fill_count == 1
+    assert int(row_b_kernel.trade_log["side"][0]) == -1
+    assert int(row_b_kernel.trade_log["price_ticks"][0]) == 100
 
 
 def test_zero_lot_dead_zone_raises_a_named_status():
@@ -297,10 +408,18 @@ def _decision_sequences(draw):
     [1, 50] ticks (mirrors the measured real spread distribution,
     06-RESEARCH.md Q6 -- 97.463% of real rows are exactly 1 tick). `pred`
     is drawn as a RAW PRICE near the row's own mid, offset by a signed
-    tick count in [-40, 40] -- never as a bare integer in the tick range,
-    which would make every row trigger and the anti-vacuity check below
-    vacuous (this plan's own read_first note: this mistake was caught
-    twice while designing `sim/ticks.py`'s tests in Plan 06-02).
+    tick count in [-40, 40] plus a coin-flip HALF-TICK (`+0.5`) -- never as
+    a bare integer in the tick range, which would make every row trigger
+    and the anti-vacuity check below vacuous (this plan's own read_first
+    note: this mistake was caught twice while designing `sim/ticks.py`'s
+    tests in Plan 06-02). The half-tick coin flip was ADDED alongside the
+    2026-09-24 symmetric-quantisation fix (`sim/kernel.py`'s module
+    docstring): every prior version of this strategy generated `pred` on
+    an exact tick grid point only (`(bid+ask)//2 + integer offset`), which
+    means this sweep never once exercised the half-tick tie case that is
+    99.96% of a real day's perfect-foresight predictions and is exactly
+    where the predecessor round-half-up rule was asymmetric -- kernel/twin
+    agreement on THAT case was unproven until now.
 
     At this price band and the $100/0.001 BTC MVP defaults, `qty_scaled`
     stays on the order of 1e6-1e7 and the per-trade tick delta stays under
@@ -327,7 +446,8 @@ def _decision_sequences(draw):
         spread = draw(st.integers(min_value=1, max_value=50))
         ask = bid + spread
         offset = draw(st.integers(min_value=-40, max_value=40))
-        pred_ticks_target = (bid + ask) // 2 + offset
+        half_tick = 0.5 if draw(st.booleans()) else 0.0
+        pred_ticks_target = (bid + ask) / 2 + offset + half_tick
         etimes.append(t)
         bids.append(bid)
         asks.append(ask)

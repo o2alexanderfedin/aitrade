@@ -24,22 +24,55 @@ ticks before either side of the comparison is evaluated, so the entire
 decision is integer (T-06-07 -- `grep -n "float" sim/kernel.py`'s
 acceptance check is confined to the conversion/quantisation lines below;
 P&L, position and quantity never touch float). `pred` arrives as a RAW
-PRICE (the same scale as `bid_price`/`ask_price`, NOT a bare tick count)
-and is quantised to the NEAREST tick by
-`(round(pred * PRICE_SCALE) + TICK_SIZE_SCALED // 2) // TICK_SIZE_SCALED`
--- deliberately NOT `sim.ticks.price_to_ticks`'s floor-then-round-trip-
-proof rule. That proof is for bid/ask, which ARE tick-exact by
-construction (06-RESEARCH.md Q2); a model's predicted price is not
-expected to already be a tick multiple, and `price_to_ticks`'s round-trip
-assertion would wrongly reject almost every realistic prediction (see
-`sim/ticks.py`'s own module docstring and 06-02-SUMMARY.md's "half-tick
-tie-break" note). `X_price` is derived from the integer `bid_ticks`/
-`ask_ticks` the kernel is given, never from a float `mid`:
-`x_ticks = (bid_ticks[i] + ask_ticks[i]) * x_bps // 20_000` (twice the
-mid, one floor division) -- ONE formula, applied as `+x_ticks` on the long
-side and `-x_ticks` on the short side, which is what makes the comparison
-symmetric BY CONSTRUCTION (`test_quantised_threshold_is_symmetric_at_0_4_ticks`
-proves it with worked arithmetic).
+PRICE (the same scale as `bid_price`/`ask_price`, NOT a bare tick count).
+
+QUANTISATION IS SYMMETRIC BY DIRECTION, NOT BY A SHARED NEAREST-TICK
+VALUE (fixed 2026-09-24, after Plan 06-06 measured the asymmetric
+predecessor rule -- see 06-06-SUMMARY.md's "Deviations from Plan"
+and the ADR-style note at the end of this docstring). A single
+round-half-up `pred_ticks`, compared against BOTH triggers, is NOT
+symmetric: on a real day, perfect-foresight `pred` sits exactly on a
+half-tick boundary 99.96% of the time (the mid of a one-tick spread
+always does), and round-half-up rounds every one of those ties UP --
+which makes the long side (`pred_ticks > ask_ticks`) systematically
+easier to trigger than the short side (`pred_ticks < bid_ticks`) is to
+trigger, since a half-tick-above-ask prediction rounds up into a long
+trigger while a half-tick-below-bid prediction also rounds up, INTO
+`bid_ticks` itself, and therefore never crosses `< bid_ticks`. The fix
+keeps D-06-07's own stated semantics ("crosses by at least one tick
+beyond the threshold") but rounds EACH side AGAINST the trade instead of
+sharing one rounded value:
+
+    s = round(pred * PRICE_SCALE)                      # int64, s >= 0
+    pred_ticks_floor = s // TICK_SIZE_SCALED            # floor(pred), long side
+    pred_ticks_ceil  = -((-s) // TICK_SIZE_SCALED)      # ceil(pred), short side
+    long_trigger  = pred_ticks_floor > ask_ticks + x_ticks
+    short_trigger = pred_ticks_ceil  < bid_ticks - x_ticks
+
+Both `//` divisions are exact integer floor division (never a float
+round) -- `pred_ticks_ceil` is `-floor(-s / T)`, the standard integer
+ceiling-via-floor identity, so both sides stay integer throughout, per
+D-06-06. A prediction sitting EXACTLY on a half-tick boundary now
+triggers NEITHER direction (`floor` rounds it down, short of the ask;
+`ceil` rounds it up, short of crossing the bid from below) -- the
+conservative, symmetric reading `06-CONTEXT.md`'s D-06-07 always
+intended: "crosses by at least one tick", not "crosses by at least half
+a tick on one side and one and a half ticks on the other."
+`test_symmetric_quantisation_at_exact_half_tick` (`tests/sim/test_kernel.py`)
+is the regression test for this fix; `06-06-SUMMARY.md`'s own "half-tick
+tie-break asymmetry" finding is the bug report it closes.
+
+`X_price` is derived from the integer `bid_ticks`/`ask_ticks` the kernel
+is given, never from a float `mid`: `x_ticks = (bid_ticks[i] +
+ask_ticks[i]) * x_bps // 20_000` (twice the mid, one floor division) --
+ONE formula, applied as `+x_ticks` on the long side and `-x_ticks` on the
+short side, unchanged by this fix (`x_ticks`'s own symmetry was never in
+question -- only the two `pred_ticks` comparisons it is added to/
+subtracted from were asymmetric). `test_quantised_threshold_is_symmetric_at_0_4_ticks`
+still proves the partial-tick-overshoot case with worked arithmetic,
+re-derived under the new floor/ceil rule (its own numeric conclusions
+are unchanged -- both an ask-side and a bid-side 0.4-tick overshoot still
+produce zero trades, by a different mechanism than before).
 
 D-06-08/Q13: position size is recomputed FRESH at every entry/flip from
 the CURRENT fill price (`ask_ticks[i]` for a long fill, `bid_ticks[i]` for
@@ -168,9 +201,10 @@ STATUS_MESSAGES: dict[int, str] = {
         "have overflowed it was not written"
     ),
     STATUS_NEGATIVE_PRED: (
-        "pred[row] scales to a negative price; the nearest-tick formula "
-        "rounds toward +inf for a negative scaled value and would "
-        "quantise it wrongly rather than loudly"
+        "pred[row] scales to a negative price; the floor/ceil "
+        "quantisation formulas below are only proven correct for "
+        "s >= 0, so a negative scaled prediction is refused loudly "
+        "rather than quantised wrongly"
     ),
 }
 
@@ -276,20 +310,23 @@ def run_sim(
             error_row = i
             break
 
-        # Nearest-tick quantisation (D-06-07) -- NOT a floor, and NOT
-        # `sim.ticks.price_to_ticks`'s round-trip-proved rule (see the
-        # module docstring: that proof is for bid/ask, not a prediction).
+        # Symmetric-by-direction quantisation (D-06-07, fixed 2026-09-24
+        # -- see the module docstring's "QUANTISATION IS SYMMETRIC BY
+        # DIRECTION" section). NOT `sim.ticks.price_to_ticks`'s round-
+        # trip-proved rule (that proof is for bid/ask, not a prediction).
         s = np.int64(round(p * PRICE_SCALE))
         if s < 0:
             # Not a bare `assert` -- see the module docstring's
-            # NEVER-RAISE-FROM-@njit rule. The formula below rounds
-            # toward +inf for a negative scaled value, so a negative
-            # prediction would quantise wrongly rather than loudly if
-            # this check did not exist.
+            # NEVER-RAISE-FROM-@njit rule. A negative scaled prediction
+            # is refused loudly rather than quantised wrongly.
             status = STATUS_NEGATIVE_PRED
             error_row = i
             break
-        pred_ticks = (s + TICK_SIZE_SCALED // 2) // TICK_SIZE_SCALED
+        # floor(pred) for the long side, ceil(pred) for the short side --
+        # each rounds AGAINST the trade it gates, so a prediction sitting
+        # exactly on a half-tick boundary triggers NEITHER direction.
+        pred_ticks_floor = s // TICK_SIZE_SCALED
+        pred_ticks_ceil = -((-s) // TICK_SIZE_SCALED)
 
         b = bid_ticks[i]
         a = ask_ticks[i]
@@ -298,8 +335,8 @@ def run_sim(
         # test_quantised_threshold_is_symmetric_at_0_4_ticks.
         x_ticks = (b + a) * x_bps // 20_000
 
-        long_trigger = pred_ticks > a + x_ticks
-        short_trigger = pred_ticks < b - x_ticks
+        long_trigger = pred_ticks_floor > a + x_ticks
+        short_trigger = pred_ticks_ceil < b - x_ticks
 
         triggered = False
         is_flip = False
