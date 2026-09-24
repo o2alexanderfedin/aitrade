@@ -25,7 +25,15 @@ from hypothesis import strategies as st
 
 from data.lake_paths import DEFAULT_LAKE_ROOT, LAKE_REGISTRY_ROOT
 from data.store import by_date_index_path, resolve_manifest
-from sim.ticks import PRICE_SCALE, TICK_SIZE_SCALED, price_to_ticks
+from data.time_ns import QTY_SCALE
+from sim.ticks import (
+    LOT_STEP_SCALED,
+    PRICE_SCALE,
+    TICK_SIZE_SCALED,
+    ZeroLotError,
+    position_size_ticks,
+    price_to_ticks,
+)
 
 SYMBOL = "BTCUSDT"
 DATE = "2026-09-13"
@@ -120,3 +128,62 @@ def test_price_to_ticks_raises_on_a_value_not_representable_at_the_scale():
     price = np.array([76_950.0, 50_000_000_000.123456])
     with pytest.raises(ValueError, match=r"price\[1\]"):
         price_to_ticks(price)
+
+
+# --------------------------------------------------------------------------
+# Task 2: lot step and the >$100,000 zero-lot dead zone (D-06-08, D-06-20)
+# --------------------------------------------------------------------------
+
+
+def test_lot_step_matches_the_measured_venue_gcd():
+    _skip_if_lake_unmounted()
+    book = _real_curated_head("bookTicker", HEAD_ROWS)
+    trade = _real_curated_head("trade", HEAD_ROWS)
+    for col, df in (("bid_qty", book), ("ask_qty", book), ("qty", trade)):
+        scaled = np.round(df[col].to_numpy() * QTY_SCALE).astype(np.int64)
+        # Anti-vacuity: gcd of an all-zero or near-empty column would
+        # trivially "match" nothing meaningful.
+        assert scaled.size > 100, f"{col}: too few rows to gcd"
+        assert int(np.max(scaled)) > 0, f"{col}: all-zero column"
+        assert int(np.gcd.reduce(scaled)) == LOT_STEP_SCALED, col
+
+
+def test_position_size_at_measured_median_price_is_one_lot():
+    """06-RESEARCH.md Q1: median MID on 2026-09-13 (full 17,167,290-row
+    bookTicker partition) is $77,061.35 -> one lot (0.001 BTC, $77.06
+    notional), nonzero. This value is NOT round-tripped through
+    `price_to_ticks`: $77,061.35 sits exactly on a half-tick boundary
+    (a `mid` is the average of two ticks, and 06-RESEARCH.md Q6 measured
+    that 97.463% of real quotes have exactly a 1-tick spread, so a `mid`
+    is very often a half-tick value) -- `price_to_ticks`'s own round-trip
+    proof (this file's Task 1 tests) correctly REFUSES a value sitting
+    exactly at that tie, per D-06-05. `770_613` is
+    `floor($77,061.35 / $0.1)`, matching `price_to_ticks`'s own
+    floor-division convention by hand for this one pinned value."""
+    price_ticks = 770_613
+    qty = position_size_ticks(price_ticks)
+    assert qty == LOT_STEP_SCALED
+
+
+def test_position_size_raises_zero_lot_error_above_100k():
+    price_ticks_over = int(price_to_ticks(np.array([100_001.0]))[0])
+    with pytest.raises(ZeroLotError, match=r"100001"):
+        position_size_ticks(price_ticks_over)
+
+    price_ticks_at = int(price_to_ticks(np.array([100_000.0]))[0])
+    assert position_size_ticks(price_ticks_at) == LOT_STEP_SCALED
+
+
+@settings(deadline=None, max_examples=300, suppress_health_check=[HealthCheck.too_slow])
+@given(price_ticks=st.integers(min_value=10, max_value=5_000_000))
+def test_position_size_never_silently_returns_zero(price_ticks):
+    """$1 (10 ticks) to $500,000 (5,000,000 ticks) -- D-06-20's own
+    anti-vacuity requirement: a silent zero-lot run is indistinguishable
+    from a strategy that found no signal, so every price either sizes a
+    strictly positive quantity or raises `ZeroLotError` -- never a bare
+    `0` return."""
+    try:
+        qty = position_size_ticks(price_ticks)
+    except ZeroLotError:
+        return
+    assert qty > 0
