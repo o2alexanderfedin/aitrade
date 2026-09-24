@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Completed 06-07-PLAN.md (phase 6 close)
-last_updated: "2026-09-24T08:30:53.599Z"
-last_activity: 2026-09-24
+status: completed
+stopped_at: "Phase 6 COMPLETE and MERGED to develop (607200e). The simulator walks decision rows one at a time under spec.md's rule with integer position/cash/P&L; a half-tick prediction now triggers neither side, where round-half-up had favoured longs on 99.96% of real rows (trigger rows: long 1,924,947->1,868,904, short unchanged at 1,897,533). Perfect-foresight ceiling, the reference every later model is measured against: 2,192 trades / 294,554 ticks / $29.46 on 6,864,853 decision rows of the v2 2026-09-13 partition -- an exact match to the research prototype, resolving 06-06's unexplained divergence. Feature tier is schema v2 with bid_price/ask_price; 7 days rebuilt BESIDE v1 (v1 manifests still load), labels differing in exactly the 249 errata cells. Review found no blockers; its one warning mis-computed the int64 overflow bound by 1e8 -- the real ceiling is $922.34 notional, only 9.22x the $100 default, now guarded by STATUS_NOTIONAL_OVERFLOW. 1,126+ tests, 19 hooks, CI green. Phase 7 (Regression Track & Vertical Slice) next."
+last_updated: "2026-09-24T18:24:05.318Z"
+last_activity: 2026-09-24 -- Phase 6 marked complete
 progress:
   total_phases: 11
   completed_phases: 6
   total_plans: 36
   completed_plans: 37
-  percent: 100
+  percent: 55
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 
 ## Current Position
 
-Phase: 6 (Event-Driven Simulator) — EXECUTING
+Phase: 6 — COMPLETE
 Plan: 7 of 7
-Status: Phase complete — ready for verification
-Last activity: 2026-09-24
+Status: Phase 6 complete
+Last activity: 2026-09-24 -- Phase 6 marked complete
 
 Progress: [██████████] 100%
 

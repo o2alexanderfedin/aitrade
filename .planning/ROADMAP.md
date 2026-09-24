@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Data Layer — Backfill, Ingest & Lockbox** - Trades backfill, side correction, manifest-addressed store, DQ reports, mechanical lockbox quarantine (completed 2026-09-17)
 - [x] **Phase 4: Feature & Label Engine** - Single numba streaming code path, catalogued L1 features, leakage-proven labels (completed 2026-09-19)
 - [x] **Phase 5: Fold Harness & Overfitting Controls** - 5-segment walk-forward with embargo, OOF fallback, selection-bias budget, negative-result log
-- [ ] **Phase 6: Event-Driven Simulator** - Numba flip-only sim with integer-tick accounting and oracle tests
+- [x] **Phase 6: Event-Driven Simulator** - Numba flip-only sim with integer-tick accounting and oracle tests
 - [ ] **Phase 7: Regression Track & Vertical Slice** - Cheapest model class wires Trainer protocol, frozen predictors, prediction tables end-to-end
 - [ ] **Phase 8: Trees, Transformer & v0 Gate** - All three classes on same folds, cross-class protocol, held-out locked, v0 smoke gate
 - [ ] **Phase 9: Stage 2 Monetization & v1 Gate** - Optuna X sweep on out-of-train predictions, knife-edge rejection, full report suite, v1 gate
@@ -145,7 +145,7 @@ Plans:
   1. Numba event-driven simulator runs taker-only, zero-fee, zero-latency, $100-max-notional, flip-only logic as a sequential scan over decision rows (no vectorization)
   2. Oracle tests reproduce hand-computed scenario P&L exactly, including a realized-future-returns oracle that bounds the achievable ceiling — the test class that catches decision-rule dimensional bugs
   3. Integer-tick price accounting in the hot path yields bit-identical P&L across double runs (CI-enforced), with no float-drift errors
-**Plans**: 7 plans, 4 waves
+**Plans**: 7 plans, 4 waves — COMPLETE 2026-09-24 (merged to develop as 607200e)
 
 Plans:
 **Wave 1**
