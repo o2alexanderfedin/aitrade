@@ -3,6 +3,7 @@ phase: 6
 phase_name: Event-Driven Simulator
 created: 2026-09-23
 mode: smart discuss (autonomous run; four grey areas proposed as tables, the user accepted every recommended answer including the quantised threshold comparison)
+amended: 2026-09-23 after 06-RESEARCH.md found that the feature tier never stored bid/ask -- the user chose the schema migration over a curated-tier adapter (D-06-17..20)
 ---
 
 # Phase 6 Context: Event-Driven Simulator
@@ -164,6 +165,45 @@ removing the simplification post-MVP (mvp.md Q2 lists taker fees first) is a cal
 rather than a rewrite of the kernel.
 
 </decisions>
+
+## Area 5 — The schema migration the research forced (added 2026-09-23, after 06-RESEARCH.md)
+
+### D-06-17 — The feature tier gains `bid_price` and `ask_price` as BOOKKEEPING columns
+The authoritative decision rule compares a predicted mid against the best ask and the best bid;
+`FEATURE_ROW_SCHEMA` has only `mid`. Reconstructing the quotes as `mid ∓ half a tick` is wrong on
+2.5% of rows (measured: the spread is wider than one tick that often), and fabricating prices is
+the exact failure class this project exists to prevent. So the tier stores what the rule needs.
+They are BOOKKEEPING columns (`BOOKKEEPING_COLUMNS`), not catalogued features: they are raw
+observed state, like `etime` and `decision_seq`, not a derived quantity with an information set —
+`features.toml` stays untouched and `check_spec_diff` sees no catalogue change.
+The kernel already carries `state.prev_bid_price` / `prev_ask_price` (that is where `mid` comes
+from), so emitting them is two more output arrays, not new arithmetic. `features/reference.py`'s
+twin gains the same two outputs and the existing equivalence test covers them.
+
+### D-06-18 — `FEATURE_SCHEMA_VERSION` 1 → 2, and v2 partitions live beside v1, never on top
+Committed manifests are write-once and `write_feature_partition` refuses a `date=` directory that
+already holds a part file — by design. The rebuild therefore does NOT touch v1: v2 partitions get
+their own part-file identity (a schema-scoped name or path level, the planner picks the mechanism)
+so every v1 manifest keeps resolving to its own bytes, `check_no_manifest_rewrite --full` stays
+green, and Phase 5's committed segment manifest — which names v1 feature manifest ids — remains
+valid and readable. A new segment manifest over v2 is Phase 7's call, not this phase's.
+
+### D-06-19 — The rebuild is its own regression proof
+The v2 build runs the CURRENT label code, whose staleness fix (`null_stale`) landed after the v1
+partitions were written. So v2's labels must differ from v1's in EXACTLY the 249 errata cells
+(180 `ret_1s_mid`, 69 `ret_10s_mid`, all previously exactly 0.0, all on 2026-09-12/13) and nowhere
+else. That comparison is a required acceptance criterion of the rebuild: it proves the migration
+changed only what it was supposed to change, and it independently re-confirms the errata list from
+a completely different direction. Any other differing cell STOPS the rebuild.
+On the four days built after the fix (2026-09-15..18) the label columns must be bit-identical.
+
+### D-06-20 — The $100 cap's dead zone is refused loudly, not traded silently
+`floor(max_notional / price / lot_step) * lot_step` is zero for any BTC price above $100,000 at
+the measured 0.001 BTC lot step. Today's median of $77,061 yields exactly one lot (~$77), so the
+policy is non-vacuous now, but the boundary is real and the spec never mentions it. The kernel
+RAISES when the cap yields zero lots, naming the price and the cap — it never silently produces a
+run with no trades, which is indistinguishable from a strategy that found no signal.
+`max_notional` and `lot_step` are parameters; the MVP defaults stay $100 and the measured step.
 
 <code_context>
 ## Existing Code Insights
