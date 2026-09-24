@@ -1,0 +1,107 @@
+{
+  "2026-09-12": {
+    "decision_seq_bitwise_identical": true,
+    "etime_bitwise_identical": true,
+    "feature_columns_bitwise_identical": {
+      "imb_top": true,
+      "mid": true,
+      "ofi": true,
+      "trade_flow": true
+    },
+    "rows": 4193137,
+    "warmup_flags_bitwise_identical": {
+      "post_gap_warmup": true,
+      "warmup": true
+    }
+  },
+  "2026-09-13": {
+    "decision_seq_bitwise_identical": true,
+    "etime_bitwise_identical": true,
+    "feature_columns_bitwise_identical": {
+      "imb_top": true,
+      "mid": true,
+      "ofi": true,
+      "trade_flow": true
+    },
+    "rows": 6864853,
+    "warmup_flags_bitwise_identical": {
+      "post_gap_warmup": true,
+      "warmup": true
+    }
+  },
+  "2026-09-14": {
+    "decision_seq_bitwise_identical": true,
+    "etime_bitwise_identical": true,
+    "feature_columns_bitwise_identical": {
+      "imb_top": true,
+      "mid": true,
+      "ofi": true,
+      "trade_flow": true
+    },
+    "rows": 11323694,
+    "warmup_flags_bitwise_identical": {
+      "post_gap_warmup": true,
+      "warmup": true
+    }
+  },
+  "2026-09-15": {
+    "decision_seq_bitwise_identical": true,
+    "etime_bitwise_identical": true,
+    "feature_columns_bitwise_identical": {
+      "imb_top": true,
+      "mid": true,
+      "ofi": true,
+      "trade_flow": true
+    },
+    "rows": 12203294,
+    "warmup_flags_bitwise_identical": {
+      "post_gap_warmup": true,
+      "warmup": true
+    }
+  },
+  "2026-09-16": {
+    "decision_seq_bitwise_identical": true,
+    "etime_bitwise_identical": true,
+    "feature_columns_bitwise_identical": {
+      "imb_top": true,
+      "mid": true,
+      "ofi": true,
+      "trade_flow": true
+    },
+    "rows": 9872620,
+    "warmup_flags_bitwise_identical": {
+      "post_gap_warmup": true,
+      "warmup": true
+    }
+  },
+  "2026-09-17": {
+    "decision_seq_bitwise_identical": true,
+    "etime_bitwise_identical": true,
+    "feature_columns_bitwise_identical": {
+      "imb_top": true,
+      "mid": true,
+      "ofi": true,
+      "trade_flow": true
+    },
+    "rows": 8482081,
+    "warmup_flags_bitwise_identical": {
+      "post_gap_warmup": true,
+      "warmup": true
+    }
+  },
+  "2026-09-18": {
+    "decision_seq_bitwise_identical": true,
+    "etime_bitwise_identical": true,
+    "feature_columns_bitwise_identical": {
+      "imb_top": true,
+      "mid": true,
+      "ofi": true,
+      "trade_flow": true
+    },
+    "rows": 7986824,
+    "warmup_flags_bitwise_identical": {
+      "post_gap_warmup": true,
+      "warmup": true
+    }
+  }
+}
