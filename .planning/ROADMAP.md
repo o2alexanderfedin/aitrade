@@ -145,7 +145,16 @@ Plans:
   1. Numba event-driven simulator runs taker-only, zero-fee, zero-latency, $100-max-notional, flip-only logic as a sequential scan over decision rows (no vectorization)
   2. Oracle tests reproduce hand-computed scenario P&L exactly, including a realized-future-returns oracle that bounds the achievable ceiling — the test class that catches decision-rule dimensional bugs
   3. Integer-tick price accounting in the hot path yields bit-identical P&L across double runs (CI-enforced), with no float-drift errors
-**Plans**: TBD
+**Plans**: 7 plans, 4 waves
+
+Plans:
+- [ ] 06-01-PLAN.md — Schema v2 migration code: kernel/reference/api emit bid_price/ask_price, tier.py version-scoped write-once identity, DQ-report multi-manifest fix (fixture-only)
+- [ ] 06-02-PLAN.md — mvp/sim/ticks.py: tick constant + round-trip proof, lot-step measurement, $100-cap zero-lot dead zone
+- [ ] 06-03-PLAN.md — mvp/sim/kernel.py: the sequential flip-only run_sim state machine, arrays.py boundary, outputs.py, reference.py twin, bitwise equivalence
+- [ ] 06-04-PLAN.md — The real 7-day schema-v2 rebuild + the v1-vs-v2 label regression proof (249 errata cells, nowhere else)
+- [ ] 06-05-PLAN.md — Cross-process determinism (sha256) + refuse-on-null/dropped-row contract
+- [ ] 06-06-PLAN.md — Path-dependence, flip-invariant, hand-computed/zero-prediction oracles, real-day perfect-foresight reconciliation
+- [ ] 06-07-PLAN.md — spec.md Simulator section + phase-wide verification pass
 
 ### Phase 7: Regression Track & Vertical Slice
 **Goal**: The cheapest model class proves the full Stage-1 plumbing — Trainer protocol, frozen predictors, prediction tables — end to end
