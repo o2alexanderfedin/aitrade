@@ -63,6 +63,7 @@ from data.store import (
     ManifestTierError,
     by_date_index_path,
     manifest_source,
+    manifests_for_dataset,
     resolve_manifest,
 )
 
@@ -396,37 +397,42 @@ FEATURE_CHECKS = (
 )
 
 
-def build_feature_report_rows_for_date(
+def _feature_report_rows_for_manifest(
     symbol: str,
     date: str,
+    manifest: dict,
     *,
     lake_root: Path,
     registry_root: Path,
     thresholds: DQThresholds,
 ) -> list[dict]:
-    """Every feature-tier check for `(symbol, date)`, or `[]` when no
-    features manifest exists for that date.
-
-    Absence is not a finding, matching the curated convention above: a date
-    nobody has built features for emits no features rows, and
-    `store._dq_verdict_for_date` has nothing to judge. A date that WAS
-    built but whose `build_stats.json` is missing or belongs to another
-    build is a different case entirely -- one `failed` row, fail-closed,
-    because the checks it would have carried cannot run.
+    """Every feature-tier check row for ONE manifest dict already discovered
+    by `store.manifests_for_dataset` -- re-verified through
+    `resolve_manifest` before anything else about it is trusted (integrity
+    first, exactly as the by-date-pointer path always did), and its
+    `build_stats.json` looked up at ITS OWN `schema_version` (T-06-02):
+    `feature_build_stats_path(..., schema_version=manifest["schema_version"])`
+    is what makes a v1 manifest's checks read v1's stats file even after a
+    v2 build has moved the global `FEATURE_SCHEMA_VERSION` on and started
+    writing `build_stats-v2.json` -- the bug this task fixes is exactly a
+    v1 manifest silently being judged against v2's (unrelated) stats.
     """
     dataset = f"{symbol}.{FEATURES_TIER}"
-    idx_path = by_date_index_path(registry_root, dataset, symbol, FEATURES_TIER, date)
-    if not idx_path.exists():
-        return []
     try:
-        manifest = resolve_manifest(
-            json.loads(idx_path.read_text())["manifest_id"],
+        resolved = resolve_manifest(
+            manifest.get("manifest_id"),
             dataset,
             registry_root=registry_root,
             lake_root=lake_root,
             expected_tier=FEATURES_TIER,
         )
-    except (ManifestHashMismatch, ManifestTierError, OSError, KeyError) as exc:
+    except (
+        ManifestHashMismatch,
+        ManifestTierError,
+        OSError,
+        KeyError,
+        TypeError,
+    ) as exc:
         # CONTAINED TO THE FEATURE ROWS (04-REVIEW.md WR-06). Unguarded,
         # this propagated out of `build_report_rows_for_date`, out of
         # `write_report` and out of `main`'s date loop -- so a corrupt
@@ -435,7 +441,10 @@ def build_feature_report_rows_for_date(
         # curated manifests while the operator saw a traceback naming
         # `features`. One `failed` row is still fail-closed: it pauses
         # `load_features` on this date, which is the correct verdict, and
-        # the curated half of the report regenerates.
+        # the curated half of the report regenerates. `manifest_id` stays
+        # `None`: the manifest did not resolve, so no id may be claimed
+        # for it, even though the directory scan that found this dict
+        # already knows what it CLAIMS its id is.
         return [
             {
                 "date": date,
@@ -451,9 +460,11 @@ def build_feature_report_rows_for_date(
             }
         ]
 
-    stats_path = feature_build_stats_path(lake_root, symbol, date)
+    stats_path = feature_build_stats_path(
+        lake_root, symbol, date, schema_version=resolved["schema_version"]
+    )
     build_stats = json.loads(stats_path.read_text()) if stats_path.exists() else None
-    stats_problem = build_stats_problem(build_stats, manifest)
+    stats_problem = build_stats_problem(build_stats, resolved)
 
     base = {"date": date, "symbol": symbol, "stream": FEATURES_TIER}
     if stats_problem is not None:
@@ -468,7 +479,58 @@ def build_feature_report_rows_for_date(
     else:
         rows = [{**base, **check(build_stats, thresholds)} for check in FEATURE_CHECKS]
     for row in rows:
-        row["manifest_id"] = manifest["manifest_id"]
+        row["manifest_id"] = resolved["manifest_id"]
+    return rows
+
+
+def build_feature_report_rows_for_date(
+    symbol: str,
+    date: str,
+    *,
+    lake_root: Path,
+    registry_root: Path,
+    thresholds: DQThresholds,
+) -> list[dict]:
+    """Every feature-tier check for `(symbol, date)`, across EVERY manifest
+    that has ever covered this date -- not only the by-date pointer's
+    CURRENT one (T-06-02) -- or `[]` when none has.
+
+    Discovery is `store.manifests_for_dataset`, a directory scan, not the
+    by-date pointer: the pointer is a hint about which manifest is
+    "current", never the sole path to a manifest that still exists and
+    still needs its own verdict. This is what keeps a superseded manifest's
+    `load_features` call resolving after a rebuild issues a new one for the
+    same date -- without it, `write_report`'s wholesale rewrite of
+    `report.parquet` silently drops the superseded manifest's rows and
+    `store._dq_verdict_for_date` reports it `missing` forever.
+
+    Absence is not a finding, matching the curated convention above: a date
+    nobody has built features for emits no features rows. A date that WAS
+    built but whose `build_stats.json` is missing or belongs to another
+    build is a different case entirely -- one `failed` row per manifest,
+    fail-closed, because the checks it would have carried cannot run.
+    """
+    dataset = f"{symbol}.{FEATURES_TIER}"
+    manifests = manifests_for_dataset(registry_root, dataset)
+    matching = [
+        m
+        for m in manifests
+        if any(p.get("date") == date for p in m.get("partitions", []))
+    ]
+    if not matching:
+        return []
+    rows: list[dict] = []
+    for manifest in matching:
+        rows.extend(
+            _feature_report_rows_for_manifest(
+                symbol,
+                date,
+                manifest,
+                lake_root=lake_root,
+                registry_root=registry_root,
+                thresholds=thresholds,
+            )
+        )
     return rows
 
 

@@ -14,6 +14,7 @@ import polars as pl
 import pytest
 
 from data.dq.checks import load_dq_thresholds
+from data.dq.feature_checks import feature_build_stats_path
 from data.dq.report import (
     build_report_rows_for_date,
     build_stats_path,
@@ -24,7 +25,8 @@ from data.dq.report import (
     normalize_row,
     write_report,
 )
-from data.store import issue_manifest, manifest_source
+from data.store import FEATURES_TIER, issue_manifest, manifest_source
+from features.tier import load_features
 from tools.check_spec_diff import check_drift
 from tools.git_env import scrubbed_git_env  # noqa: F401  (import-sanity; env used indirectly)
 
@@ -844,3 +846,192 @@ def test_wrongly_scaled_rtime_pauses_the_loader(tmp_path: Path):
             registry_root=registry_root,
             lake_root=lake_root,
         )
+
+
+# --- 06-01-PLAN.md Task 3: every manifest a date has ever had, not only ---
+# --- the by-date pointer's current one ------------------------------------
+
+_ALL_OK_FEATURE_STATS: dict = {
+    "n_quote_rows": 100,
+    "n_trade_rows": 10,
+    "n_events": 110,
+    "n_decision_rows": 100,
+    "na_placeholder_excluded": 0,
+    "unknown_side_rows": 0,
+    "null_primary_label_rows": 0,
+    "ret_10s_mid_zero_fraction": 0.1,
+    "ret_1s_mid_zero_fraction": 0.1,
+    "warmup_rows": 1,
+    "post_gap_warmup_rows": 0,
+    "resync_sidecar_present": True,
+    "max_window_occupancy": 10,
+    "window_capacity": 1 << 16,
+    "window_overflow": False,
+    "empty_window_rows": 5,
+    "asof_convention_disagreement_rows": 0,
+}
+
+
+def _write_features_partition_and_manifest(
+    lake_root: Path,
+    registry_root: Path,
+    date: str,
+    *,
+    schema_version: int,
+    part_name: str,
+    symbol: str = SYMBOL,
+) -> dict:
+    """One features-tier manifest issued directly through
+    `data.store.issue_manifest` at an explicit `schema_version` --
+    `features.tier.issue_feature_manifest` always issues at the CURRENT
+    `FEATURE_SCHEMA_VERSION`, so a standing-in v1 manifest (simulating an
+    already-committed pre-migration partition) has to go through the
+    lower-level primitive directly."""
+    rel = f"{FEATURES_TIER}/symbol={symbol}/date={date}/{part_name}"
+    path = lake_root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df = pl.DataFrame({"etime": [1_000, 2_000], "decision_seq": [0, 1]})
+    df.write_parquet(path, compression="zstd")
+    st = path.stat()
+    part = {
+        "date": date,
+        "path": rel,
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "rows": df.height,
+        "size_bytes": st.st_size,
+        "mtime_ns": st.st_mtime_ns,
+        "etime_min": int(df["etime"].min()),
+        "etime_max": int(df["etime"].max()),
+    }
+    return issue_manifest(
+        dataset=f"{symbol}.{FEATURES_TIER}",
+        symbol=symbol,
+        stream=FEATURES_TIER,
+        tier=FEATURES_TIER,
+        schema_version=schema_version,
+        inputs=[],
+        partitions=[part],
+        code_hash="deadbeef",
+        registry_root=registry_root,
+        dates=[date],
+    )
+
+
+def _write_feature_stats(
+    lake_root: Path, symbol: str, date: str, manifest_id: str, *, schema_version: int
+) -> Path:
+    stats_path = feature_build_stats_path(
+        lake_root, symbol, date, schema_version=schema_version
+    )
+    stats_path.parent.mkdir(parents=True, exist_ok=True)
+    stats_path.write_text(
+        json.dumps({"manifest_id": manifest_id, **_ALL_OK_FEATURE_STATS})
+    )
+    return stats_path
+
+
+def _two_feature_manifests_for_one_date(lake_root: Path, registry_root: Path) -> dict:
+    """v1 (standing in for an already-committed pre-migration partition,
+    bare `part-1.parquet`), then v2 (`part-v2-1.parquet`) -- the by-date
+    pointer ends up naming v2, the second one issued."""
+    v1 = _write_features_partition_and_manifest(
+        lake_root, registry_root, DATE, schema_version=1, part_name="part-1.parquet"
+    )
+    _write_feature_stats(lake_root, SYMBOL, DATE, v1["manifest_id"], schema_version=1)
+    v2 = _write_features_partition_and_manifest(
+        lake_root, registry_root, DATE, schema_version=2, part_name="part-v2-1.parquet"
+    )
+    _write_feature_stats(lake_root, SYMBOL, DATE, v2["manifest_id"], schema_version=2)
+    return {"v1": v1, "v2": v2}
+
+
+def test_two_feature_manifests_for_one_date_each_keep_their_own_report_row(
+    tmp_path: Path,
+):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    manifests = _two_feature_manifests_for_one_date(lake_root, registry_root)
+
+    write_report(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_empty_ledger(),
+    )
+    report = pl.read_parquet(dq_report_path(lake_root, DATE))
+    feature_rows = report.filter(pl.col("stream") == FEATURES_TIER)
+
+    ids = set(feature_rows["manifest_id"].to_list())
+    assert ids == {manifests["v1"]["manifest_id"], manifests["v2"]["manifest_id"]}, (
+        "both the superseded (v1) and the current (v2) manifest must get "
+        "their own report rows -- not only the by-date pointer's current one"
+    )
+
+    for label in ("v1", "v2"):
+        manifest_id = manifests[label]["manifest_id"]
+        rows = feature_rows.filter(pl.col("manifest_id") == manifest_id)
+        assert rows.height > 0, f"{label} got no report rows at all"
+        wrong_build = rows.filter(
+            (pl.col("dq_status") == "failed")
+            & pl.col("detail").str.contains("different build", literal=True)
+        )
+        assert wrong_build.height == 0, (
+            f"{label} (manifest {manifest_id[:12]}) was scored against the "
+            f"wrong build_stats file: {wrong_build['detail'].to_list()}"
+        )
+
+
+def test_load_features_still_resolves_the_superseded_manifest_after_a_rebuild(
+    tmp_path: Path,
+):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    manifests = _two_feature_manifests_for_one_date(lake_root, registry_root)
+
+    write_report(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_empty_ledger(),
+    )
+
+    # The regression this task exists to prevent: end to end through the
+    # real loader, not only through store._dq_verdict_for_date.
+    df = load_features(
+        manifests["v1"]["manifest_id"],
+        f"{SYMBOL}.{FEATURES_TIER}",
+        registry_root=registry_root,
+        lake_root=lake_root,
+    )
+    assert df.height == 2
+
+
+def test_build_stats_path_is_version_scoped_like_the_part_file(
+    tmp_path: Path, monkeypatch
+):
+    lake_root = tmp_path / "lake"
+
+    # (a) THE EXPLICIT form -- always resolves by the given version,
+    # regardless of the current global.
+    assert (
+        feature_build_stats_path(lake_root, SYMBOL, DATE, schema_version=1).name
+        == "build_stats.json"
+    )
+    assert (
+        feature_build_stats_path(lake_root, SYMBOL, DATE, schema_version=2).name
+        == "build_stats-v2.json"
+    )
+
+    # (b) THE IMPLICIT form -- live, not merely true by coincidence of
+    # today's global being 2.
+    import features.tier as tier_module
+
+    monkeypatch.setattr(tier_module, "FEATURE_SCHEMA_VERSION", 1)
+    assert feature_build_stats_path(lake_root, SYMBOL, DATE).name == "build_stats.json"
+
+    monkeypatch.setattr(tier_module, "FEATURE_SCHEMA_VERSION", 2)
+    assert (
+        feature_build_stats_path(lake_root, SYMBOL, DATE).name == "build_stats-v2.json"
+    )

@@ -28,14 +28,16 @@ PKG_ROOT = Path(__file__).resolve().parents[2]
 
 OUTSIDE = "models/train.py"
 
-#: The four real, grep-confirmed sanctioned test files (D-05-15 said four;
-#: 05-06-PLAN.md's own grep, taken before 05-01..05-05 landed, found only
-#: three -- see the scanner's docstring for the reconciliation).
+#: The five real, grep-confirmed sanctioned test files (D-05-15 said four,
+#: true through Phase 5; 05-06-PLAN.md's own grep, taken before 05-01..05-05
+#: landed, found only three; 06-01-PLAN.md Task 3 added the fifth -- see the
+#: scanner's docstring for the full reconciliation).
 SANCTIONED_TEST_FILES = (
     "tests/features/test_holdout_refusal.py",
     "tests/store/test_loader_tier_containment.py",
     "tests/store/test_features_tier_containment.py",
     "tests/harness/test_kfold.py",
+    "tests/dq/test_report.py",
 )
 
 
@@ -112,13 +114,14 @@ def test_sanctions_the_named_test_files_and_no_others():
     for sanctioned in SANCTIONED_TEST_FILES:
         assert not _messages(source, sanctioned), f"{sanctioned} was flagged"
 
-    # A FIFTH, unlisted test file with the same import must still be
+    # A SIXTH, unlisted test file with the same import must still be
     # flagged -- this is the anti-vacuity proof that the sanction is
-    # enumerated, not a wildcard over tests/harness/ or tests/ at large.
-    fifth = "tests/harness/test_rogue.py"
-    found = _messages(source, fifth)
-    assert found, f"{fifth} imported load_features and was not reported"
-    assert fifth in found[0]
+    # enumerated, not a wildcard over tests/harness/, tests/dq/ or tests/
+    # at large.
+    sixth = "tests/harness/test_rogue.py"
+    found = _messages(source, sixth)
+    assert found, f"{sixth} imported load_features and was not reported"
+    assert sixth in found[0]
 
     assert set(SANCTIONED_FILES) - {"harness"} == set(SANCTIONED_TEST_FILES)
     assert "tests" not in SANCTIONED_FILES, (

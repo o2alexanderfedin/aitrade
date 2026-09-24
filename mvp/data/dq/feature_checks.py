@@ -29,6 +29,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import features.tier
 from data.dq.checks import DQThresholds
 
 __all__ = [
@@ -68,8 +69,29 @@ FEATURE_BUILD_STATS_KEYS: frozenset[str] = frozenset(
 )
 
 
-def feature_build_stats_path(lake_root: Path, symbol: str, date: str) -> Path:
-    """`lake_root/features_meta/symbol=<symbol>/date=<date>/build_stats.json`.
+def feature_build_stats_path(
+    lake_root: Path, symbol: str, date: str, *, schema_version: int | None = None
+) -> Path:
+    """`lake_root/features_meta/symbol=<symbol>/date=<date>/build_stats.json`
+    at schema version 1, or `.../build_stats-v<version>.json` at version
+    >= 2 -- version-scoped exactly like `features/tier.py:_part_glob`'s
+    part-file naming (see that function's docstring for the full reasoning;
+    the two are the same rule applied to two different artifacts of the
+    same build).
+
+    `schema_version=None` (every EXISTING call site) reads
+    `features.tier.FEATURE_SCHEMA_VERSION` AT CALL TIME -- imported as
+    `import features.tier` and read as `features.tier.FEATURE_SCHEMA_VERSION`,
+    never `from features.tier import FEATURE_SCHEMA_VERSION`, which would
+    bind the value at import time and silently defeat a test that
+    monkeypatches the module global. This preserves every existing call
+    site's behaviour with ZERO edits there: "whatever the current version
+    is" is exactly what those call sites already implicitly meant.
+
+    `data/dq/report.py`'s per-manifest row builder is the one caller that
+    passes `schema_version` EXPLICITLY, from `manifest["schema_version"]` --
+    it must read a HISTORICAL manifest's own stats file after the global
+    version has moved on, which the implicit form cannot do.
 
     A sibling metadata tier of `features/`, mirroring `curated_meta/`'s
     relationship to `curated/` exactly: the partition tier stays write-once
@@ -77,12 +99,14 @@ def feature_build_stats_path(lake_root: Path, symbol: str, date: str) -> Path:
     is a re-computable build artifact. No `stream=` level, for the same
     reason the partition path has none.
     """
+    version = (
+        features.tier.FEATURE_SCHEMA_VERSION
+        if schema_version is None
+        else schema_version
+    )
+    name = "build_stats.json" if version == 1 else f"build_stats-v{version}.json"
     return (
-        Path(lake_root)
-        / "features_meta"
-        / f"symbol={symbol}"
-        / f"date={date}"
-        / "build_stats.json"
+        Path(lake_root) / "features_meta" / f"symbol={symbol}" / f"date={date}" / name
     )
 
 
