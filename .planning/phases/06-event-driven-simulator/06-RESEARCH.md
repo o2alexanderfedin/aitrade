@@ -906,6 +906,50 @@ case.
      this phase) — flag for whichever future phase wires a real accessor-gated segment through
      the simulator for the first time.
 
+## Open Questions (RESOLVED)
+
+> Added during plan-checker iteration 1 (W7): each open question above is now resolved by a
+> locked decision or an explicit planning choice, cross-referenced to the plan that carries it.
+
+1. **Which option resolves Critical Finding 1 (the schema gap)?**
+   RESOLVED: by D-06-17 through D-06-20 (06-CONTEXT.md, added after this research). The user
+   chose option (a), the schema migration: `FEATURE_ROW_SCHEMA` gains `bid_price`/`ask_price` as
+   `BOOKKEEPING_COLUMNS`, `FEATURE_SCHEMA_VERSION` bumps to 2, and the write-once tier gains a
+   version-scoped part-file identity so the migration never touches v1's bytes or manifests.
+   Carried out in `06-01-PLAN.md` (the code) and `06-04-PLAN.md` (the real 7-day rebuild and its
+   regression proof).
+
+2. **Should the >$100k dead zone (Critical Finding 2) be mitigated in Phase 6, or accepted and
+   flagged as a known MVP simplification?**
+   RESOLVED: accepted as an MVP simplification, per D-06-20 -- but accepted WITH an explicit,
+   loud refusal (`ZeroLotError` naming the price and the cap), never a silent zero-lot trade and
+   never a resized cap/lot-step to paper over it. `06-02-PLAN.md` pins the threshold and the
+   refusal on synthetic fixtures; `06-06-PLAN.md` Task 3 confirms this project's real captured
+   data has never crossed it and records the day's actual price range as a committed pin; the
+   live risk for a future pool day crossing $100k is flagged forward explicitly into `06-07-PLAN.md`'s
+   `spec.md` Simulator section, the same way the >$100k dead zone note itself is carried forward.
+
+3. **Does `features/build.py`'s cadence make a schema-version-2 rebuild of 7 days cheap or
+   expensive in wall-clock terms?**
+   RESOLVED: by the plan's own allocation decision, not by a separate measurement pass.
+   `06-04-PLAN.md` calls `build_features_day` directly per date (never `build_features_range`,
+   which would skip every already-built date) and cites `04-05-SUMMARY.md`'s own prior
+   measurement (10-40s/day) as the basis for budgeting "a few minutes total" for all 7 days --
+   confirmed cheap enough that no batching or special sizing was needed for the rebuild itself.
+   The SEPARATE question this research also raised in Q3 (sizing the SIMULATOR's own trade-log
+   preallocation, not the rebuild) is resolved by adopting the safe `n_decision_rows` bound at
+   this phase's per-day, per-oracle scale, with the pool-scale capped-array alternative flagged
+   forward explicitly to whoever plans Phase 9's Optuna sweep (carried into `06-07-PLAN.md`'s
+   spec.md Outputs subsection).
+
+4. **When Phase 7+ eventually sources `pred` from a real, accessor-gated segment (not this
+   phase's own oracle), how should a null/errata-masked label be handled?**
+   RESOLVED: legitimately DEFERRED to Phase 7, not answered here. Phase 6 has no real predictor
+   to test a convention against -- D-06-04 treats `pred` as an opaque parameter, and any answer
+   this phase invented would be untested against the one thing that would make it meaningful (an
+   actual trained model's real, possibly-null-adjacent predictions). This question is carried
+   forward unresolved, on purpose, rather than closed with an untested guess.
+
 ## Environment Availability
 
 | Dependency | Required By | Available | Version | Fallback |
