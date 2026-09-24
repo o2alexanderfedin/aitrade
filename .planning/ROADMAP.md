@@ -148,12 +148,19 @@ Plans:
 **Plans**: 7 plans, 4 waves
 
 Plans:
+**Wave 1**
 - [ ] 06-01-PLAN.md — Schema v2 migration code: kernel/reference/api emit bid_price/ask_price, tier.py version-scoped write-once identity, DQ-report multi-manifest fix (fixture-only)
 - [ ] 06-02-PLAN.md — mvp/sim/ticks.py: tick constant + round-trip proof, lot-step measurement, $100-cap zero-lot dead zone
+
+**Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 06-03-PLAN.md — mvp/sim/kernel.py: the sequential flip-only run_sim state machine, arrays.py boundary, outputs.py, reference.py twin, bitwise equivalence
 - [ ] 06-04-PLAN.md — The real 7-day schema-v2 rebuild + the v1-vs-v2 label regression proof (249 errata cells, nowhere else)
+
+**Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 06-05-PLAN.md — Cross-process determinism (sha256) + refuse-on-null/dropped-row contract
 - [ ] 06-06-PLAN.md — Path-dependence, flip-invariant, hand-computed/zero-prediction oracles, real-day perfect-foresight reconciliation
+
+**Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 06-07-PLAN.md — spec.md Simulator section + phase-wide verification pass
 
 ### Phase 7: Regression Track & Vertical Slice
