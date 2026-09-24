@@ -19,6 +19,18 @@ CLI: `python -m data.dq.report --symbol BTCUSDT --date 2026-09-12` or
 directly for a real range (never `uv run` for anything long-running, per
 environment rules) -- `uv run --directory mvp python -m data.dq.report ...`
 is fine for a single `--date` smoke run.
+
+CARDINALITY (IN-01, 06-REVIEW.md): a `report.parquet` row is scoped to
+`(date, symbol, stream, manifest_id)`, NOT just `(date, symbol, stream)` --
+`build_feature_report_rows_for_date` emits one full features row set PER
+MANIFEST that has ever covered that date (a schema-v1-then-v2 rebuild
+produces two). Every reader that groups or filters by `(date, symbol,
+stream)` alone, without also matching `manifest_id`, will silently
+double-count or read another manifest's verdict. `data.store
+._dq_verdict_for_date` is the one confirmed-correct consumer (filters on
+`manifest_id`); `write_report`/`build_report_rows_for_date` (this module)
+regenerates the whole file wholesale on every run rather than reading its
+own prior output, so it is a producer only, never a stale-shape reader.
 """
 
 from __future__ import annotations
