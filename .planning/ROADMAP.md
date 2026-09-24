@@ -157,7 +157,7 @@ Plans:
 - [x] 06-04-PLAN.md — The real 7-day schema-v2 rebuild + the v1-vs-v2 label regression proof (249 errata cells, nowhere else)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 06-05-PLAN.md — Cross-process determinism (sha256) + refuse-on-null/dropped-row contract
+- [x] 06-05-PLAN.md — Cross-process determinism (sha256) + refuse-on-null/dropped-row contract
 - [ ] 06-06-PLAN.md — Path-dependence, flip-invariant, hand-computed/zero-prediction oracles, real-day perfect-foresight reconciliation
 
 **Wave 4** *(blocked on Wave 3 completion)*
