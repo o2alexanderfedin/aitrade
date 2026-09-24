@@ -1,0 +1,574 @@
+{
+  "2026-09-12": {
+    "build_stats": {
+      "asof_convention_delta_pct": 0.1277086820678647,
+      "asof_convention_disagreement_rows": 5355,
+      "crossed_locked_rows": 0,
+      "curated_manifest_ids": {
+        "bookTicker": "f4d8d81d298d03daafcd60c49f424f8c49dcddd32c0961ed46b3ab4093e032e2",
+        "trade": "1b337fb9efbe5702fa6d16803399a80e8514067e849188459e696af29415036d"
+      },
+      "empty_window_rows": 788923,
+      "gap_threshold_ns": 30000000000,
+      "label_horizon_ns": {
+        "ret_10min_mid": 600000000000,
+        "ret_10s_mid": 10000000000,
+        "ret_1min_mid": 60000000000,
+        "ret_1s_mid": 1000000000
+      },
+      "label_null_counts": {
+        "ret_10min_mid": {
+          "null_gap": 31910,
+          "null_no_mid": 55843,
+          "null_past_end": 0,
+          "null_total": 87753
+        },
+        "ret_10s_mid": {
+          "null_gap": 600,
+          "null_no_mid": 55843,
+          "null_past_end": 0,
+          "null_total": 56443
+        },
+        "ret_1min_mid": {
+          "null_gap": 3060,
+          "null_no_mid": 55843,
+          "null_past_end": 0,
+          "null_total": 58903
+        },
+        "ret_1s_mid": {
+          "null_gap": 168,
+          "null_no_mid": 55843,
+          "null_past_end": 0,
+          "null_total": 56011
+        }
+      },
+      "label_std": {
+        "ret_10min_mid": 0.00038969552783645983,
+        "ret_10s_mid": 8.473614893634647e-05,
+        "ret_1min_mid": 0.00016670522089554473,
+        "ret_1s_mid": 2.9888071516679964e-05
+      },
+      "label_zero_fraction": {
+        "ret_10min_mid": 0.004320180523916885,
+        "ret_10s_mid": 0.7023016447433627,
+        "ret_1min_mid": 0.2910403716867502,
+        "ret_1s_mid": 0.9321608768986006
+      },
+      "last_quote_etime": 1789343999976000000,
+      "manifest_id": "1bf9af2e879d833a578779ff082cd368ef327c4b1171f8ee09d8e90149f28d62",
+      "max_window_occupancy": 1986,
+      "n_big_quote_gaps": 2,
+      "n_decision_rows": 4193137,
+      "n_events": 8012065,
+      "n_quote_rows": 7220489,
+      "n_trade_rows": 791576,
+      "na_placeholder_excluded": 0,
+      "next_day_manifest_id": "223b0f2ae928f1b8695814f67f9bbb2626eb92dbefc51c58bf6e1c6b4080d498",
+      "null_primary_label_rows": 56443,
+      "partition_path": "features/symbol=BTCUSDT/date=2026-09-12/part-1789812278090352000.parquet",
+      "partition_sha256": "ddf5020d9c4eac641590157a7aac59670739b975060bb0277df461483623940a",
+      "post_gap_warmup_rows": 0,
+      "resync_sidecar_present": true,
+      "resync_sidecar_present_backfilled": "2026-09-19 (04-REVIEW-FIX WR-04): the key did not exist when this day was built. Recorded as True after verifying that lake/dq/date=2026-09-12/resync_windows.parquet (0 window(s)) reproduces this partition's own post_gap_warmup column exactly (0 tagged rows of 4193137). The claim is about the BYTES, not about a build-time mtime.",
+      "ret_10s_mid_zero_fraction": 0.7023016447433627,
+      "ret_1s_mid_zero_fraction": 0.9321608768986006,
+      "unknown_side_rows": 0,
+      "warmup_rows": 55844,
+      "window_capacity": 65536,
+      "window_overflow": false
+    },
+    "manifest_id": "1bf9af2e879d833a578779ff082cd368ef327c4b1171f8ee09d8e90149f28d62"
+  },
+  "2026-09-13": {
+    "build_stats": {
+      "asof_convention_delta_pct": 0.20645744344416406,
+      "asof_convention_disagreement_rows": 14173,
+      "crossed_locked_rows": 0,
+      "curated_manifest_ids": {
+        "bookTicker": "223b0f2ae928f1b8695814f67f9bbb2626eb92dbefc51c58bf6e1c6b4080d498",
+        "trade": "2a7b4c89cf3661420b5ad9ad469e5a6ffc3dd096f2e3730f77cea2e201504099"
+      },
+      "empty_window_rows": 784343,
+      "gap_threshold_ns": 30000000000,
+      "label_horizon_ns": {
+        "ret_10min_mid": 600000000000,
+        "ret_10s_mid": 10000000000,
+        "ret_1min_mid": 60000000000,
+        "ret_1s_mid": 1000000000
+      },
+      "label_null_counts": {
+        "ret_10min_mid": {
+          "null_gap": 0,
+          "null_no_mid": 0,
+          "null_past_end": 0,
+          "null_total": 0
+        },
+        "ret_10s_mid": {
+          "null_gap": 0,
+          "null_no_mid": 0,
+          "null_past_end": 0,
+          "null_total": 0
+        },
+        "ret_1min_mid": {
+          "null_gap": 0,
+          "null_no_mid": 0,
+          "null_past_end": 0,
+          "null_total": 0
+        },
+        "ret_1s_mid": {
+          "null_gap": 0,
+          "null_no_mid": 0,
+          "null_past_end": 0,
+          "null_total": 0
+        }
+      },
+      "label_std": {
+        "ret_10min_mid": 0.0008723994935059215,
+        "ret_10s_mid": 0.00014473973897417012,
+        "ret_1min_mid": 0.00032994564744566,
+        "ret_1s_mid": 4.761294291071886e-05
+      },
+      "label_zero_fraction": {
+        "ret_10min_mid": 0.0028602214788867293,
+        "ret_10s_mid": 0.43889679793580433,
+        "ret_1min_mid": 0.13577231733876893,
+        "ret_1s_mid": 0.8080186130715399
+      },
+      "last_quote_etime": 1789430399999000000,
+      "manifest_id": "1f10da67ca502c5d84a15b5a6d9dfe992390501b19250a99ca42f118e8e00952",
+      "max_window_occupancy": 5092,
+      "n_big_quote_gaps": 4,
+      "n_decision_rows": 6864853,
+      "n_events": 18576995,
+      "n_quote_rows": 17167290,
+      "n_trade_rows": 1409705,
+      "na_placeholder_excluded": 0,
+      "next_day_manifest_id": "456cf9fe7572e37dbd6c58ea72b7e8c52fae3ae2a13fafb22c047a3562bc444d",
+      "null_primary_label_rows": 0,
+      "partition_path": "features/symbol=BTCUSDT/date=2026-09-13/part-1789812323488894000.parquet",
+      "partition_sha256": "57b464955cf788e5f974509da67343a7708d1165601f5cc8ac6046506f92b05f",
+      "post_gap_warmup_rows": 0,
+      "resync_sidecar_present": true,
+      "resync_sidecar_present_backfilled": "2026-09-19 (04-REVIEW-FIX WR-04): the key did not exist when this day was built. Recorded as True after verifying that lake/dq/date=2026-09-13/resync_windows.parquet (0 window(s)) reproduces this partition's own post_gap_warmup column exactly (0 tagged rows of 6864853). The claim is about the BYTES, not about a build-time mtime.",
+      "ret_10s_mid_zero_fraction": 0.43889679793580433,
+      "ret_1s_mid_zero_fraction": 0.8080186130715399,
+      "unknown_side_rows": 0,
+      "warmup_rows": 157,
+      "window_capacity": 65536,
+      "window_overflow": false
+    },
+    "manifest_id": "1f10da67ca502c5d84a15b5a6d9dfe992390501b19250a99ca42f118e8e00952"
+  },
+  "2026-09-14": {
+    "build_stats": {
+      "asof_convention_delta_pct": 0.40532709555733315,
+      "asof_convention_disagreement_rows": 45898,
+      "crossed_locked_rows": 0,
+      "curated_manifest_ids": {
+        "bookTicker": "456cf9fe7572e37dbd6c58ea72b7e8c52fae3ae2a13fafb22c047a3562bc444d",
+        "trade": "1aa00f7c822b17eddd2e5b8a06f0b87453eec181a1acf853e159b03cebff004f"
+      },
+      "empty_window_rows": 259311,
+      "gap_threshold_ns": 30000000000,
+      "label_horizon_ns": {
+        "ret_10min_mid": 600000000000,
+        "ret_10s_mid": 10000000000,
+        "ret_1min_mid": 60000000000,
+        "ret_1s_mid": 1000000000
+      },
+      "label_null_counts": {
+        "ret_10min_mid": {
+          "null_gap": 221904,
+          "null_no_mid": 0,
+          "null_past_end": 0,
+          "null_total": 221904
+        },
+        "ret_10s_mid": {
+          "null_gap": 38565,
+          "null_no_mid": 0,
+          "null_past_end": 0,
+          "null_total": 38565
+        },
+        "ret_1min_mid": {
+          "null_gap": 54451,
+          "null_no_mid": 0,
+          "null_past_end": 0,
+          "null_total": 54451
+        },
+        "ret_1s_mid": {
+          "null_gap": 33274,
+          "null_no_mid": 0,
+          "null_past_end": 0,
+          "null_total": 33274
+        }
+      },
+      "label_std": {
+        "ret_10min_mid": 0.001632172946888517,
+        "ret_10s_mid": 0.0002489513620107277,
+        "ret_1min_mid": 0.0006249074856047805,
+        "ret_1s_mid": 7.904739050873507e-05
+      },
+      "label_zero_fraction": {
+        "ret_10min_mid": 0.00041002396910768443,
+        "ret_10s_mid": 0.12264600608464467,
+        "ret_1min_mid": 0.007835575113607897,
+        "ret_1s_mid": 0.595710079873025
+      },
+      "last_quote_etime": 1789516799999000000,
+      "manifest_id": "fdbf58ca1def369c4f9f10a577306fca3908250e357c97d0692660b75110a499",
+      "max_window_occupancy": 7301,
+      "n_big_quote_gaps": 8,
+      "n_decision_rows": 11323694,
+      "n_events": 42298340,
+      "n_quote_rows": 38609768,
+      "n_trade_rows": 3688572,
+      "na_placeholder_excluded": 0,
+      "next_day_manifest_id": "50ff26dae81003538f45f26b3f9c16215d33d72174b6c3012d6356114f399b67",
+      "null_primary_label_rows": 38565,
+      "partition_path": "features/symbol=BTCUSDT/date=2026-09-14/part-1789812375912014000.parquet",
+      "partition_sha256": "b89e100b4f26882533f998b69cad6d5541763a9e0e750415b972bdb36b3950ea",
+      "post_gap_warmup_rows": 20786,
+      "resync_sidecar_present": true,
+      "resync_sidecar_present_backfilled": "2026-09-19 (04-REVIEW-FIX WR-04): the key did not exist when this day was built. Recorded as True after verifying that lake/dq/date=2026-09-14/resync_windows.parquet (3 window(s)) reproduces this partition's own post_gap_warmup column exactly (20786 tagged rows of 11323694). The claim is about the BYTES, not about a build-time mtime.",
+      "ret_10s_mid_zero_fraction": 0.12264600608464467,
+      "ret_1s_mid_zero_fraction": 0.595710079873025,
+      "unknown_side_rows": 0,
+      "warmup_rows": 369,
+      "window_capacity": 65536,
+      "window_overflow": false
+    },
+    "manifest_id": "fdbf58ca1def369c4f9f10a577306fca3908250e357c97d0692660b75110a499"
+  },
+  "2026-09-15": {
+    "build_stats": {
+      "asof_convention_delta_pct": 0.6817339646164388,
+      "asof_convention_disagreement_rows": 83194,
+      "crossed_locked_rows": 0,
+      "curated_manifest_ids": {
+        "bookTicker": "50ff26dae81003538f45f26b3f9c16215d33d72174b6c3012d6356114f399b67",
+        "trade": "68ccb9a367f7871d14646f14cdc841936f59e271e6f07148a571f09eeb4d70c7"
+      },
+      "empty_window_rows": 205678,
+      "gap_threshold_ns": 30000000000,
+      "label_horizon_ns": {
+        "ret_10min_mid": 600000000000,
+        "ret_10s_mid": 10000000000,
+        "ret_1min_mid": 60000000000,
+        "ret_1s_mid": 1000000000
+      },
+      "label_null_counts": {
+        "ret_10min_mid": {
+          "null_gap": 227635,
+          "null_no_mid": 0,
+          "null_past_end": 0,
+          "null_stale": 0,
+          "null_total": 227635
+        },
+        "ret_10s_mid": {
+          "null_gap": 66270,
+          "null_no_mid": 0,
+          "null_past_end": 0,
+          "null_stale": 0,
+          "null_total": 66270
+        },
+        "ret_1min_mid": {
+          "null_gap": 81313,
+          "null_no_mid": 0,
+          "null_past_end": 0,
+          "null_stale": 0,
+          "null_total": 81313
+        },
+        "ret_1s_mid": {
+          "null_gap": 61417,
+          "null_no_mid": 0,
+          "null_past_end": 0,
+          "null_stale": 0,
+          "null_total": 61417
+        }
+      },
+      "label_std": {
+        "ret_10min_mid": 0.003049736028294608,
+        "ret_10s_mid": 0.0004174445339326132,
+        "ret_1min_mid": 0.0008970623631155535,
+        "ret_1s_mid": 0.00013152503673315004
+      },
+      "label_zero_fraction": {
+        "ret_10min_mid": 0.0007681414442411896,
+        "ret_10s_mid": 0.12405330993825175,
+        "ret_1min_mid": 0.005906707822756033,
+        "ret_1s_mid": 0.5533993632121293
+      },
+      "last_quote_etime": 1789600755272000000,
+      "manifest_id": "781750a9df69d21fec70737e5bfb6a21908ab38f55271c03099777972cdb419e",
+      "max_window_occupancy": 16186,
+      "n_big_quote_gaps": 10,
+      "n_decision_rows": 12203294,
+      "n_events": 46857715,
+      "n_quote_rows": 41870866,
+      "n_trade_rows": 4986849,
+      "na_placeholder_excluded": 0,
+      "next_day_manifest_id": "154bf197810a9c511c53218cd96245cf6927a2251a7767061467f4db3e355284",
+      "null_primary_label_rows": 66270,
+      "partition_path": "features/symbol=BTCUSDT/date=2026-09-15/part-1790056473207948000.parquet",
+      "partition_sha256": "6d7569f5a2c6e68db24cc56fcd45887b457dcfe04b4ff9a32dcdc41a7f8a538e",
+      "post_gap_warmup_rows": 18646,
+      "resync_sidecar_present": true,
+      "ret_10s_mid_zero_fraction": 0.12405330993825175,
+      "ret_1s_mid_zero_fraction": 0.5533993632121293,
+      "unknown_side_rows": 0,
+      "warmup_rows": 191,
+      "window_capacity": 65536,
+      "window_overflow": false
+    },
+    "manifest_id": "781750a9df69d21fec70737e5bfb6a21908ab38f55271c03099777972cdb419e"
+  },
+  "2026-09-16": {
+    "build_stats": {
+      "asof_convention_delta_pct": 0.7526269622450777,
+      "asof_convention_disagreement_rows": 74304,
+      "crossed_locked_rows": 0,
+      "curated_manifest_ids": {
+        "bookTicker": "154bf197810a9c511c53218cd96245cf6927a2251a7767061467f4db3e355284",
+        "trade": "0e10b09a770be58f533f3bf1fcc1111f5c53740d78af25fd2dc66ef0d4b503ce"
+      },
+      "empty_window_rows": 399607,
+      "gap_threshold_ns": 30000000000,
+      "label_horizon_ns": {
+        "ret_10min_mid": 600000000000,
+        "ret_10s_mid": 10000000000,
+        "ret_1min_mid": 60000000000,
+        "ret_1s_mid": 1000000000
+      },
+      "label_null_counts": {
+        "ret_10min_mid": {
+          "null_gap": 286907,
+          "null_no_mid": 0,
+          "null_past_end": 0,
+          "null_stale": 0,
+          "null_total": 286907
+        },
+        "ret_10s_mid": {
+          "null_gap": 66467,
+          "null_no_mid": 0,
+          "null_past_end": 0,
+          "null_stale": 0,
+          "null_total": 66467
+        },
+        "ret_1min_mid": {
+          "null_gap": 94876,
+          "null_no_mid": 0,
+          "null_past_end": 0,
+          "null_stale": 0,
+          "null_total": 94876
+        },
+        "ret_1s_mid": {
+          "null_gap": 60028,
+          "null_no_mid": 0,
+          "null_past_end": 0,
+          "null_stale": 242,
+          "null_total": 60270
+        }
+      },
+      "label_std": {
+        "ret_10min_mid": 0.0027222253088479993,
+        "ret_10s_mid": 0.0004112658329337051,
+        "ret_1min_mid": 0.0009659844424429449,
+        "ret_1s_mid": 0.00012637456684500787
+      },
+      "label_zero_fraction": {
+        "ret_10min_mid": 0.0005866021651180251,
+        "ret_10s_mid": 0.11507530017122923,
+        "ret_1min_mid": 0.006899137469747622,
+        "ret_1s_mid": 0.5112338023001626
+      },
+      "last_quote_etime": 1789689599869000000,
+      "manifest_id": "4613e9e8771d56edb91e8002656ea746cf65687ca29e83b5d3ace4f350ef751d",
+      "max_window_occupancy": 5184,
+      "n_big_quote_gaps": 12,
+      "n_decision_rows": 9872620,
+      "n_events": 40358426,
+      "n_quote_rows": 36234202,
+      "n_trade_rows": 4124224,
+      "na_placeholder_excluded": 0,
+      "next_day_manifest_id": "bc11a5cfda37af107100683dcad67cf3da9a5edf00b2ab9939ddcb85966a2d08",
+      "null_primary_label_rows": 66467,
+      "partition_path": "features/symbol=BTCUSDT/date=2026-09-16/part-1790056517595588000.parquet",
+      "partition_sha256": "49c1cb3ad8d4542db4485cec37993c735933a1a25157649c8e25a21831a93e2f",
+      "post_gap_warmup_rows": 39436,
+      "resync_sidecar_present": true,
+      "ret_10s_mid_zero_fraction": 0.11507530017122923,
+      "ret_1s_mid_zero_fraction": 0.5112338023001626,
+      "unknown_side_rows": 0,
+      "warmup_rows": 352,
+      "window_capacity": 65536,
+      "window_overflow": false
+    },
+    "manifest_id": "4613e9e8771d56edb91e8002656ea746cf65687ca29e83b5d3ace4f350ef751d"
+  },
+  "2026-09-17": {
+    "build_stats": {
+      "asof_convention_delta_pct": 0.35003202633881947,
+      "asof_convention_disagreement_rows": 29690,
+      "crossed_locked_rows": 0,
+      "curated_manifest_ids": {
+        "bookTicker": "bc11a5cfda37af107100683dcad67cf3da9a5edf00b2ab9939ddcb85966a2d08",
+        "trade": "70894b02d9b0f98d8bb7c6c6baf4c7f9e43c86b509a71fbee815e948557acd6f"
+      },
+      "empty_window_rows": 530760,
+      "gap_threshold_ns": 30000000000,
+      "label_horizon_ns": {
+        "ret_10min_mid": 600000000000,
+        "ret_10s_mid": 10000000000,
+        "ret_1min_mid": 60000000000,
+        "ret_1s_mid": 1000000000
+      },
+      "label_null_counts": {
+        "ret_10min_mid": {
+          "null_gap": 204731,
+          "null_no_mid": 16001,
+          "null_past_end": 0,
+          "null_stale": 0,
+          "null_total": 220732
+        },
+        "ret_10s_mid": {
+          "null_gap": 34925,
+          "null_no_mid": 16001,
+          "null_past_end": 0,
+          "null_stale": 434,
+          "null_total": 51360
+        },
+        "ret_1min_mid": {
+          "null_gap": 50249,
+          "null_no_mid": 16001,
+          "null_past_end": 0,
+          "null_stale": 0,
+          "null_total": 66250
+        },
+        "ret_1s_mid": {
+          "null_gap": 32196,
+          "null_no_mid": 16001,
+          "null_past_end": 0,
+          "null_stale": 550,
+          "null_total": 48747
+        }
+      },
+      "label_std": {
+        "ret_10min_mid": 0.0017136533549632139,
+        "ret_10s_mid": 0.00021062368725697676,
+        "ret_1min_mid": 0.0005351421837508408,
+        "ret_1s_mid": 6.705285567711102e-05
+      },
+      "label_zero_fraction": {
+        "ret_10min_mid": 0.0006939544619165707,
+        "ret_10s_mid": 0.17622905561695137,
+        "ret_1min_mid": 0.014549246533111229,
+        "ret_1s_mid": 0.6399094355802818
+      },
+      "last_quote_etime": 1789775999957000000,
+      "manifest_id": "4d0cd973ed75627ace1d292a26ee88b3879f22d9fd59a31dec246ebae9d736ee",
+      "max_window_occupancy": 5313,
+      "n_big_quote_gaps": 10,
+      "n_decision_rows": 8482081,
+      "n_events": 30932549,
+      "n_quote_rows": 28170617,
+      "n_trade_rows": 2761932,
+      "na_placeholder_excluded": 0,
+      "next_day_manifest_id": "1ef62c97bb7e732f70c29ddfc4d5b8257be2ef85eac16126a6045049b9957973",
+      "null_primary_label_rows": 51360,
+      "partition_path": "features/symbol=BTCUSDT/date=2026-09-17/part-1790056551481444000.parquet",
+      "partition_sha256": "ea99982d8991d5fed1eb01fa506b7cb66990d85b8dc0355dccce4e047c0248fe",
+      "post_gap_warmup_rows": 40754,
+      "resync_sidecar_present": true,
+      "ret_10s_mid_zero_fraction": 0.17622905561695137,
+      "ret_1s_mid_zero_fraction": 0.6399094355802818,
+      "unknown_side_rows": 0,
+      "warmup_rows": 16002,
+      "window_capacity": 65536,
+      "window_overflow": false
+    },
+    "manifest_id": "4d0cd973ed75627ace1d292a26ee88b3879f22d9fd59a31dec246ebae9d736ee"
+  },
+  "2026-09-18": {
+    "build_stats": {
+      "asof_convention_delta_pct": 0.5487663181259534,
+      "asof_convention_disagreement_rows": 43829,
+      "crossed_locked_rows": 0,
+      "curated_manifest_ids": {
+        "bookTicker": "1ef62c97bb7e732f70c29ddfc4d5b8257be2ef85eac16126a6045049b9957973",
+        "trade": "fd18654c54bea88462554bad2c0d4f5aeae458a0e60ee6486b8f5fc397017365"
+      },
+      "empty_window_rows": 110719,
+      "gap_threshold_ns": 30000000000,
+      "label_horizon_ns": {
+        "ret_10min_mid": 600000000000,
+        "ret_10s_mid": 10000000000,
+        "ret_1min_mid": 60000000000,
+        "ret_1s_mid": 1000000000
+      },
+      "label_null_counts": {
+        "ret_10min_mid": {
+          "null_gap": 249398,
+          "null_no_mid": 0,
+          "null_past_end": 0,
+          "null_stale": 0,
+          "null_total": 249398
+        },
+        "ret_10s_mid": {
+          "null_gap": 131989,
+          "null_no_mid": 0,
+          "null_past_end": 0,
+          "null_stale": 0,
+          "null_total": 131989
+        },
+        "ret_1min_mid": {
+          "null_gap": 147631,
+          "null_no_mid": 0,
+          "null_past_end": 0,
+          "null_stale": 0,
+          "null_total": 147631
+        },
+        "ret_1s_mid": {
+          "null_gap": 128216,
+          "null_no_mid": 0,
+          "null_past_end": 0,
+          "null_stale": 2,
+          "null_total": 128218
+        }
+      },
+      "label_std": {
+        "ret_10min_mid": 0.003098695618006479,
+        "ret_10s_mid": 0.0003305603355526386,
+        "ret_1min_mid": 0.0008607670502972548,
+        "ret_1s_mid": 0.00010316743670585222
+      },
+      "label_zero_fraction": {
+        "ret_10min_mid": 0.0001699531601336155,
+        "ret_10s_mid": 0.09764953687760469,
+        "ret_1min_mid": 0.005686554725722406,
+        "ret_1s_mid": 0.5120013651276066
+      },
+      "last_quote_etime": 1789862399971000000,
+      "manifest_id": "d8dfb322914e454d423d21f3db69ad7623399b9d54e5d5d261b0cb69d2f92519",
+      "max_window_occupancy": 8694,
+      "n_big_quote_gaps": 7,
+      "n_decision_rows": 7986824,
+      "n_events": 35946297,
+      "n_quote_rows": 31460152,
+      "n_trade_rows": 4486145,
+      "na_placeholder_excluded": 0,
+      "next_day_manifest_id": "41ae94a9014fbce14463aa9775b8ff002cf871cef54422fe7269f909af448c98",
+      "null_primary_label_rows": 131989,
+      "partition_path": "features/symbol=BTCUSDT/date=2026-09-18/part-1790056580091656000.parquet",
+      "partition_sha256": "1e14b8af802965fa1cbe67886f25c16bc5f8e52d7a5fd5b9234d519108a00648",
+      "post_gap_warmup_rows": 54984,
+      "resync_sidecar_present": true,
+      "ret_10s_mid_zero_fraction": 0.09764953687760469,
+      "ret_1s_mid_zero_fraction": 0.5120013651276066,
+      "unknown_side_rows": 0,
+      "warmup_rows": 259,
+      "window_capacity": 65536,
+      "window_overflow": false
+    },
+    "manifest_id": "d8dfb322914e454d423d21f3db69ad7623399b9d54e5d5d261b0cb69d2f92519"
+  }
+}

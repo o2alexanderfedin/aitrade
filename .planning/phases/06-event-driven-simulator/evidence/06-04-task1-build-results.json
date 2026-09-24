@@ -1,0 +1,90 @@
+{
+  "2026-09-12": {
+    "build_stats_diff_keys": [
+      "asof_convention_delta_pct",
+      "asof_convention_disagreement_rows",
+      "label_null_counts",
+      "label_std",
+      "label_zero_fraction",
+      "manifest_id",
+      "null_primary_label_rows",
+      "partition_path",
+      "partition_sha256",
+      "resync_sidecar_present_backfilled",
+      "ret_10s_mid_zero_fraction",
+      "ret_1s_mid_zero_fraction"
+    ],
+    "elapsed_seconds": 10.9,
+    "v1_manifest_id": "1bf9af2e879d833a578779ff082cd368ef327c4b1171f8ee09d8e90149f28d62",
+    "v2_manifest_id": "91154024ba400fb2d183828f4b6b745d73862b08313cbef33cf5c957503df005"
+  },
+  "2026-09-13": {
+    "build_stats_diff_keys": [
+      "label_null_counts",
+      "label_std",
+      "label_zero_fraction",
+      "manifest_id",
+      "partition_path",
+      "partition_sha256",
+      "resync_sidecar_present_backfilled",
+      "ret_1s_mid_zero_fraction"
+    ],
+    "elapsed_seconds": 20.3,
+    "v1_manifest_id": "1f10da67ca502c5d84a15b5a6d9dfe992390501b19250a99ca42f118e8e00952",
+    "v2_manifest_id": "5e4ce973b196b60fbdec22bf771ff2c9d517c739d7150cd218a535842eb55f6a"
+  },
+  "2026-09-14": {
+    "build_stats_diff_keys": [
+      "label_null_counts",
+      "manifest_id",
+      "partition_path",
+      "partition_sha256",
+      "resync_sidecar_present_backfilled"
+    ],
+    "elapsed_seconds": 35.3,
+    "v1_manifest_id": "fdbf58ca1def369c4f9f10a577306fca3908250e357c97d0692660b75110a499",
+    "v2_manifest_id": "1863b8d255d17312e3c6135af19f75e85cd9250d307ed43b8f6a604f95adcbc0"
+  },
+  "2026-09-15": {
+    "build_stats_diff_keys": [
+      "manifest_id",
+      "partition_path",
+      "partition_sha256"
+    ],
+    "elapsed_seconds": 35.8,
+    "v1_manifest_id": "781750a9df69d21fec70737e5bfb6a21908ab38f55271c03099777972cdb419e",
+    "v2_manifest_id": "2da1b5b97f97b28b1df1500ed91596304d78ba6888900390795721c7bcd2e1a1"
+  },
+  "2026-09-16": {
+    "build_stats_diff_keys": [
+      "manifest_id",
+      "partition_path",
+      "partition_sha256"
+    ],
+    "elapsed_seconds": 27.0,
+    "v1_manifest_id": "4613e9e8771d56edb91e8002656ea746cf65687ca29e83b5d3ace4f350ef751d",
+    "v2_manifest_id": "0bfa8d286d90280251ddabbad340e07f3fd193545de294a3feefb73ec5a63924"
+  },
+  "2026-09-17": {
+    "build_stats_diff_keys": [
+      "manifest_id",
+      "partition_path",
+      "partition_sha256"
+    ],
+    "elapsed_seconds": 23.55283983296249,
+    "rows": 8482081,
+    "v1_manifest_id": "4d0cd973ed75627ace1d292a26ee88b3879f22d9fd59a31dec246ebae9d736ee",
+    "v2_manifest_id": "dcf3b39dad199f1814b3e0b27a506368b50bfabda191bc476a0549da25859fa3"
+  },
+  "2026-09-18": {
+    "build_stats_diff_keys": [
+      "manifest_id",
+      "partition_path",
+      "partition_sha256"
+    ],
+    "elapsed_seconds": 21.33844066603342,
+    "rows": 7986824,
+    "v1_manifest_id": "d8dfb322914e454d423d21f3db69ad7623399b9d54e5d5d261b0cb69d2f92519",
+    "v2_manifest_id": "d21771bda03691c6c492e6c3fefd6603d09d223e0f5876dc7e2d66a07359948e"
+  }
+}
