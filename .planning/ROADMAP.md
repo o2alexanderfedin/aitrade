@@ -158,7 +158,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [x] 06-05-PLAN.md — Cross-process determinism (sha256) + refuse-on-null/dropped-row contract
-- [ ] 06-06-PLAN.md — Path-dependence, flip-invariant, hand-computed/zero-prediction oracles, real-day perfect-foresight reconciliation
+- [x] 06-06-PLAN.md — Path-dependence, flip-invariant, hand-computed/zero-prediction oracles, real-day perfect-foresight reconciliation
 
 **Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 06-07-PLAN.md — spec.md Simulator section + phase-wide verification pass

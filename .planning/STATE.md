@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-05-PLAN.md
-last_updated: "2026-09-24T07:05:11.731Z"
+stopped_at: Completed 06-06-PLAN.md
+last_updated: "2026-09-24T07:49:09.911Z"
 last_activity: 2026-09-24
 progress:
   total_phases: 11
   completed_phases: 5
   total_plans: 36
-  completed_plans: 35
-  percent: 97
+  completed_plans: 36
+  percent: 100
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 6 (Event-Driven Simulator) — EXECUTING
-Plan: 6 of 7
+Plan: 7 of 7
 Status: Ready to execute
 Last activity: 2026-09-24
 
-Progress: [██████████] 97%
+Progress: [██████████] 100%
 
 > That 100% is `state.update-progress`'s definition -- SUMMARY files over PLAN files on disk (22 summaries over 21 plans, capped at 100%). Every one of the 21 plans now has a summary; the 22nd is `03-07-GAPS-SUMMARY.md`, which has no plan of its own. It is NOT milestone completion: phases 5-11 have no plans on disk yet, and 3 of 11 phases are marked complete -- Phase 4's seven plans are all executed, and the phase closes at its verification/merge step, exactly as Phases 1-3 did.
 
@@ -81,6 +81,7 @@ Progress: [██████████] 97%
 | Phase 06 P03 | 50min | 2 tasks | 6 files |
 | Phase 06 P04 | 30min | 2 tasks | 12 files |
 | Phase 06 P05 | 35min | 2 tasks | 2 files |
+| Phase 06 P06 | 16min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -176,6 +177,10 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-04: Build-time-vs-current-code diffing (git diff <build-code-hash> HEAD -- <module>) is required before trusting any build_stats delta as 'known cascade' -- a diagnostic counter derived from a fixed mask (absent/comparable) moves automatically when the mask gains a member, and some 'post-fix' days (09-16/17/18, built at 812a264) already carried nonzero null_stale counts in their own v1 stats.
 - [Phase 06]: 06-05: subprocess child script logic extracted via inspect.getsource from the test module's own functions, guaranteeing byte-identical hashing across processes rather than hand-duplicated text
 - [Phase 06]: 06-05: D-06-14/D-06-15 proven with real mutations (sentinel-poked-tail hash divergence; disabled isfinite guard) against Plan 06-03's already-built kernel -- zero production code changes needed
+- [Phase 06]: 06-06: closed_pnl_ticks is the trade-log tick-only walk, explicitly distinct from sim.kernel's realized_pnl_scaled accumulator -- conflating them would neuter the flip-resizing mutation check
+- [Phase 06]: 06-06: path-dependence sweep exhaustively searches all adjacent pairs of a generated sequence for one that straddles a trigger, filtered via hypothesis.assume rather than passing vacuously when none straddles
+- [Phase 06]: 06-06: D-06-12's flat-or-opposite wording collapses to always-opposite for this no-flat-exit kernel -- position_after in the trade log is always +/-1, never 0
+- [Phase 06]: 06-06: the real-day perfect-foresight ceiling is 2,212 trades / 293,844 closed_pnl_ticks (X_bps=0, 2026-09-13, schema v2), NOT 06-RESEARCH.md's superseded 2,192/294,554 baseline -- the divergence was investigated (tie-break rule ruled out) and reported unexplained rather than papered over
 
 ### Pending Todos
 
@@ -210,7 +215,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-24T07:05:11.723Z
-Stopped at: Completed 06-05-PLAN.md
+Last session: 2026-09-24T07:49:09.881Z
+Stopped at: Completed 06-06-PLAN.md
 Resume file: None
 Resumed: 2026-09-19 -- session restored at the Phase 4/5 boundary. Verified live, not read: develop at 9898e4d clean and level with origin, no PLAN without a SUMMARY, capture daemon PID 72546 alive at 2d14h, SleepDisabled=1 (the LaunchDaemon is holding), 844 GiB free. HANDOFF.json kept until Phase 5 actually starts.
