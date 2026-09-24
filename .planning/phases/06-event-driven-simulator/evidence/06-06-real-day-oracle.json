@@ -1,0 +1,38 @@
+{
+  "date": "2026-09-13",
+  "v2_manifest_id": "5e4ce973b196b60fbdec22bf771ff2c9d517c739d7150cd218a535842eb55f6a",
+  "v1_manifest_id": "1f10da67ca502c5d84a15b5a6d9dfe992390501b19250a99ca42f118e8e00952",
+  "rows_dropped_for_nullity": 0,
+  "pred_v1_bitwise_equal_to_pred_v2": true,
+  "research_baseline_matches": false,
+  "divergence_root_cause": "unexplained: rows_dropped_for_nullity=0 so an exact match was expected per plan text, but v1_on_surviving_rows != research_baseline; 4 alternative pred tick-quantization tie-break rules were tested (06-RESEARCH.md Q2's own candidates) and none reproduced the research figures -- the tie-break rule is ruled out, not confirmed, as the cause. See 06-06-SUMMARY.md.",
+  "v2_perfect_foresight": {
+    "trades": 2212,
+    "flips": 2211,
+    "closed_pnl_ticks": 293844
+  },
+  "v1_on_surviving_rows_perfect_foresight": {
+    "trades": 2212,
+    "flips": 2211,
+    "closed_pnl_ticks": 293844
+  },
+  "research_baseline": {
+    "trades": 2192,
+    "closed_pnl_ticks": 294554
+  },
+  "zero_prediction_trades": 0,
+  "price_range_ticks": {
+    "min": 764589,
+    "max": 774274
+  },
+  "price_range_usd": {
+    "min": 76458.9,
+    "max": 77427.4
+  },
+  "usd_ceiling": {
+    "ticks_times_tick_size_research_per_one_lot_convention": 29384.4,
+    "actual_realized_usd_at_traded_0_001_btc_lot": 29.3844
+  },
+  "realized_pnl_scaled_v2": 29384400000,
+  "all_v2_fills_exactly_one_lot": true
+}
