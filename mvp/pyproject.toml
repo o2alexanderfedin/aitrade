@@ -26,6 +26,17 @@ dev = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+# --import-mode=importlib (default is "prepend"): mvp/tests/sim/ has no
+# __init__.py (D-06-02) and needs a test_kernel.py, but
+# mvp/tests/features/test_kernel.py already exists, also without an
+# __init__.py -- "prepend" mode identifies a test module by its bare
+# basename absent a package marker, so the two collide
+# ("import file mismatch", measured directly in this session). importlib
+# mode identifies each module by its full file path instead, so same-named
+# test files in different directories no longer need a package marker to
+# stay distinct. Verified by running the full suite under this mode before
+# adopting it (06-03-PLAN.md Task 1).
+addopts = ["--import-mode=importlib"]
 
 [tool.ruff.lint]
 extend-select = ["TID251"]
