@@ -117,6 +117,7 @@ import numpy as np
 from numba import njit
 
 from data.time_ns import QTY_SCALE
+from sim.outputs import SimResult, new_trade_log
 from sim.ticks import (
     LOT_STEP_SCALED,
     MAX_NOTIONAL_SCALED,
@@ -434,7 +435,7 @@ def run_sim_checked(
     fee_bps: int = 0,
     latency_ns: int = 0,
     state: np.ndarray | None = None,
-) -> dict:
+) -> SimResult:
     """`run_sim` over bare numpy decision-row arrays, raising
     `SimStatusError` on a negative status. This is what everything outside
     this module calls.
@@ -444,13 +445,10 @@ def run_sim_checked(
     across all call shapes. `state=None` starts a fresh run; passing a
     state back in resumes a sequential scan mid-flight.
 
-    Returns `{"trade_log": {...}, "fill_count": int, "equity_scaled":
-    ndarray, "counters": {...}}` -- Task 2 (`sim/outputs.py`) rewires this
-    into a `SimResult` NamedTuple with the same field names; every trade
-    log column here is allocated at `etime.shape[0]` (Pattern 1) and its
-    tail past `fill_count` is uninitialised memory, exactly as `sim/
-    outputs.py:new_trade_log`'s docstring will state -- callers must slice
-    to `[:fill_count]`.
+    Returns a `sim.outputs.SimResult`: the trade log is allocated via
+    `outputs.new_trade_log(n)` at `etime.shape[0]` (Pattern 1), and its
+    tail past `fill_count` is uninitialised memory (that module's own
+    docstring states the hazard) -- callers must slice to `[:fill_count]`.
     """
     if etime.ndim != 1 or bid_ticks.ndim != 1 or ask_ticks.ndim != 1 or pred.ndim != 1:
         raise ValueError("run_sim_checked: etime/bid_ticks/ask_ticks/pred must be 1-D")
@@ -467,13 +465,7 @@ def run_sim_checked(
         state = new_state()
 
     n = etime.shape[0]
-    trade_log = {
-        "etime": np.empty(n, dtype=np.int64),
-        "side": np.empty(n, dtype=np.int8),
-        "price_ticks": np.empty(n, dtype=np.int64),
-        "qty_scaled": np.empty(n, dtype=np.int64),
-        "position_after": np.empty(n, dtype=np.int8),
-    }
+    trade_log = new_trade_log(n)
     equity_scaled = np.empty(n, dtype=np.int64)
 
     status = run_sim(
@@ -505,9 +497,9 @@ def run_sim_checked(
         "flips": int(state[SLOT_FLIP_COUNT]),
         "rows_in_market": int(state[SLOT_ROWS_IN_MARKET]),
     }
-    return {
-        "trade_log": trade_log,
-        "fill_count": fill_count,
-        "equity_scaled": equity_scaled,
-        "counters": counters,
-    }
+    return SimResult(
+        trade_log=trade_log,
+        fill_count=fill_count,
+        equity_scaled=equity_scaled,
+        counters=counters,
+    )
