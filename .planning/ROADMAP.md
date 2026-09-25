@@ -176,7 +176,7 @@ Plans:
 
 Plans:
 - [x] 07-01-PLAN.md — scikit-learn locked, the pin guardrail widened, the `tests/models/` floor (wave 1)
-- [ ] 07-02-PLAN.md — the 7-day `compressed_3seg` segment manifest, alone in its wave: clean tree, 19.35 GiB peak, effectively one-shot (wave 2, **checkpoint**)
+- [x] 07-02-PLAN.md — the 7-day `compressed_3seg` segment manifest, alone in its wave: clean tree, 19.35 GiB peak, effectively one-shot (wave 2, **checkpoint**)
 - [ ] 07-03-PLAN.md — Trainer/FrozenPredictor protocol naming no sklearn type, `predictor_id`, the learnable fixture rig (wave 3)
 - [ ] 07-04-PLAN.md — the frozen predictor as coefficient JSON, never a pickle, with cross-process determinism (wave 4)
 - [ ] 07-05-PLAN.md — the predictions tier, the return→price conversion, row-alignment proof (wave 4)
@@ -252,7 +252,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 4. Feature & Label Engine | 7/7 | Complete    | 2026-09-19 |
 | 5. Fold Harness & Overfitting Controls | 8/8 | Complete    | 2026-09-22 |
 | 6. Event-Driven Simulator | 7/7 | Complete    | 2026-09-24 |
-| 7. Regression Track & Vertical Slice | 1/11 | In Progress|  |
+| 7. Regression Track & Vertical Slice | 2/11 | In Progress|  |
 | 8. Trees, Transformer & v0 Gate | 0/TBD | Not started | - |
 | 9. Stage 2 Monetization & v1 Gate | 0/TBD | Not started | - |
 | 10. Agentic Loop | 0/TBD | Not started | - |

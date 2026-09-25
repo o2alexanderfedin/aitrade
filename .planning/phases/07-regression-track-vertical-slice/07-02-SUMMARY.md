@@ -373,3 +373,18 @@ contains the loader it was produced with.
 
 Every file this SUMMARY claims was created exists on disk; all four commit
 hashes resolve in `git log`.
+
+
+## Checkpoint approved — 2026-09-25
+
+The user approved the geometry and the budget verbatim: `train` 2026-09-12..16,
+`val` 2026-09-17..18, `budget_allowance = 3`, `held_out` the zero-width sentinel.
+Both alternatives offered — a larger allowance, and different boundaries — were
+declined. Approval was given while re-issuing was still free, which is the only
+window in which it is a real choice.
+
+Verified independently by the orchestrator before the checkpoint was presented,
+not read from this SUMMARY: the body's self-hash through
+`read_segment_manifest`, `code_hash` carrying no `-dirty`, `look_count` 0 on all
+six segments of BOTH manifests, and the Phase 5 body last touched by its own
+Phase 5 commit.
