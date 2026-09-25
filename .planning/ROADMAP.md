@@ -250,8 +250,8 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 2. Stage 0 — Living Spec, CI Guardrails & Tracking | 4/4 | Complete | 2026-09-14 |
 | 3. Data Layer — Backfill, Ingest & Lockbox | 7/6 | Complete    | 2026-09-17 |
 | 4. Feature & Label Engine | 7/7 | Complete    | 2026-09-19 |
-| 5. Fold Harness & Overfitting Controls | 3/8 | In Progress|  |
-| 6. Event-Driven Simulator | 3/7 | In Progress|  |
+| 5. Fold Harness & Overfitting Controls | 8/8 | Complete    | 2026-09-22 |
+| 6. Event-Driven Simulator | 7/7 | Complete    | 2026-09-24 |
 | 7. Regression Track & Vertical Slice | 1/11 | In Progress|  |
 | 8. Trees, Transformer & v0 Gate | 0/TBD | Not started | - |
 | 9. Stage 2 Monetization & v1 Gate | 0/TBD | Not started | - |
