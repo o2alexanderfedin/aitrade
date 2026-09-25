@@ -4,9 +4,18 @@ slug: timesfm-assessment
 status: complete
 created: 2026-09-24
 decision: not-now
+licence_ruling: 2026-09-24 user ruled the non-commercial licence irrelevant for now
 ---
 
 # Should TimesFM forecast for this project?
+
+> **USER RULING, 2026-09-24 (supersedes the licence section below):** non-commercial
+> research use is acceptable for now, with the intention to train an in-house model
+> later. The licence is therefore NOT a blocker and the comparison table's licence
+> row is moot. **TimesFM 3.0 is the version both experiments should use** — its
+> native multivariate training is exactly what the original proposal asked for, so
+> the cross-asset structure comes from the model rather than from a hand-built
+> ridge. See "What the ruling changes, and what it does not" at the end.
 
 Assessment requested mid-Phase-7. No code written; the deliverable is a
 decision plus two recorded experiments. **Verdict: not in this milestone, and
@@ -143,3 +152,43 @@ state-dependent. Requires a licence resolution if it uses 3.0 weights.
   project's data. E1 exists precisely because that number is unknown.
 - ETH/USDT/news availability was not investigated beyond noting that capture
   records neither.
+
+
+---
+
+## What the ruling changes, and what it does not (2026-09-24)
+
+**Changed — and it is a real upgrade.** With 3.0 on the table, the original idea
+becomes directly testable: BTC and ETH as joint channels, learned cross-series
+dependence, a 9-quantile head, 16,384-point context. Under 2.5 the cross-asset
+structure would have been our own ridge with TimesFM cleaning up residuals; under
+3.0 it is the model's. Both recorded experiments move to 3.0 weights.
+
+**Unchanged — every substantive objection, none of which was about the licence.**
+The 10-second return is still the wrong target: measured zero mass is 20.0% across
+the pool and 9.8–13.8% on the candidate validation window, and the chosen window's
+perfect-foresight ceiling is $112.05 across two days. Event-time decision rows must
+still be resampled to a grid to be fed at all, which still discards the event-driven
+content of `ofi`, `imb_top` and `trade_flow`. The price-persistence trap is still the
+likeliest outcome, and volatility is still the target where a pretrained long-memory
+prior earns its keep rather than merely looking like it does.
+
+**One consequence the ruling creates rather than removes.** A research-licensed
+model can never sit inside the shipped product. That makes the *role* of the model
+decisive in a way it was not before:
+
+- **As a baseline to beat (E1) — safe forever.** Nothing ships. A number that tells
+  us whether our three classes are any good is pure gain.
+- **As a component (E2's volatility overlay) — creates a replacement debt.** If
+  Stage 2's threshold X comes to depend on a TimesFM forecast, the product cannot
+  ship until that forecast is reproduced in-house. Worth doing as research; worth
+  knowing it is a loan, not a purchase.
+
+**On training our own.** The cheapest path is already in the roadmap and does not
+need a separate effort: **Phase 8's PyTorch transformer track is the seed.** It
+already has a GPU budget, a causal-masking leakage test in CI, and a fold harness
+that owns time. Growing it — more channels (ETH), longer context, a quantile head
+instead of a point head — is the same destination as "train our own foundation
+model", reached through infrastructure that already exists and already passes this
+project's leakage proofs. Starting a parallel foundation-model effort would
+duplicate the transformer track and inherit none of its guarantees.

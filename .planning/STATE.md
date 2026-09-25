@@ -213,7 +213,7 @@ Recent decisions affecting current work:
 
 | Date | Task | Outcome |
 |------|------|---------|
-| 2026-09-24 | `timesfm-assessment` — should Google's TimesFM forecast for this project, fed several correlated streams at once? | **Not now, and not for the 10s return.** The capable version is licence-locked: TimesFM 3.0 is the first trained natively multivariate (i.e. the only one that does what was asked) and its weights are non-commercial/non-production; 2.5's weights are Apache-2.0 but univariate, its XReg covariates being a ridge fitted OUTSIDE the model. Two experiments recorded under Deferred Items. Note: `.planning/quick/20260924-timesfm-assessment/PLAN.md` |
+| 2026-09-24 | `timesfm-assessment` — should Google's TimesFM forecast for this project, fed several correlated streams at once? | **Not now, and not for the 10s return.** The capable version is licence-locked: TimesFM 3.0 is the first trained natively multivariate (i.e. the only one that does what was asked) and its weights are non-commercial/non-production; 2.5's weights are Apache-2.0 but univariate, its XReg covariates being a ridge fitted OUTSIDE the model. **Licence ruled irrelevant by the user 2026-09-24** (non-commercial research use, own model later), so both experiments move to 3.0 weights and the original parallel-streams idea becomes directly testable. Every non-licence objection stands: wrong target (20.0% pool zero mass, $112.05 ceiling), grid resampling discards the event-driven features, price-persistence trap. Note also recorded: Phase 8's transformer track IS the cheapest seed for "train our own". Note: `.planning/quick/20260924-timesfm-assessment/PLAN.md` |
 
 ## Deferred Items
 
@@ -221,8 +221,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| Modelling | **E1 — zero-shot TimesFM 2.5 as a baseline to BEAT** (Apache-2.0 weights, 1s-resampled mid, scored on the RETURN vs constant-zero, same folds). If the three sanctioned classes cannot beat a zero-shot foundation model at 10s, better to know before the v0 gate. | Deferred to Phase 8 discuss | 2026-09-24 |
-| Modelling | **E2 — realised-volatility quantile forecasting** at 1-10 min to make Stage 2's threshold X state-dependent. Volatility clusters (unlike 10s returns, which are ~unpredictable by construction), so a pretrained long-context prior can actually earn its keep here — and a wider X in violent minutes is directly monetizable in the Stage 2 already planned. | Deferred post-MVP; needs a licence resolution if it uses 3.0 weights | 2026-09-24 |
+| Modelling | **E1 — zero-shot TimesFM 2.5 as a baseline to BEAT** (Apache-2.0 weights, 1s-resampled mid, scored on the RETURN vs constant-zero, same folds). If the three sanctioned classes cannot beat a zero-shot foundation model at 10s, better to know before the v0 gate. | Deferred to Phase 8 discuss; **use 3.0 weights** per the 2026-09-24 licence ruling | 2026-09-24 |
+| Modelling | **E2 — realised-volatility quantile forecasting** at 1-10 min to make Stage 2's threshold X state-dependent. Volatility clusters (unlike 10s returns, which are ~unpredictable by construction), so a pretrained long-context prior can actually earn its keep here — and a wider X in violent minutes is directly monetizable in the Stage 2 already planned. | Deferred post-MVP. Licence ruled irrelevant 2026-09-24, so 3.0's native multivariate is available -- but as a COMPONENT it creates a replacement debt: the product cannot ship on research-licensed weights, so this is a loan, not a purchase | 2026-09-24 |
 
 ## Session Continuity
 
