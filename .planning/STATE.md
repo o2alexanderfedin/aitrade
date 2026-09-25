@@ -192,6 +192,8 @@ Recent decisions affecting current work:
 
 ### Blockers/Concerns
 
+- [Methodology, 2026-09-24 — recorded, not blocking today]: **A pretrained foundation model's weights are an un-auditable information set.** The project's core value is a leakage-proof pipeline with per-feature information-set proofs in CI; no such proof can be written for "what did these 330M parameters already see". Mitigation that makes a side experiment legitimate: the evaluation window is 2026-09-12..18 and TimesFM 3.0 shipped 2026-08-31, so its corpus predates this data and a BASELINE run is auditable on cutoff grounds. What it cannot be, under current CI rules, is a catalogued feature — that needs a kind of proof that does not exist yet. Surface this in Phase 8's discuss alongside E1.
+
 - [OPS, 2026-09-16 — **root-caused, mitigation half-applied**]: **The Mac sleeps on battery and `caffeinate` cannot stop it.** Measured 2.71h of irreplaceable L1 lost in a 69.5h window (96.10% uptime), in three outages of 6053s, 2894s and 304s, plus a further ~54min on 09-15 evening. Cause is not the network and not the daemon: `pmset -g log` shows `Entering Sleep state due to 'Maintenance Sleep': TCPKeepAlive=active Using Batt (Charge:73%)` and later a `Clamshell Sleep`. `caffeinate -i -s`'s `PreventSystemSleep` assertion is honored **on AC power only**; on battery it is inert while still reporting as held (pmset showed it unbroken for 27h across all three sleeps), which is what made the loss invisible. The watchdog structurally cannot catch this — when the host sleeps, the watchdog stops ticking too.
   - **Done:** `mvp/data/capture/power.py` + watchdog `__power__` ledger rows + a startup `WARNING: SLEEP RISK` line (commit 343d6d6, 9 tests, 5 mutation red-proofs). Live in Run H (PID 57329, restarted 2026-09-16 05:19:45Z, 7.4s gap, seq resumed from sidecar).
   - **Still needed:** the user must run `sudo pmset -b disablesleep 1`. The alarm makes the risk visible; only pmset makes it impossible.
@@ -207,13 +209,20 @@ Recent decisions affecting current work:
 - [Phase 8]: Q3 (GPU spec & training budget) unresolved — blocks transformer track; mvp.md says needed before v0
 - [Phase 11]: Q5 (2nd-tier symbol choice) — check tick-size/filter re-tick history of candidates first
 
+## Quick Tasks Completed
+
+| Date | Task | Outcome |
+|------|------|---------|
+| 2026-09-24 | `timesfm-assessment` — should Google's TimesFM forecast for this project, fed several correlated streams at once? | **Not now, and not for the 10s return.** The capable version is licence-locked: TimesFM 3.0 is the first trained natively multivariate (i.e. the only one that does what was asked) and its weights are non-commercial/non-production; 2.5's weights are Apache-2.0 but univariate, its XReg covariates being a ridge fitted OUTSIDE the model. Two experiments recorded under Deferred Items. Note: `.planning/quick/20260924-timesfm-assessment/PLAN.md` |
+
 ## Deferred Items
 
 Items acknowledged and carried forward from previous milestone close:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| *(none)* | | | |
+| Modelling | **E1 — zero-shot TimesFM 2.5 as a baseline to BEAT** (Apache-2.0 weights, 1s-resampled mid, scored on the RETURN vs constant-zero, same folds). If the three sanctioned classes cannot beat a zero-shot foundation model at 10s, better to know before the v0 gate. | Deferred to Phase 8 discuss | 2026-09-24 |
+| Modelling | **E2 — realised-volatility quantile forecasting** at 1-10 min to make Stage 2's threshold X state-dependent. Volatility clusters (unlike 10s returns, which are ~unpredictable by construction), so a pretrained long-context prior can actually earn its keep here — and a wider X in violent minutes is directly monetizable in the Stage 2 already planned. | Deferred post-MVP; needs a licence resolution if it uses 3.0 weights | 2026-09-24 |
 
 ## Session Continuity
 
