@@ -10,6 +10,7 @@ span makes every purge/embargo invariant test pass vacuously against a
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 import polars as pl
@@ -36,6 +37,7 @@ def build_span_partition(
     start_ns: int,
     step_ns: int,
     rows: int,
+    decision_source_ranks: Sequence[int] | None = None,
     code_hash: str = "deadbeef",
 ) -> dict:
     """Write one real, `FEATURE_ROW_SCHEMA`-shaped features-tier partition
@@ -48,13 +50,32 @@ def build_span_partition(
     Every feature/label column is a plain, non-null float (its VALUE is
     irrelevant to every purge/embargo/accessor test this fixture serves --
     only `etime` and the bookkeeping columns matter); `decision_source_rank`
-    is always 0 (quote), so no row is ever "undefined age" for a later
-    row-admission test.
+    defaults to 0 (quote) on every row, so no row is ever "undefined age" for a
+    later row-admission test.
+
+    `decision_source_ranks` OVERRIDES that per row, and exists so a test can
+    make `row_admission.stale_book_age_ns` produce something other than a column
+    of zeros (07-02-PLAN.md Task 1): an all-quote span gives every row age 0, so
+    both the stale and the undefined admission counts come out 0 and any test
+    comparing them is comparing two zeros. A pattern with leading trade rows and
+    a quote every nth row afterwards yields real `excluded_undefined` and
+    `excluded_stale` counts, and -- because `stale_book_age_ns` forward-fills --
+    counts that depend on row ORDER, not only on row count. Must be `rows` long;
+    `None` reproduces the all-quote column exactly.
     """
     etimes = [start_ns + i * step_ns for i in range(rows)]
+    if decision_source_ranks is None:
+        ranks = [0] * rows
+    elif len(decision_source_ranks) != rows:
+        raise ValueError(
+            f"build_span_partition: decision_source_ranks has "
+            f"{len(decision_source_ranks)} entries, expected rows={rows}"
+        )
+    else:
+        ranks = list(decision_source_ranks)
     columns: dict[str, list] = {
         "etime": etimes,
-        "decision_source_rank": [0] * rows,
+        "decision_source_rank": ranks,
         "decision_seq": list(range(rows)),
         "bid_price": [70_000.0 + float(i % 97) for i in range(rows)],
         "ask_price": [70_000.1 + float(i % 97) for i in range(rows)],
