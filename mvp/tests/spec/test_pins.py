@@ -34,6 +34,10 @@ version = "0.47.0"
 [[package]]
 name = "polars"
 version = "1.41.2"
+
+[[package]]
+name = "scikit-learn"
+version = "1.9.1"
 """
 
 
@@ -61,6 +65,31 @@ def test_assert_pins_raises_on_drifted_numba_version(tmp_path):
     bad = GOOD_LOCK.replace('version = "0.65.1"', 'version = "0.64.0"')
     lock = _write_lock(tmp_path, bad)
     with pytest.raises(AssertionError, match="numba"):
+        assert_pins(lock)
+
+
+def test_assert_pins_raises_on_drifted_scikit_learn_version(tmp_path):
+    """The permanent form of Phase 7's one-off mutation check: CLAUDE.md's
+    mandated stack names the scikit-learn 1.9 line, and D-07-28 chose to make
+    that mandate mechanical. A silent bump to 1.8 (or 2.0) must fail the
+    commit naming scikit-learn, not pass because only three prefixes are
+    enumerated."""
+    bad = GOOD_LOCK.replace('version = "1.9.1"', 'version = "1.8.0"')
+    lock = _write_lock(tmp_path, bad)
+    with pytest.raises(AssertionError, match="scikit-learn"):
+        assert_pins(lock)
+
+
+def test_assert_pins_raises_when_scikit_learn_is_absent_entirely(tmp_path):
+    """A pinned package dropped from the lockfile is a failure, not a pass --
+    the same rule `test_assert_pins_raises_on_missing_pinned_package` states
+    for numba, asserted for the entry this phase added."""
+    bad = GOOD_LOCK.replace(
+        '\n[[package]]\nname = "scikit-learn"\nversion = "1.9.1"\n', "\n"
+    )
+    assert 'name = "scikit-learn"' not in bad
+    lock = _write_lock(tmp_path, bad)
+    with pytest.raises(AssertionError, match="scikit-learn"):
         assert_pins(lock)
 
 
