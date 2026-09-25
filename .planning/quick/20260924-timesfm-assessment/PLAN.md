@@ -4,191 +4,141 @@ slug: timesfm-assessment
 status: complete
 created: 2026-09-24
 decision: not-now
-licence_ruling: 2026-09-24 user ruled the non-commercial licence irrelevant for now
 ---
 
 # Should TimesFM forecast for this project?
 
-> **USER RULING, 2026-09-24 (supersedes the licence section below):** non-commercial
-> research use is acceptable for now, with the intention to train an in-house model
-> later. The licence is therefore NOT a blocker and the comparison table's licence
-> row is moot. **TimesFM 3.0 is the version both experiments should use** — its
-> native multivariate training is exactly what the original proposal asked for, so
-> the cross-asset structure comes from the model rather than from a hand-built
-> ridge. See "What the ruling changes, and what it does not" at the end.
+Assessment requested mid-Phase-7. No code written; the deliverable is a decision
+plus two recorded experiments. **Verdict: yes eventually, no for the 10-second
+return, and not in this phase.** Use **TimesFM 3.0** — it is the first version
+trained natively multivariate, which is exactly what the proposal asked for.
 
-Assessment requested mid-Phase-7. No code written; the deliverable is a
-decision plus two recorded experiments. **Verdict: not in this milestone, and
-not for the 10-second return — but one variant is worth doing in Phase 8 and one
-post-MVP.**
-
-## The decisive finding: the capable version is licence-locked
+## The version matters, because only one of them does what was asked
 
 The proposal was to feed several correlated streams at once (BTC + ETH + USDT +
 news embeddings per record) and let the model find the cross-dependencies.
 
-| | TimesFM 2.5 | TimesFM 3.0 (2026-08-31) |
+| | TimesFM 2.5 | TimesFM 3.0 |
 |---|---|---|
-| Weights licence | Apache-2.0 | `timesfm-non-commercial-license-v1.0` — **non-commercial, non-production** |
 | Multiple series jointly | **No** — univariate only | **Yes** — first TimesFM trained natively multivariate |
-| Covariates | XReg: a ridge regression fitted OUTSIDE the model on the in-context window; TimesFM then forecasts the residuals | past-only and past+future covariates natively |
-| Params / context | 200M / 16,384 | 330M / 16,384, horizon to 1,024 |
+| Covariates | XReg: a ridge fitted OUTSIDE the model on the in-context window; TimesFM forecasts the residuals | past-only and past+future covariates natively |
+| Params / context / horizon | 200M / 16,384 | 330M / 16,384 / up to 1,024 |
+| Quantiles | yes | 9 quantiles (deciles) |
 
-So the version that does what was asked forbids the use, and the version that may
-be used cannot do what was asked. Under 2.5, "give it parallel streams" means
-hand-building a linear cross-asset model yourself and letting TimesFM tidy the
-leftovers — the cross-asset structure would be YOUR ridge, not the foundation
-model's.
+Under 2.5 the cross-asset structure would have been our own ridge with the
+foundation model merely tidying residuals. Under 3.0 it is the model's own job.
+So the idea is real — on 3.0.
 
-**Sourcing honesty:** read from the repo README and secondary coverage. The
-`LICENSE-MODEL-3.0` text itself returned 404 at the path tried and has NOT been
-read. Before any commitment to 3.0 weights, read the licence file itself.
+## The real objection: the target, not the tool
 
-## The deeper objection, independent of licence: the target
+The forecast target is the 10-second midprice return. Three measured numbers make
+the mismatch concrete:
 
-The forecast target is the 10-second midprice return. Three numbers this project
-has already measured make the mismatch concrete:
-
-- **43.9%** of 10s returns are EXACTLY zero.
-- A perfect-foresight oracle extracts **$29.46 on a whole real day** at the $100
-  position cap. One tick (0.1 USDT on a ~$77k price) is 1.3 bp and the spread
-  eats most of it.
-- Decision rows are **event-time and irregular**, ~6.8M per day.
+- Exact-zero mass in the target: **20.0% across the pool**, 9.8%–13.8% on the
+  candidate validation window (43.9% is 2026-09-13 alone, not representative).
+- A perfect-foresight oracle extracts **$112.05 over the two-day validation
+  window** at the $100 position cap. One tick (0.1 USDT on ~$77k) is 1.3 bp and
+  the spread eats most of it.
+- Decision rows are **event-time and irregular**, ~6.8M per day, `etime` unique.
 
 TimesFM needs a regularly-spaced series at a declared frequency, so feeding it
-means resampling. At 1s bars the geometry actually works (86,400 points/day; a
-16,384 context is ~4.5 hours of history to predict 10 steps ahead) — but 1s bars
-destroy precisely what this project's features encode. `ofi`, `imb_top` and
-`trade_flow` are event-driven; a 1s bar is a lossy summary of ~80 events.
+means resampling. At 1s bars the geometry works — 86,400 points/day, and a 16,384
+context is ~4.5 hours of history to predict 10 steps ahead — but 1s bars discard
+precisely what this project's features encode. `ofi`, `imb_top` and `trade_flow`
+are event-driven; a 1s bar is a lossy summary of ~80 events.
 
 **And the failure mode is seductive rather than obvious.** A foundation model's
 prior is "continue the pattern". On a near-martingale price series that prior
 collapses to last-value persistence, which scores beautifully on MAPE/MASE
 against the PRICE and exactly zero against the RETURN. This project is unusually
-well defended against that particular self-deception: D-07-18 scores R² against
-a **constant-zero** predictor rather than against the target mean, and D-07-19
-raises on any P&L at or above the ceiling. Both would catch it on the first run.
+well defended against that specific self-deception: D-07-32 scores R² against a
+constant-zero predictor AND against the target mean, because a constant at the
+train mean was measured scoring R²_vs_zero = +0.001647 with zero skill; and
+D-07-19 raises on any P&L at or above the ceiling. Both would catch it on the
+first run.
 
 ## Where the instinct is right: forecast volatility, not return
 
 Returns at 10s are close to unpredictable by construction — any exploitable
 autocorrelation gets arbitraged away. **Volatility is the opposite**: volatility
-clustering is one of the most robust regularities in market data, which is the
-entire reason the GARCH/HAR literature exists. That makes a realised-volatility
-forecast over the next 1–10 minutes a target where a pretrained long-context
-prior can genuinely earn its keep, and:
+clustering is one of the most robust regularities in market data, which is why the
+GARCH/HAR literature exists at all. That makes realised volatility over the next
+1–10 minutes a target where a pretrained long-context prior can genuinely earn its
+keep, and:
 
-- the model's 9-quantile output is exactly the right shape for it;
-- it is **directly monetizable inside the Stage 2 this project already plans**:
-  the TOB-cross threshold X is currently a fixed constant, and making it
-  state-dependent on predicted volatility — wider when a violent minute is
-  coming, tighter when quiet — is exactly the class of improvement Phase 10's
-  agentic loop exists to produce;
-- the project already carries `ret_1min_mid` and `ret_10min_mid` as diagnostic
-  labels, so the longer horizon is already catalogued.
+- the 9-quantile output is exactly the right shape for it;
+- it is **directly monetizable inside the Stage 2 already planned**: the TOB-cross
+  threshold X is currently a fixed constant, and making it state-dependent on
+  predicted volatility — wider before a violent minute, tighter in a quiet one —
+  is exactly the class of improvement Phase 10's agentic loop exists to produce;
+- `ret_1min_mid` and `ret_10min_mid` are already catalogued diagnostic labels, so
+  the longer horizon needs no new label work.
 
 ## On the three proposed streams, individually
 
 - **ETH alongside BTC** — real. Cross-asset lead-lag at high frequency is well
-  documented. But the right mechanism is the **Phase 8 PyTorch transformer**,
-  where extra channels are a natural input and the causal-masking leakage test
-  already exists in CI. Adding ETH is a CAPTURE decision (the daemon records
-  BTCUSDT only) long before it is a model decision — and capture is currently
-  stopped.
-- **USDT** — it is pegged to $1. As a routine predictor channel it is a
-  near-constant column carrying almost no information; it matters only during
-  depeg events, which are rare and regime-breaking. Its honest use is a regime
-  FLAG (`|USDT − 1| > threshold`), not a forecast input.
-- **News embeddings** — there is no news pipeline in this project at all; capture
-  is `bookTicker` + `trade`. Feeding a 768-dim embedding through 2.5's LINEAR
-  XReg is a very weak use of it. It also opens a leakage hole the current
-  methodology cannot audit, because the embedding model has its own corpus and
-  its own cutoff.
+  documented, and 3.0 can use it jointly. But it is a **capture** decision before
+  it is a model decision: the daemon records BTCUSDT only, and capture is
+  currently stopped.
+- **USDT** — pegged to $1. As a routine channel it is a near-constant column
+  carrying almost no information; it matters only during depeg events, which are
+  rare and regime-breaking. Its honest use is a regime FLAG
+  (`|USDT − 1| > threshold`), not a forecast input.
+- **News embeddings** — there is no news pipeline in this project; capture is
+  `bookTicker` + `trade`. Worth building only after the numeric channels earn it,
+  and it brings its own auditability problem (see below).
 
-## The objection that matters most here: auditability
+## The auditability problem, which is this project's own standard
 
-This project's stated core value is a reproducible, **leakage-proof** pipeline
-with per-feature information-set proofs in CI, embargo ≥ label horizon, and a
-one-look lockbox. A pretrained model's weights are an un-auditable information
-set — you cannot write an information-set proof for "what did these 330M
-parameters already see".
+The stated core value is a reproducible, **leakage-proof** pipeline with
+per-feature information-set proofs in CI, embargo ≥ label horizon, and a one-look
+lockbox. A pretrained model's weights are an un-auditable information set — no
+proof can be written for "what did these 330M parameters already see".
 
-Stated fairly, the mitigation: the evaluation window is 2026-09-12..18 and
-TimesFM 3.0 was released 2026-08-31, so its corpus predates this data. A side
-experiment on THIS window is safe on cutoff grounds and genuinely auditable.
-What it cannot be, under the current CI rules, is a catalogued feature — that
-would need a new kind of proof that does not exist yet.
+The mitigation that makes a side experiment legitimate: the evaluation window is
+2026-09-12..18 and 3.0 shipped 2026-08-31, so its corpus predates this data and a
+baseline run is auditable on cutoff grounds. What it cannot be, under current CI
+rules, is a **catalogued feature** — that needs a kind of proof that does not exist
+yet, and inventing it is its own piece of work.
 
 ## Two recorded experiments
 
 **E1 — Phase 8, cheap, as a baseline to BEAT (not a model to ship).**
-Zero-shot TimesFM 2.5 (Apache-2.0 weights, no licence issue for a baseline) on
-1s-resampled mid, scored on the RETURN against constant-zero, on the same folds
-as the three sanctioned classes. If ridge, LightGBM and the transformer cannot
-beat a zero-shot foundation model at 10s, that is worth knowing BEFORE the v0
-gate rather than after. Cost: one dependency and a weights download — both
-forbidden in the current session, so it belongs to Phase 8's discuss.
+Zero-shot TimesFM 3.0 on 1s-resampled mid, scored on the RETURN against
+constant-zero and against the mean, on the same folds as the three sanctioned
+classes. If ridge, LightGBM and the transformer cannot beat a zero-shot
+foundation model at 10s, that is worth knowing BEFORE the v0 gate rather than
+after. Cost: one dependency plus a weights download, both forbidden in the
+current session, so it belongs to Phase 8's discuss.
 
 **E2 — post-MVP, the promising one.**
-Realised-volatility quantile forecasting at 1–10 min to make Stage 2's X
-state-dependent. Requires a licence resolution if it uses 3.0 weights.
+Realised-volatility quantile forecasting at 1–10 min, BTC and ETH as joint
+channels, to make Stage 2's threshold X state-dependent.
+
+## On training our own
+
+The cheapest path is already in the roadmap and needs no separate effort:
+**Phase 8's PyTorch transformer track is the seed.** It already has a GPU budget,
+a causal-masking leakage test in CI, and a fold harness that owns time. Growing it
+— more channels (ETH), longer context, a quantile head instead of a point head —
+reaches the same destination through infrastructure that already passes this
+project's leakage proofs. A parallel foundation-model effort would duplicate the
+transformer track and inherit none of its guarantees.
 
 ## Why not now
 
-- The current session is explicitly constrained to no downloading and no
-  producing massive data; the weights alone are several hundred MB.
-- Phase 7's whole purpose is to prove the plumbing with the CHEAPEST model class.
-  Introducing a 330M-parameter foundation model into the phase that exists to
-  de-risk the Trainer protocol inverts the point of the phase.
-- Phase 8's GPU question (mvp.md Q3) is still unresolved and already blocks the
-  transformer track. Adding a second GPU-hungry class compounds an open blocker.
+- The current session is constrained to no downloading and no producing massive
+  data; the weights alone are several hundred MB.
+- Phase 7 exists to prove the plumbing with the CHEAPEST model class. Introducing
+  a 330M-parameter model into the phase that de-risks the Trainer protocol
+  inverts the point of the phase.
+- Phase 8's GPU question (mvp.md Q3) is unresolved and already blocks the
+  transformer track. A second GPU-hungry class compounds an open blocker.
 
 ## Not done
 
-- **The 3.0 licence file was not read** (404 on the path tried). The commercial
-  restriction is reported from the repo README and secondary coverage, and must
-  be confirmed against the licence text before any decision that depends on it.
-- No benchmark was run; no claim here rests on measured TimesFM accuracy on this
-  project's data. E1 exists precisely because that number is unknown.
+- **No benchmark was run.** No claim here rests on measured TimesFM accuracy on
+  this project's data — E1 exists precisely because that number is unknown.
+- **No weights downloaded, nothing installed.**
 - ETH/USDT/news availability was not investigated beyond noting that capture
-  records neither.
-
-
----
-
-## What the ruling changes, and what it does not (2026-09-24)
-
-**Changed — and it is a real upgrade.** With 3.0 on the table, the original idea
-becomes directly testable: BTC and ETH as joint channels, learned cross-series
-dependence, a 9-quantile head, 16,384-point context. Under 2.5 the cross-asset
-structure would have been our own ridge with TimesFM cleaning up residuals; under
-3.0 it is the model's. Both recorded experiments move to 3.0 weights.
-
-**Unchanged — every substantive objection, none of which was about the licence.**
-The 10-second return is still the wrong target: measured zero mass is 20.0% across
-the pool and 9.8–13.8% on the candidate validation window, and the chosen window's
-perfect-foresight ceiling is $112.05 across two days. Event-time decision rows must
-still be resampled to a grid to be fed at all, which still discards the event-driven
-content of `ofi`, `imb_top` and `trade_flow`. The price-persistence trap is still the
-likeliest outcome, and volatility is still the target where a pretrained long-memory
-prior earns its keep rather than merely looking like it does.
-
-**One consequence the ruling creates rather than removes.** A research-licensed
-model can never sit inside the shipped product. That makes the *role* of the model
-decisive in a way it was not before:
-
-- **As a baseline to beat (E1) — safe forever.** Nothing ships. A number that tells
-  us whether our three classes are any good is pure gain.
-- **As a component (E2's volatility overlay) — creates a replacement debt.** If
-  Stage 2's threshold X comes to depend on a TimesFM forecast, the product cannot
-  ship until that forecast is reproduced in-house. Worth doing as research; worth
-  knowing it is a loan, not a purchase.
-
-**On training our own.** The cheapest path is already in the roadmap and does not
-need a separate effort: **Phase 8's PyTorch transformer track is the seed.** It
-already has a GPU budget, a causal-masking leakage test in CI, and a fold harness
-that owns time. Growing it — more channels (ETH), longer context, a quantile head
-instead of a point head — is the same destination as "train our own foundation
-model", reached through infrastructure that already exists and already passes this
-project's leakage proofs. Starting a parallel foundation-model effort would
-duplicate the transformer track and inherit none of its guarantees.
+  records none of them.
