@@ -3,16 +3,21 @@ full seven-day v2 feature pool -- 07-02-PLAN.md Task 2, geometry Option A of
 D-07-29: train = 2026-09-12..16, val = 2026-09-17..18.
 
 NEVER COLLECTED BY PYTEST (`scripts/` sits outside `testpaths`). Run it by
-hand, ONCE, from `mvp/`, with a clean git tree and nothing else large resident:
+hand, ONCE, from `mvp/`, with a clean git tree. It no longer needs a quiet
+machine -- the pre-flight measures reclaimable memory against a bar calibrated
+from its own peak and refuses below it, naming both numbers:
 
     export NUMBA_CACHE_DIR=/tmp/nbc
     ./.venv/bin/python3 -m scripts.issue_phase7_segment_manifest
 
-Measured cost (07-RESEARCH.md Q1, against the real pool): ~5 minutes wall
-clock, 19.35 GiB peak footprint / 9.9 GiB RSS on a 32 GiB host. Do not run a
-second Python process or a pytest alongside it. Never `uv run` it -- that both
-holds uv's cache lock for the whole five minutes and is the project's ban on
-`uv run` for long-lived work.
+Measured cost, re-measured after the upstream load was projected to the two
+columns the derivations read (07-02-PLAN.md Task 1): **30 s wall clock, 4.03 GiB
+peak footprint / 3.81 GiB RSS** on a 32 GiB host, against 19.35 GiB / 9.9 GiB /
+~5 min for the full-width load 07-RESEARCH.md Q1 measured. Both the memory and
+the time came down, because the `.to_list()` loop that dominated the old timing
+was paying for a frame that no longer exists at that width. Never `uv run` it --
+that holds uv's cache lock for the process's whole life and is the project's ban
+on `uv run` for long-lived work.
 
 WHY THIS SCRIPT IS MOSTLY ASSERTIONS. `issue_segment_manifest` has no dry-run
 mode: it derives every count from the real partitions and writes the body
@@ -49,6 +54,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -212,6 +219,66 @@ EXPECTED_OOF_TRAINING_ROW_COUNTS = {
 #: every OOF block. `train` is not a look.
 LOOK_SEGMENT_NAMES = ("val", *(f"oof_block_{i}" for i in range(K)))
 
+GIB = 1024**3
+
+#: `/usr/bin/time -l`'s "peak memory footprint" for THIS script, MEASURED on
+#: 2026-09-25 against this exact pool with the upstream load projected to
+#: `harness.segments.UPSTREAM_DERIVATION_COLUMNS` (07-02-PLAN.md Task 1):
+#: 4,331,622,384 B == 4.03 GiB, RSS 3.81 GiB, 30 s wall clock. The full-width
+#: load this replaced measured 19.35 GiB / 9.9 GiB / ~5 min and is what made the
+#: first attempt at this run refuse.
+MEASURED_PEAK_FOOTPRINT_BYTES = 4_331_622_384
+
+#: The bar the pre-flight refuses below: the measured peak times 1.5, rounded up
+#: to the next half GiB (4.03 * 1.5 == 6.05 -> 6.5 GiB). The 1.5 is headroom for
+#: allocator fragmentation and for whatever the rest of the machine grows into
+#: during the 30 s, not a second guess at the peak. Deliberately a bar a machine
+#: somebody is WORKING ON can clear -- the old full-width footprint needed ~18
+#: GiB free, which in practice meant a machine nobody was allowed to touch, and
+#: waiting for one is what stalled this plan for a day.
+MEMORY_BAR_BYTES = 13 * GIB // 2
+
+#: `vm_stat`'s page classes that a new allocation can take over without anything
+#: being paged out: genuinely free, inactive (clean file cache or reclaimable
+#: anonymous), speculative (read-ahead), and purgeable (discardable on demand).
+#: NOT `active` and NOT `wired`, which is what makes this a floor on what is
+#: available rather than an optimistic reading of total RAM.
+#:
+#: This reconstructs the measure the previous executor reported (11.48-13.40 GiB
+#: across twelve readings) -- 6351293 recorded the numbers but not the formula,
+#: and this definition reproduces the same magnitude on the same host, so it is
+#: named here to stop the next reader guessing too.
+VM_STAT_RECLAIMABLE_CLASSES = (
+    "Pages free",
+    "Pages inactive",
+    "Pages speculative",
+    "Pages purgeable",
+)
+
+
+def _reclaimable_memory_bytes() -> int:
+    """macOS reclaimable memory, from `vm_stat`, in bytes.
+
+    Raises rather than guessing: an unparseable `vm_stat` (a non-macOS host, a
+    changed output format) must refuse the run, not wave it through. A silent
+    fallback here would turn the one gate standing between this script and a
+    thrashing 32 GiB host into decoration.
+    """
+    out = subprocess.run(
+        ["/usr/bin/vm_stat"], capture_output=True, text=True, check=True
+    ).stdout
+    page_size = re.search(r"page size of (\d+) bytes", out)
+    if not page_size:
+        raise RuntimeError(f"vm_stat printed no page size: {out[:200]!r}")
+    total_pages = 0
+    for label in VM_STAT_RECLAIMABLE_CLASSES:
+        match = re.search(rf"^{label}:\s+(\d+)\.", out, re.MULTILINE)
+        if not match:
+            raise RuntimeError(f"vm_stat printed no {label!r} line: {out[:400]!r}")
+        total_pages += int(match.group(1))
+    return total_pages * int(page_size.group(1))
+
+
 FOLD_CONFIG_REASON = (
     "compressed_3seg selected over 5seg although the 7-day pool would support "
     "five segments: a 5seg manifest declares a REAL held_out segment, and "
@@ -299,6 +366,29 @@ def _preflight(
         failures.append(
             "FAIL: NUMBA_CACHE_DIR is unset -- export NUMBA_CACHE_DIR=/tmp/nbc "
             "first, or numba scatters .nbi/.nbc caches inside the repo"
+        )
+
+    # Cheapest gate first, and the one this revision exists for: refuse a host
+    # that cannot spare the measured peak plus headroom, naming BOTH numbers so
+    # the reader can tell a short machine from a broken script.
+    reclaimable = _reclaimable_memory_bytes()
+    print(
+        f"  reclaimable memory (vm_stat free+inactive+speculative+purgeable): "
+        f"{reclaimable / GIB:.2f} GiB"
+    )
+    if reclaimable < MEMORY_BAR_BYTES:
+        failures.append(
+            f"FAIL: only {reclaimable / GIB:.2f} GiB reclaimable, and this run "
+            f"needs {MEMORY_BAR_BYTES / GIB:.2f} GiB -- its measured peak "
+            f"footprint is {MEASURED_PEAK_FOOTPRINT_BYTES / GIB:.2f} GiB and the "
+            "bar is 1.5x that. Close whatever is holding memory and re-run; "
+            "running anyway would thrash rather than finish"
+        )
+    else:
+        print(
+            f"  OK: {reclaimable / GIB:.2f} GiB reclaimable clears the "
+            f"{MEMORY_BAR_BYTES / GIB:.2f} GiB bar "
+            f"(1.5x the measured {MEASURED_PEAK_FOOTPRINT_BYTES / GIB:.2f} GiB peak)"
         )
 
     # D-07-07: the manifest's code_hash must name a committed tree.
@@ -595,7 +685,11 @@ def main(argv: list[str]) -> int:
         f"{len(before_lake)} lake files)"
     )
 
-    print("--- (b) issuing (measured ~5 min, 19.35 GiB peak) ---")
+    print(
+        f"--- (b) issuing (measured 30 s, "
+        f"{MEASURED_PEAK_FOOTPRINT_BYTES / GIB:.2f} GiB peak; the full-width "
+        f"load this replaced needed 19.35 GiB) ---"
+    )
     manifest = issue_segment_manifest(
         LAYOUT,
         SEGMENTS,
