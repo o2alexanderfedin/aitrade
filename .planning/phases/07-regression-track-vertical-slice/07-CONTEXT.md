@@ -167,6 +167,99 @@ OUT of scope, explicitly:
   `mlflow-skinny` is what is installed and it carries no sklearn flavor; a plan
   that assumes autolog will fail at import.
 
+### Amendment after the pattern map (2026-09-24)
+
+`07-PATTERNS.md` surfaced five open tensions and one genuine gap in the
+decisions above. Resolved here, before planning:
+
+- **D-07-22 — The frozen predictor is a committed registry body, carrying two
+  hashes.** It lives at `mvp/data/lake_registry/predictors/<manifest_id>.json`,
+  self-hashed like every other manifest in this project. It carries BOTH:
+  `manifest_id` = sha256 of the canonical body INCLUDING the coefficients (so
+  `check_manifest_id_integrity` works on it unchanged), and `predictor_id` =
+  sha256 of the RECIPE only (estimator class, sorted hyperparameters, seed,
+  code hash, normalization manifest id) per D-07-14. Reading one re-derives
+  `predictor_id` from the recipe fields and cross-checks it, failing closed —
+  the `harness.errata.read_errata_manifest` pattern.
+  The point of carrying both: two runs of the SAME recipe that disagree on
+  coefficients yield the same `predictor_id` under different `manifest_id`s.
+  That makes D-07-12's determinism claim checkable as DATA, not only as a test.
+  An MLflow artifact was rejected: D-07-17 chose JSON over pickle precisely so
+  the frozen predictor is diffable and reviewable in git, and an artifact in a
+  gitignored tracking root is neither.
+  `tools/check_manifest_append_only.py` and
+  `tools/check_manifest_id_integrity.py` gain `"predictors"` in their
+  per-directory loop. **The new directory and the guardrail extension must land
+  in ONE commit** — Phase 5's Rule 5 vacuity refusal, learned the hard way when
+  `segments/` and `errata/` were added.
+
+- **D-07-23 — A return is not a price. The conversion is its own function.**
+  `run_sim_checked`'s `pred` argument is a raw USD price; the model predicts
+  `ret_10s_mid`, which `spec/labels.toml` defines as the SIMPLE return
+  `(mid_{t+10s} - mid_t) / mid_t`. So the slice needs
+  `pred_price = mid * (1.0 + pred_ret)` in float64, as a named function with its
+  own round-trip test, in the register of `sim/ticks.py::price_to_ticks`.
+  `mid` is read by that function and by NOTHING else. D-07-09's refusal is
+  therefore scoped to the estimator's input columns, not to "the module never
+  touches mid", and is asserted three ways because no single assertion sees all
+  the ways a price can leak in:
+  1. a feature list containing `mid`/`bid_price`/`ask_price` RAISES;
+  2. the fitted coefficient vector has exactly 3 entries, in the pinned order
+     `("imb_top", "ofi", "trade_flow")`;
+  3. the `PolynomialFeatures(degree=2, include_bias=False)` design matrix has
+     EXACTLY 9 columns (3 linear + 3 squared + 3 cross) — a count assertion is
+     the only one of the three that catches a price column entering through an
+     interaction term.
+  `mid` must never go through `price_to_ticks`: at a one-tick spread the mid is
+  a half tick 98.8% of the time, and `price_to_ticks` refuses an exact half-tick
+  round-trip by design. `bid_price`/`ask_price` are on-grid and are the only two
+  columns that may pass through it.
+
+- **D-07-24 — Cite the ceiling from STATE.md, not from the evidence JSON.**
+  `2,192 trades / 294,554 ticks / $29.46` is correct. Plan 06-06's
+  `evidence/06-06-real-day-oracle.json` and its SUMMARY report
+  `2,212 / 293,844`; those are PRE-FIX numbers, superseded by 06-07's symmetric
+  floor/ceil quantisation fix, and the evidence file says so in its own
+  `SUPERSEDED_BY` key. The ceiling is also a PER-SEGMENT quantity: the new
+  `val` segment's own must be re-measured before it bounds anything.
+
+- **D-07-25 — A committed prediction-table manifest makes that table write-once
+  forever.** It can never be deleted or rewritten in place, only superseded by a
+  new manifest, and the per-commit `stat()` tripwire in
+  `check_no_manifest_rewrite` will size/mtime-check it on every commit from then
+  on. This is already the status quo for all 9.3 GB the lake's committed
+  manifests name — it is not a new dependency — and on a machine without the SSD
+  mounted the check SKIPs honestly. The SUMMARY must state the measured bytes
+  and this consequence plainly.
+
+- **D-07-26 — `data/store.py` is a MODIFIED file, not merely an import.**
+  `PREDICTIONS_TIER` goes beside `FEATURES_NORM_TIER` and deliberately NOT into
+  `BY_DATE_INDEXED_TIERS`. `issue_manifest` reads `p["date"]` BEFORE its tier
+  check, so a predictions caller must pass `dates=[]` or it raises `KeyError`.
+
+- **D-07-27 — `typing.Protocol` has no precedent in this repo** (zero
+  Protocols, zero ABCs; pluggability is done with function injection plus
+  `NamedTuple`/frozen dataclass). Introducing one for the Trainer is still the
+  right call, because Phase 8 must add LightGBM and a transformer without
+  editing the interface — but `mypy` is NOT one of the 19 hooks, so a Protocol
+  is unenforced documentation unless a test asserts conformance. Every estimator
+  therefore gets an explicit `isinstance(obj, TrainerProtocol)` test
+  (`@runtime_checkable`), which is what makes the protocol load-bearing rather
+  than decorative.
+
+- **D-07-28 — Dependency resolution is already verified, not assumed.**
+  Measured on an isolated copy of `pyproject.toml`/`uv.lock` in a scratch
+  directory (the repo was not touched): `scikit-learn==1.9.*` resolves to 1.9.1
+  and adds exactly five packages — `joblib` 1.6.0, `narwhals` 2.26.0,
+  `scikit-learn` 1.9.1, `scipy` 1.18.1, `threadpoolctl` 3.7.0. Nothing else in
+  the lock changed: `numpy` stays 2.4.6, `numba` 0.65.1, `llvmlite` 0.47.0 — the
+  load-bearing triple pin holds — and `pandas` is absent from the lock entirely.
+  `tools/check_pin_versions.py` PASSES on that lockfile unmodified, since it
+  asserts only those three prefixes plus pandas absence. Adding
+  `"scikit-learn": "1.9"` to its `PINNED_PREFIXES` is OPTIONAL and recommended:
+  the mandated stack names 1.9.0 in CLAUDE.md, and the guardrail is where that
+  mandate becomes mechanical.
+
 ### Claude's Discretion
 
 - The internal shape of the Trainer protocol, the module split inside
