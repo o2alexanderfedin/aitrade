@@ -31,3 +31,18 @@ fixture in the same commit would have put an unrelated blast radius behind
 one full-suite green. The repair is mechanical — the same four lines — and
 should be taken by whichever later plan first needs lockbox tests to resolve
 a canonical root implicitly.
+
+---
+
+## `STATE.md`'s Performance Metrics table has no row for 07-02
+
+Found while 07-03 was recording its own row. The table runs
+`... | Phase 06 P07 | ... | Phase 07 P01 | ... | Phase 07 P03 |` -- **07-02 is
+absent**, because that plan stopped at its human-verify checkpoint and the
+`state.record-metric` call lives after the checkpoint in the executor flow.
+
+NOT fixed here, deliberately. `07-02-SUMMARY.md` carries `duration: ~1h20m`, so
+the number is recoverable, but it is a number 07-03 did not measure and
+transcribing someone else's into a metrics table is how a table stops meaning
+what it says. Whichever plan next runs a `state.*` verb can add it from the
+SUMMARY, with a note that it came from there.
