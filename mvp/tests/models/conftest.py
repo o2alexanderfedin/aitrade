@@ -1,9 +1,21 @@
-"""Bare `tmp_path`-derived roots for every `tests/harness/` test -- no
-shared fixture object, matching `tests/tracking/test_mlflow_utils.py`'s
-and `tests/lockbox/test_token_one_look.py`'s own hermetic pattern. Every
-test in this directory writes to its OWN `tmp_path` lake, registry, and
-MLflow tracking root -- never the real, git-committed
-`mvp/data/lake_registry/` or the real MLflow store.
+"""Bare `tmp_path`-derived roots for every `tests/models/` test, copied from
+`tests/harness/conftest.py` with that file's tracking-root defect already
+repaired (see `isolated_canonical_tracking_root` below).
+
+THE PHASE-7 REASON THIS MATTERS MORE HERE. Pre-commit hook 19 runs the FULL
+pytest suite on EVERY commit. A models test that reached a canonical root
+would therefore spend an irreversible validation look from
+`harness.budget` once per commit, not once per deliberate experiment
+(D-07-34). `budget.look_count` is 0 for every segment of the issued manifest
+and must stay 0 until the plans that spend looks deliberately. Every test in
+this directory writes to its OWN `tmp_path` lake, registry, and MLflow
+tracking root -- never the real, git-committed `mvp/data/lake_registry/`,
+never the real lake, never the real MLflow store.
+
+NO `__init__.py` IN THIS DIRECTORY, deliberately: `mvp/models/` is the
+production package this phase builds, and a same-named test package shadows
+it. `--import-mode=importlib` (set repo-wide in `pyproject.toml`) is what
+makes same-named test modules in sibling directories distinct without one.
 """
 
 from __future__ import annotations
@@ -25,23 +37,19 @@ def isolated_canonical_tracking_root(tmp_path: Path):
     `tmp_path/mlflow_root` for the duration of the test, and restores the
     previous value (or its absence) afterwards.
 
-    SETS, not pops -- this used to `os.environ.pop(...)` and claim in its
-    docstring that it pointed the store at `tmp_path`. It did not. With the
-    variable ABSENT, `data.lake_paths.mlflow_tracking_root(None)` falls
-    through to `DEFAULT_MLFLOW_TRACKING_ROOT`, the REAL store at
-    /Volumes/ProjectsSSD/aihedgefund/mlflow. Only a test that explicitly
-    requested the `tracking_root` fixture below was isolated; any other test
-    that reached a canonical-root resolution resolved the real one, and
-    `_require_canonical_tracking_root` could not catch it because the real
-    root IS canonical. Measured directly before the repair: a probe test
-    requesting no fixture resolved /Volumes/ProjectsSSD/aihedgefund/mlflow;
-    after it, the `tmp_path` one.
+    SETS, not pops. The version of this fixture copied from
+    `tests/harness/conftest.py` only called
+    `os.environ.pop(MLFLOW_TRACKING_ROOT_ENV, None)` while claiming to point
+    the store at `tmp_path`; with the variable ABSENT,
+    `data.lake_paths.mlflow_tracking_root(None)` falls through to
+    `DEFAULT_MLFLOW_TRACKING_ROOT` -- the REAL store. Popping is isolation
+    only for a test that also passes its own root explicitly; setting is
+    isolation for every test in the directory, which is the guarantee this
+    phase needs. Both files were repaired together.
 
     `tmp_path/mlflow_root` is one path that EITHER this fixture or
     `tracking_root` may create and NEITHER owns exclusively -- hence
-    `exist_ok=True` on both sides. Creating it here is deliberate: a
-    canonical root that does not exist surfaces as a confusing
-    "no existing mlflow.db" refusal rather than as isolation.
+    `exist_ok=True` on both sides.
     """
     previous = os.environ.get(MLFLOW_TRACKING_ROOT_ENV)
     root = tmp_path / "mlflow_root"
@@ -86,10 +94,9 @@ def tracking_root(tmp_path: Path) -> Path:
     `tests/lockbox/test_token_one_look.py:_seed_tracking_db`).
 
     Same path as `isolated_canonical_tracking_root` above, which runs FIRST
-    and has already created it -- so `exist_ok=True`, not a bare `mkdir()`,
-    which would now raise `FileExistsError` in every test that asks for this
-    fixture. The directory is shared between the two fixtures and owned
-    exclusively by neither."""
+    and has already created it -- so `exist_ok=True`, never a bare
+    `mkdir()`, which would raise `FileExistsError` in every test that asks
+    for this fixture."""
     root = tmp_path / "mlflow_root"
     root.mkdir(parents=True, exist_ok=True)
     MlflowClient(build_tracking_uri(str(root))).search_experiments()
