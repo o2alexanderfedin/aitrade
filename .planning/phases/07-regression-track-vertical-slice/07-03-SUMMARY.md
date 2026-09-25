@@ -44,7 +44,7 @@ key-files:
 
 key-decisions:
   - "A file the plan did not list was added: mvp/tests/models/test_protocol.py. The plan's own objective is that 'a Protocol with no test is decorative', and mypy is not one of the 18 hooks -- without a committed conformance test the plan would ship the anti-pattern it was written to avoid. The plan's verify command checks four signatures once, in a shell one-liner that no commit re-runs."
-  - "The signature rule is enforced over ast parameter and annotation nodes, NOT with the _docstring_nodes exemption helper the plan named. Reading only args/annotations never visits a Constant, so there is no docstring to exempt -- importing a helper that would have nothing to do would misdescribe the check. The counterpart test asserts the docstring DOES contain the forbidden words."
+  - "The signature rule is enforced over ast parameter and annotation nodes, NOT with the _docstring_nodes exemption helper the plan named. Descending into args/returns only never reaches a docstring (the first ast.Expr of a scope body), so there is nothing to exempt; it DOES reach ast.Constant, because a string-quoted forward-reference annotation is one, and the anti-vacuity test depends on that. The counterpart test asserts the docstring DOES contain the forbidden words."
   - "The plan's Task 3 mutation ('shrink rows so one OOF block is empty') cannot reach test 1: the train entry is 18,000 rows wide by construction, so shrinking rows is refused by an earlier gate. Recorded as such, and a second mutation that DOES empty exactly one block was added."
   - "predictor_id COERCES numpy scalars rather than refusing them (the plan offered either, and asked for one behaviour stated in the docstring). Coercion is per-type: np.int64(2) becomes 2 and not 2.0, because a blanket float() would silently give degree: 2 the id of a degree: 2.0 nobody wrote."
   - "The fixture uses a CONSTANT one-tick spread rather than the plan's 'one or two ticks'. At a one-tick spread the mid is always a half tick -- the real pool's own condition 98.8% of the time -- and mid * (1 + ret) reconstructing a future mid then cannot straddle an integer tick boundary under the kernel's floor/ceil rule."
@@ -136,10 +136,13 @@ SAY `sklearn`, `epochs` and `early_stopping` to state the constraint, and the
 registry dispatches on keys that are literally `"sklearn.Ridge"`. So
 `_signature_tokens` walks every `FunctionDef` and collects parameter names,
 unparsed parameter annotations and the unparsed return annotation -- nothing else.
-Reading only `args`/`returns` never visits a `Constant`, so **no docstring
-exemption is needed and none was imported**; `tools/check_latest_ban.py:56`'s
-`_docstring_nodes` helper would have had nothing to do, and saying so is more
-honest than calling it. Two counterparts keep the rule from passing vacuously:
+Descending into `args`/`returns` only, it never reaches a docstring -- which is
+the first `ast.Expr` of a scope's body -- so **no docstring exemption is needed
+and none was imported**; `tools/check_latest_ban.py:56`'s `_docstring_nodes`
+helper would have had nothing to do. It DOES reach `ast.Constant`, because a
+string-quoted forward-reference annotation is one, and the anti-vacuity test
+below depends on exactly that: a string ANNOTATION is what the rule is about, a
+docstring is what it must not read. Two counterparts keep the rule from passing vacuously:
 the scan is fed a synthetic `fit(..., early_stopping_rounds)` /
 `build(estimator: 'sklearn.linear_model.Ridge')` pair and must report exactly
 `{early_stopping, sklearn}`; and a separate test asserts the docstring DOES
@@ -318,7 +321,7 @@ fails here naming itself rather than as a polars `ColumnNotFound` forty lines do
 | T-07-09 (look budget) | mitigated | every test uses the `tmp_path` lake/registry/tracking roots from `tests/models/conftest.py`; `budget.look_count` re-read after the last commit and still 0 on all twelve segments of both manifests |
 | T-07-10 (fixture labels) | mitigated | labels derived from the fixture's own price path, and the R^2 test asserts a LOWER and an UPPER bound, with M3 proving the upper one bites |
 | T-07-11 (`predictor_id` spoofing) | mitigated | one canonicaliser; six distinct ids across the base and five single-field variants, so no field is ignored, and no two variants collide with each other either |
-| T-07-12 (model artifacts) | mitigated | `to_artifact() -> dict` is the only serialisation in the Protocol; `grep -rn "pickle" mvp/models/` returns nothing |
+| T-07-12 (model artifacts) | mitigated | `to_artifact() -> dict` is the only serialisation in the Protocol. `grep -rn "import.*pickle\|\.dumps\|\.loads\|pickle\." mvp/models/` finds no import and no call -- its only three hits are the word `json.dumps` inside `predictor_id.py`'s prose, and `protocol.py` names `pickle`/`cloudpickle` only in the docstring that forbids them |
 
 ## Look Budget
 

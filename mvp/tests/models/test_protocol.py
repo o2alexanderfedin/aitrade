@@ -17,12 +17,15 @@ Two separate claims, and neither is checked by anything else in this repo:
    `early_stopping` in order to state the constraint, and
    `predictor_from_artifact` dispatches on `model_class` values that are
    literally `"sklearn.Ridge"`. So the check reads PARAMETER NAMES and
-   ANNOTATION NODES off the AST and never visits a string constant --
-   which also means it needs no docstring exemption (the helper
-   `tools/check_latest_ban.py:_docstring_nodes` provides): a docstring is
-   an `ast.Expr`/`ast.Constant`, and `_signature_tokens` below descends
-   into `args` and `returns` only. Stated here rather than importing a
-   helper that would have nothing to do.
+   ANNOTATION NODES off the AST, and needs no docstring exemption (the
+   helper `tools/check_latest_ban.py:_docstring_nodes` provides): a
+   docstring is the first `ast.Expr` of a scope's BODY, and
+   `_signature_tokens` below descends into `args` and `returns` only, so
+   it never reaches one. It DOES reach `ast.Constant` -- a string-quoted
+   forward reference like `estimator: 'sklearn.linear_model.Ridge'` is
+   one, and `test_the_signature_scan_flags_a_banned_parameter_it_is_shown`
+   depends on that. A string ANNOTATION is exactly what the rule is
+   about; a docstring is what it must not read.
 """
 
 from __future__ import annotations

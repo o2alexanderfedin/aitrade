@@ -40,7 +40,9 @@ constraint at all, and `predictor_from_artifact` dispatches on
 friends. A check spelled `'sklearn' not in inspect.getsource(...)` would
 forbid the very documentation and the very registry this design requires;
 `tests/models/test_protocol.py` therefore reads parameter names and
-annotation nodes off the AST and never visits a string constant.
+annotation nodes off the AST, and reaches no docstring. The only string
+constants it does reach are string-quoted forward-reference ANNOTATIONS --
+which is exactly what the rule is about, not an exception to it.
 
 WHY `typing.Protocol` AT ALL, IN A REPO THAT HAS NEVER DECLARED AN
 INTERFACE. Pluggability here has so far been function injection plus
