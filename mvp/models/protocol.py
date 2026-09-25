@@ -178,9 +178,27 @@ class UnknownModelClassError(ValueError):
 
 #: `model_class` -> the function that rebuilds a `FrozenPredictor` from a
 #: `to_artifact()` body. THE EXTENSION POINT: Phase 8 adds an entry here
-#: and edits nothing else in this module. Empty in plan 07-03 -- the
-#: linear implementation registers itself in 07-04.
+#: and edits nothing else in this module. Empty at import; plan 07-04's
+#: linear builder is registered lazily by `_register_builtin_builders`
+#: below, on the first dispatch.
 PREDICTOR_BUILDERS: dict[str, Callable[[Mapping[str, Any]], FrozenPredictor]] = {}
+
+
+def _register_builtin_builders() -> None:
+    """Register `models.frozen`'s coefficient-JSON builder for every
+    `model_class` Phase 7 produces.
+
+    THE IMPORT IS INSIDE THE FUNCTION BODY, never at module scope, and that
+    is not a style choice: `models.frozen` is free to import this module
+    (Phase 8's builders will need `FitInputs`), and a module-scope import
+    here would close the cycle. `setdefault`, so a builder a later phase
+    registered by hand -- by adding an entry, which is the whole point of
+    the registry -- is never overwritten by this one.
+    """
+    from models.frozen import LINEAR_MODEL_CLASSES, frozen_linear_from_artifact
+
+    for model_class in LINEAR_MODEL_CLASSES:
+        PREDICTOR_BUILDERS.setdefault(model_class, frozen_linear_from_artifact)
 
 
 def predictor_from_artifact(artifact: Mapping[str, Any]) -> FrozenPredictor:
@@ -193,8 +211,13 @@ def predictor_from_artifact(artifact: Mapping[str, Any]) -> FrozenPredictor:
     `UnknownModelClassError` for an unregistered class and `KeyError` for a
     body with no `model_class` at all, because a body that cannot say what
     it is must not be rebuilt as whatever happens to be registered first.
+
+    `artifact["model_class"]` is read BEFORE the builders are registered, so
+    a body that cannot say what it is still raises `KeyError` and never
+    pays for an import it has no use for.
     """
     model_class = artifact["model_class"]
+    _register_builtin_builders()
     builder = PREDICTOR_BUILDERS.get(model_class)
     if builder is None:
         raise UnknownModelClassError(model_class, tuple(sorted(PREDICTOR_BUILDERS)))
