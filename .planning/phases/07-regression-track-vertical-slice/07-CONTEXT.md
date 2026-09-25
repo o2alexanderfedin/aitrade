@@ -260,6 +260,133 @@ decisions above. Resolved here, before planning:
   the mandated stack names 1.9.0 in CLAUDE.md, and the guardrail is where that
   mandate becomes mechanical.
 
+### Amendment after research (2026-09-24) — six of my own decisions were wrong
+
+`07-RESEARCH.md` measured things the discuss step assumed. Six decisions above
+are FACTUALLY WRONG and are corrected here; ten more are added. Where a number
+below disagrees with a number above, **the number below wins**.
+
+#### Corrections
+
+- **C1 — D-07-16's stated rationale is false.** `etime` is **globally unique and
+  strictly sorted** across the whole pool: 60,926,503 distinct values in
+  60,926,503 rows, measured. "Many rows share an `etime`" describes the RAW
+  merged event stream, not the decision rows — the last-row-per-`etime` rule is
+  exactly what makes `etime` unique. So the prediction-table join key is `etime`
+  ALONE. `decision_seq` by itself is **not** unique and must never be used as a
+  key. Keep `decision_seq` in the table as a cross-check column, not as a key.
+
+- **C2 — D-07-18's tie argument runs backwards.** Ties do not flatter; measured
+  on 2026-09-13 they **deflate** the rank IC by 3.2%. The honest framing is that
+  ties make the IC an understatement, not an overstatement — the tie fraction is
+  still reported as a first-class number, but as a correction, not a warning.
+
+- **C3 — 43.9% is one day, not the pool.** 43.8897% is 2026-09-13 alone
+  (verified). The **pool is 20.0%**; the candidate `val` window is 9.8%–13.8%.
+  D-07-18 must be restated PER SEGMENT; a single pool-wide zero-mass number is
+  not a thing that exists.
+
+- **C4 — the ceiling is not $29.46 for this phase.** $29.46 is 2026-09-13's
+  ceiling. Measured for the two candidate windows: **Option A = 9,946 trades /
+  1,120,460 closed ticks / $112.05**; Option B = 5,557 / 605,389 / $60.54.
+  D-07-19's "re-measure before it bounds anything" is therefore already
+  satisfied — use $112.05 for Option A. Also measured: `pred = mid` yields
+  **0 trades**, so the null-label fill is provably neutral rather than a silent
+  trade generator.
+
+- **C5 — D-07-15's size estimate was 3x too big.** The real stored table is
+  **91.2 MiB zstd at 7.86M rows**, not ~270 MB. The decision to store only the
+  winner stands, but it is now a modest saving rather than a gigabyte-scale one.
+
+- **C6 — D-07-12's named mechanism is INERT on this host.** numpy here links
+  **Apple Accelerate**, and `threadpoolctl` ships no Accelerate controller, so
+  `threadpoolctl`/`OMP_NUM_THREADS` control nothing locally. Determinism was
+  measured directly instead and holds: bit-identical across processes AND across
+  thread counts. **Consequence: a coefficient hash must never be pinned as a
+  committed constant** — CI is Linux/OpenBLAS and will not reproduce an Apple
+  Accelerate reduction order. Determinism is asserted WITHIN a run/host
+  (in-process vs fresh subprocess), never against a hard-coded digest.
+
+- **C7 (partial, mine stands) — `cloudpickle` is not a new lock entry.** Research
+  called it a sixth addition; measured, it is **already in `mvp/uv.lock` and
+  already installed**, pulled by `mlflow-skinny` 3.13.0. `joblib` 1.6.0 does
+  declare it, which is what was seen. D-07-28's "exactly five added packages"
+  stands unchanged.
+
+#### Additions
+
+- **D-07-29 — The window is Option A: train = 2026-09-12..16, val =
+  2026-09-17..18.** Measured basis: k=5 splits that train into OOF blocks of
+  23.99999989 h — one calendar day each, which is the cleanest possible block
+  boundary; a 2-day `val` buys a per-day breakdown INSIDE the single look; and
+  Option B's extra training days measurably buy nothing (R² 0.047253 vs
+  0.047509). Every ns boundary and derived count is pre-measured in RESEARCH.md
+  and must be ASSERTED by the issuance script before anything is spent.
+
+- **D-07-30 — MLflow forbids a nested run here, so the step order is forced.**
+  `mlflow.start_run` raises a bare `Exception` when a run is already active, and
+  neither `budget.record_look` nor `negative_log.record_negative_result` passes
+  `nested=True`. Therefore the slice's own tracked run opens **LAST**, after all
+  looks and all negative-result records have closed. This is a hard ordering
+  constraint on the slice script, not a style preference.
+
+- **D-07-31 — Row order must be asserted, not trusted. TOP RISK.** polars 1.41.2
+  documents join output order as UNSPECIFIED, and `errata.mask_errata_cells`
+  joins every look-role frame. The order holds today (measured) — which is
+  precisely why the assertions must be written now, while they pass: every frame
+  that reaches a fit, a prediction or the simulator asserts `etime` strictly
+  ascending and `np.array_equal` against the pre-join `etime` column. A silent
+  reorder would misalign predictions against decision rows with no error.
+
+- **D-07-32 — The zero baseline needs TWO R² numbers, because one is gameable.**
+  Measured: a constant predictor at the train mean scores **R²_vs_zero =
+  +0.001647 with zero skill**, and a model shrunk by 1e-6 keeps **IC +0.207 at
+  R² 0.000000**. So D-07-18(a) reports R² against the constant-zero predictor
+  AND R² against the target mean, and a NaN IC (the spearmanr of a constant
+  input) is a **distinctly-messaged FAIL**, never a silent null.
+
+- **D-07-33 — Store the RETURN, not the price.** The table holds `pred` in return
+  units; the `mid * (1.0 + pred)` conversion happens at ONE site, shared with the
+  ceiling computation so the two can never diverge. Storing a price would bake a
+  `mid` snapshot into the artifact and make the table unreadable against any
+  other book.
+
+- **D-07-34 — Pre-commit runs the FULL pytest suite, so a test that touches a
+  canonical root spends a look on every commit.** Tests use the fixture lake and
+  a `tmp_path` tracking root, without exception. And the frame cache (D-07-05)
+  must be keyed by tracking root — otherwise a scratch dry-run silently reads a
+  cache built against the real lake and bypasses the budget it was supposed to
+  respect.
+
+- **D-07-35 — Phase 6's ceiling script was never committed.** The
+  perfect-foresight computation exists only as a transcript. This phase lands it
+  as `models/gates.py` with its own test, so D-07-19's guard has code behind it
+  rather than a remembered number.
+
+- **D-07-36 — Errata is a measured no-op on v2** (all 249 cells are already
+  null). Keep `errata_id` populated with `version=1` anyway, so the masking gate
+  stays live and a future non-null erratum is caught rather than ignored.
+
+- **D-07-37 — Issuance is effectively one-shot and expensive.** ~5 minutes and
+  **19.35 GiB peak RSS on a 32 GiB host**, and the overlap refusal makes it
+  unrepeatable once a look is spent. The script asserts every derived count
+  against RESEARCH.md's pre-measured values BEFORE it writes or spends anything.
+
+- **D-07-38 — Two different registry questions, two different answers.** The
+  `predictions` **tables** dataset needs NO guardrail edit: all three manifest
+  scanners glob `manifests/**`, so a new dataset under `manifests/` is covered
+  already, and Phase 5's one-commit vacuity lesson does not apply to it.
+  D-07-22's `lake_registry/predictors/` directory is a different thing — a new
+  TOP-LEVEL sibling of `segments/`/`errata/` — and that one does still need the
+  per-directory loop extension in both scanners, landing in one commit with the
+  directory. Do not conflate them.
+
+- **D-07-39 — Out-of-sample honesty has a disclosure obligation.** Research
+  deliberately confined model evidence to days 12–17 and enumerated every
+  measurement that read days 17/18. The plan must copy that disclosure block
+  into its SUMMARY, so the first honest `val` look is not quietly contaminated by
+  research having already looked.
+
 ### Claude's Discretion
 
 - The internal shape of the Trainer protocol, the module split inside
