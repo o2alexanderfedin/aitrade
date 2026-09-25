@@ -1988,7 +1988,10 @@ already written); `pickle` for model persistence (D-07-17).
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All four were resolved before planning closed — by CONTEXT.md decisions or by a
+> named plan task. Each carries its resolution inline. Nothing here is open.
 
 1. **Option A or Option B for the train/val split.**
    - Known: every number for both, measured (§Q1), including both ceilings (§Q7).
@@ -1997,6 +2000,9 @@ already written); `pickle` for model persistence (D-07-17).
    - Recommendation: **A.** Measured evidence that B's extra train data buys
      nothing (R² 0.047253 vs 0.047509), and A's 23.99999989 h blocks are one
      calendar day each, which Phase 8's per-fold ranking will want.
+   - **RESOLVED: Option A, by D-07-29.** train = 2026-09-12..16, val = 2026-09-17..18.
+     Every ns boundary and derived count is asserted by `07-02-PLAN.md` Task 1
+     before the manifest is staged.
 
 2. **Does the plan store the diagnostic-horizon metrics only, or also diagnostic prediction tables?**
    - Known: D-07-10 says the diagnostic horizons are "reported alongside but never
@@ -2005,12 +2011,19 @@ already written); `pickle` for model persistence (D-07-17).
      other horizon (cheap, no extra table) or something more.
    - Recommendation: the cheap reading — four R²/IC pairs from the one `pred`
      array against four target columns, logged as metrics on run 3. No extra bytes.
+   - **RESOLVED: metrics only, no extra tables.** `07-09-PLAN.md` Task 1 logs the
+     diagnostic-horizon R²s from the single `pred` array against the other three
+     target columns on run 3; D-07-15 keeps the stored table set to the one that
+     feeds the simulator.
 
 3. **`errata_id` on the new manifest: keep or null?**
    - Known: the 249-cell list is a measured no-op on v2; `version=1` is required to
      keep it (catalogue version, not feature `schema_version`).
    - Recommendation: keep it with `version=1`, and record the measured no-op. A
      live gate that masks nothing beats a disabled one.
+   - **RESOLVED: keep it, by D-07-36.** `07-02-PLAN.md` Task 1 passes
+     `errata_id="22190ad9…"` with `version=1` (the CATALOGUE version, not the
+     feature `schema_version` of 2) and its SUMMARY records the measured no-op.
 
 4. **Should `mask_errata_cells` gain `maintain_order="left"`?**
    - Known: order is preserved today (measured) and documented as unspecified.
@@ -2020,6 +2033,12 @@ already written); `pickle` for model persistence (D-07-17).
      is the first consumer for which the order is load-bearing. If the plan
      declines, the §Q9-R1 assertion becomes mandatory rather than merely
      recommended.
+   - **RESOLVED: yes, and the assertions are mandatory anyway.** `07-05-PLAN.md`
+     Task 2 adds `maintain_order="left"` (not `validate="1:1"`, which would change
+     a Phase 5 module's refusal semantics) plus an `array_equal` regression guard
+     on a fixture with real errata hits — labelled a regression guard, because
+     order is preserved today and no test can demonstrate the fix. The §Q9-R1
+     assertions land regardless, in `models/predictions.py`.
 
 ---
 

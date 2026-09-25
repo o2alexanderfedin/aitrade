@@ -172,7 +172,23 @@ Plans:
   1. Regression track (linear → ridge/elastic-net → small non-linear) trains on harness folds and predicts 10s midprice return, beating the zero baseline on validation
   2. Frozen-predictor interface yields a deterministic predictor producing precomputed prediction tables keyed by segment manifest
   3. The full vertical slice runs end to end on validation data: curated store → feature kernel → trained regressor → prediction table → simulator, with the run manifest in MLflow
-**Plans**: TBD
+**Plans**: 11 plans, 9 waves
+
+Plans:
+- [ ] 07-01-PLAN.md — scikit-learn locked, the pin guardrail widened, the `tests/models/` floor (wave 1)
+- [ ] 07-02-PLAN.md — the 7-day `compressed_3seg` segment manifest, alone in its wave: clean tree, 19.35 GiB peak, effectively one-shot (wave 2, **checkpoint**)
+- [ ] 07-03-PLAN.md — Trainer/FrozenPredictor protocol naming no sklearn type, `predictor_id`, the learnable fixture rig (wave 3)
+- [ ] 07-04-PLAN.md — the frozen predictor as coefficient JSON, never a pickle, with cross-process determinism (wave 4)
+- [ ] 07-05-PLAN.md — the predictions tier, the return→price conversion, row-alignment proof (wave 4)
+- [ ] 07-06-PLAN.md — four estimators over a counted 17-config grid, the Gram oracle, the three price-column refusals (wave 5)
+- [ ] 07-07-PLAN.md — metrics with BOTH R² references, the gates, the re-measured ceiling, spec.md (wave 5)
+- [ ] 07-08-PLAN.md — materialize-once cache keyed by tracking root, the OOF sweep, the negative-result log (wave 6)
+- [ ] 07-09-PLAN.md — `run_slice`, the CLI and its refusals, the fixture end-to-end proof (wave 7)
+- [ ] 07-10-PLAN.md — real normalisation, the five OOF looks, the winner frozen and committed (wave 8, **checkpoint**)
+- [ ] 07-11-PLAN.md — the ONE honest `val` look, the stored table, the simulator, the disclosure (wave 9, **checkpoint**)
+
+**Window**: train 2026-09-12..16, val 2026-09-17..18. `budget_allowance = 3`; the phase spends 6 looks total (5 OOF + 1 val) and no more.
+**Cross-cutting**: waves 2, 8 and 9 are the only ones that touch anything irreversible, and all three are non-autonomous checkpoints.
 
 ### Phase 8: Trees, Transformer & v0 Gate
 **Goal**: All three model classes compete on identical folds and metrics, and the v0 smoke gate passes with the held-out window locked
