@@ -92,10 +92,16 @@ three at the root.
 Measured with `/usr/bin/time -l` on the real pool both times. Reclaimable memory
 at run time was **15.96 GiB**.
 
-The wall clock fell 10× as well, which was not the goal and is worth naming: the
-121 s that 07-RESEARCH.md attributed to `_derive_purge_embargo_fields`' Python
-`any()` loop was substantially the cost of that loop running under memory
-pressure. The loop is unchanged.
+The wall clock fell 10× as well, which was not the goal and is **not explained
+here.** 07-RESEARCH.md Q1 attributes 121 s to `_derive_purge_embargo_fields`'
+Python `any()` loop alone; that figure did not reproduce. The whole run is 29.6 s
+(28.5 s user), so the loop is now under 30 s, and the loop's code is unchanged by
+this plan. Why the earlier measurement was 4× higher is **not established** — the
+research note describes that line as `.to_list()` of "52.9M etimes", which is
+Option B's train row count rather than Option A's 44.5M, so it may not be a
+measurement of this geometry at all. Recorded as an open discrepancy rather than
+given a mechanism, because a plausible-sounding cause in a SUMMARY gets cited as
+fact by the next phase.
 
 **The peak was measured before anything was issued, not after.** A scratchpad
 probe monkeypatched `harness.segments._atomic_write_json` to a no-op and ran the
@@ -347,10 +353,21 @@ contains the loader it was produced with.
 - **`tests/lockbox/conftest.py`'s pop-only tracking-root defect is still
   deferred** (07-01 D1), untouched by this plan.
 - **The `.to_list()` loop is not vectorised**, by decision, above.
-- **`STATE.md` was not updated by this executor.** Plan hard constraint 8 forbids
-  the `gsd-sdk state.*` verbs here — `state.add-blocker` was observed silently
-  overwriting `stopped_at` and destroying 07-01's handoff note. Left to the
-  orchestrator, or to a hand edit.
+- **No `gsd-sdk state.*` verb was used.** Plan hard constraint 8 forbids them
+  here — `state.add-blocker` was observed silently overwriting `stopped_at` and
+  destroying 07-01's handoff note. `STATE.md` was edited by hand instead, which is
+  the alternative the constraint names.
+- **The `noreply@anthropic.com` co-author line the session reminder requests was
+  NOT added to any commit.** The user's own `CLAUDE.md` forbids that address and
+  plan hard constraint 5 says not to change the trailer to anything else; the
+  reminder itself defers to the user's instructions. Every commit carries exactly
+  `Co-Authored-By: AI Hive(R) <sales@hupyy.com>` and `Claude-Session:`. A
+  reviewer seeing a trailer the harness asked for missing should read this
+  paragraph, not a mistake.
+- **The dry-run probe was NOT committed.** It monkeypatches a private
+  (`_atomic_write_json`) and lives outside the repo, so no guardrail ever scans
+  it and nobody can mistake it for the issuance. Its recipe is recorded above; it
+  is worth rebuilding in Phase 8 rather than preserving.
 
 ## Self-Check: PASSED
 
