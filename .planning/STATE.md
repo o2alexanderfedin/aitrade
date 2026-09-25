@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-stopped_at: "Phase 6 COMPLETE and MERGED to develop (607200e). The simulator walks decision rows one at a time under spec.md's rule with integer position/cash/P&L; a half-tick prediction now triggers neither side, where round-half-up had favoured longs on 99.96% of real rows (trigger rows: long 1,924,947->1,868,904, short unchanged at 1,897,533). Perfect-foresight ceiling, the reference every later model is measured against: 2,192 trades / 294,554 ticks / $29.46 on 6,864,853 decision rows of the v2 2026-09-13 partition -- an exact match to the research prototype, resolving 06-06's unexplained divergence. Feature tier is schema v2 with bid_price/ask_price; 7 days rebuilt BESIDE v1 (v1 manifests still load), labels differing in exactly the 249 errata cells. Review found no blockers; its one warning mis-computed the int64 overflow bound by 1e8 -- the real ceiling is $922.34 notional, only 9.22x the $100 default, now guarded by STATUS_NOTIONAL_OVERFLOW. 1,126+ tests, 19 hooks, CI green. Phase 7 (Regression Track & Vertical Slice) next."
-last_updated: "2026-09-24T18:24:05.318Z"
-last_activity: 2026-09-24 -- Phase 6 marked complete
+status: executing
+stopped_at: "Completed 07-01-PLAN.md (Phase 7 wave 1 of 9). scikit-learn 1.9.1 + scipy 1.18.1 locked with numpy 2.4.6/numba 0.65.1/llvmlite 0.47.0 unmoved and zero pandas; the 1.9 pin is now mechanical in check_pin_versions. tests/harness/conftest.py's autouse fixture had been POPPING the tracking-root env var since Phase 5 while claiming to point the store at tmp_path -- every harness test that did not explicitly request tracking_root was resolving the REAL MLflow store (probed: /Volumes/ProjectsSSD/aihedgefund/mlflow -> tmp_path/mlflow_root after the repair). Fixed in harness and in the new tests/models/ floor; tests/lockbox/conftest.py has the same body and is deferred. 1130 -> 1137 tests. budget.look_count still 0 on val and all five oof_block_*."
+last_updated: "2026-09-25T07:29:03.567Z"
+last_activity: "2026-09-25 -- 07-01 executed: scikit-learn 1.9.1/scipy 1.18.1 locked, the 1.9 pin made mechanical, and an autouse fixture that had been resolving the REAL MLflow store since Phase 5 repaired to actually use tmp_path"
 progress:
   total_phases: 11
   completed_phases: 6
-  total_plans: 36
-  completed_plans: 37
-  percent: 55
+  total_plans: 47
+  completed_plans: 38
+  percent: 81
 ---
 
 # Project State
@@ -21,18 +21,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-10)
 
 **Core value:** A reproducible, leakage-proof two-stage pipeline achieving Net P&L > 0 and annualized Sharpe > 5 on a locked held-out walk-forward window under stated simplifications — produced by a workflow where agentic iteration verifiably improves the model.
-**Current focus:** Phase 6 — Event-Driven Simulator
+**Current focus:** Phase 7 — Regression Track & Vertical Slice
 
 ## Current Position
 
-Phase: 6 — COMPLETE
-Plan: 7 of 7
-Status: Phase 6 complete
-Last activity: 2026-09-24 -- Phase 6 marked complete
+Phase: 7 — Regression Track & Vertical Slice
+Plan: 1 of 11 complete (wave 1 of 9)
+Status: In progress
+Last activity: 2026-09-25 -- 07-01 executed: scikit-learn 1.9.1/scipy 1.18.1 locked, the 1.9 pin made mechanical, and an autouse fixture that had been resolving the REAL MLflow store since Phase 5 repaired to actually use tmp_path
 
-Progress: [██████████] 100%
+Progress: [████████░░] 81%
 
-> That 100% is `state.update-progress`'s definition -- SUMMARY files over PLAN files on disk (22 summaries over 21 plans, capped at 100%). Every one of the 21 plans now has a summary; the 22nd is `03-07-GAPS-SUMMARY.md`, which has no plan of its own. It is NOT milestone completion: phases 5-11 have no plans on disk yet, and 3 of 11 phases are marked complete -- Phase 4's seven plans are all executed, and the phase closes at its verification/merge step, exactly as Phases 1-3 did.
+> That 81% is `state.update-progress`'s definition -- SUMMARY files over PLAN files on disk (38 summaries over 47 plans). It dropped from 100% because Phase 7's eleven plans landed on disk with one summary among them, not because anything regressed. Phases 8-11 still have no plans on disk, so the denominator will keep growing and the percentage will keep moving down before it moves up. It is NOT milestone completion.
 
 ## Performance Metrics
 
@@ -83,6 +83,7 @@ Progress: [██████████] 100%
 | Phase 06 P05 | 35min | 2 tasks | 2 files |
 | Phase 06 P06 | 16min | 3 tasks | 4 files |
 | Phase 06 P07 | 26min | 3 tasks | 8 files |
+| Phase 07 P01 | 18min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -183,6 +184,9 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-06: D-06-12's flat-or-opposite wording collapses to always-opposite for this no-flat-exit kernel -- position_after in the trade log is always +/-1, never 0
 - [Phase 06]: 06-06: the real-day perfect-foresight ceiling is 2,212 trades / 293,844 closed_pnl_ticks (X_bps=0, 2026-09-13, schema v2), NOT 06-RESEARCH.md's superseded 2,192/294,554 baseline -- the divergence was investigated (tie-break rule ruled out) and reported unexplained rather than papered over
 - [Phase 06]: Fixed the asymmetric round-half-up prediction quantisation (sim/kernel.py + sim/reference.py) to a symmetric floor(long)/ceil(short) rule; re-measured real-day ceiling now matches 06-RESEARCH.md exactly (2,192 trades / 294,554 ticks), resolving 06-06's unexplained divergence — A half-tick prediction (99.96% of real perfect-foresight predictions) rounded up under the shared round-half-up rule, favoring long triggers; rounding each direction against its own trade removes the bias and, as a byproduct, exactly reproduces research's original prototype baseline
+- [Phase 7, 07-01]: tests/harness/conftest.py's autouse isolation fixture POPPED AIHF_MLFLOW_TRACKING_ROOT while its docstring claimed it pointed the store at tmp_path -- with the var absent, mlflow_tracking_root(None) falls through to the REAL store, and _require_canonical_tracking_root cannot catch it because the real root IS canonical. Probed before/after: /Volumes/ProjectsSSD/aihedgefund/mlflow -> tmp_path/mlflow_root. Both harness and the new models conftest now SET the var; tests/lockbox/conftest.py still pops (deferred -- its docstring is honest and no look flows through it).
+- [Phase 7, 07-01]: an autouse fixture and a same-path explicitly-requested fixture must BOTH use mkdir(exist_ok=True) -- the autouse one runs first, so the second's bare mkdir() would raise FileExistsError in every test that asks for it.
+- [Phase 7, 07-01]: scikit-learn 1.9.1 + scipy 1.18.1 + joblib/narwhals/threadpoolctl locked; numpy 2.4.6 / numba 0.65.1 / llvmlite 0.47.0 unmoved, zero pandas, zero existing-package version changes. PINNED_PREFIXES gains scikit-learn 1.9 but NOT its transitive closure.
 
 ### Pending Todos
 
@@ -226,7 +230,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-24T08:30:53.591Z
-Stopped at: Completed 06-07-PLAN.md (phase 6 close)
+Last session: 2026-09-25T07:28:54.169Z
+Stopped at: Completed 07-01-PLAN.md (wave 1 of 9). Next: wave 2. Budget untouched -- look_count is 0 on val and all five oof_block_*, verified read-only before and after.
 Resume file: None
 Resumed: 2026-09-19 -- session restored at the Phase 4/5 boundary. Verified live, not read: develop at 9898e4d clean and level with origin, no PLAN without a SUMMARY, capture daemon PID 72546 alive at 2d14h, SleepDisabled=1 (the LaunchDaemon is holding), 844 GiB free. HANDOFF.json kept until Phase 5 actually starts.
