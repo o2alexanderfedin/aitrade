@@ -80,6 +80,8 @@ from features.tier import (
     issue_feature_manifest,
     write_feature_partition,
 )
+from harness.purge_embargo import FOLD_EMBARGO_NS, PURGE_HORIZON_NS
+from harness.segments import issue_segment_manifest
 from sim.ticks import PRICE_SCALE, TICK_SIZE_SCALED, price_to_ticks
 from tests.fixtures.feature_build import write_dq_report
 
@@ -356,3 +358,212 @@ def build_model_span_partition(
         "etime_max": partition_entry["etime_max"],
         "rows": rows,
     }
+
+
+#: The `train` entry's width in ROWS (one row per `step_ns`). 18,000 at a
+#: 1 s step gives five 3,600 s OOF blocks -- see
+#: `_assert_fixture_geometry_is_not_starved` for why 3,600 s is the floor.
+FIXTURE_TRAIN_ROWS: int = 18_000
+
+#: The number of inner OOF blocks (D-05-08). Five, as the real manifest
+#: uses, so the fixture exercises the same derivation.
+FIXTURE_K: int = 5
+
+#: Deliberately generous, and the reason matters: a fixture manifest lives
+#: in a `tmp_path` that is discarded when the test ends, so the only thing a
+#: tight allowance could ever do here is make a test that materializes the
+#: same segment twice fail for a BUDGET reason instead of the reason it was
+#: written to test. The real manifest's allowance is 3 and is counted
+#: (D-07-03); this number is not a precedent for it.
+FIXTURE_BUDGET_ALLOWANCE: int = 50
+
+FIXTURE_ADMISSION: dict = {
+    "policy": "stale_book",
+    "max_age_ns": None,
+    "exclude_undefined_age": True,
+    "counts": {},
+}
+
+FIXTURE_FOLD_CONFIG_REASON: str = (
+    "test fixture (07-03): compressed_3seg over one learnable model_span "
+    "partition. compressed_3seg rather than 5seg because declaring a real "
+    "held_out window is Phase 8's own success criterion, so held_out is the "
+    "zero-width D-05-16 sentinel; the five inner OOF blocks are what the "
+    "model-selection tests read."
+)
+
+
+def _assert_fixture_geometry_is_not_starved(
+    *, train_start_ns: int, train_end_ns: int, k: int, step_ns: int
+) -> dict:
+    """Derive -- never assert against a magic number -- the row budget each
+    OOF block's own training set is left with, and refuse a geometry that
+    `harness.segments._refuse_starved_oof_blocks` would refuse.
+
+    `harness.kfold.training_rows_for_block` excludes, for target block `j`,
+    the two-sided purge band `(start_j - purge, end_j + purge)` plus the
+    trailing embargo -- a width of `block + 2*purge + embargo` out of the
+    whole train range. With `PURGE_HORIZON_NS` 600 s and `FOLD_EMBARGO_NS`
+    1 s that is the block's own width plus 1,201 s, whatever the block's
+    width happens to be.
+    """
+    train_ns = train_end_ns - train_start_ns
+    block_ns = train_ns // k
+    excluded_ns = block_ns + 2 * PURGE_HORIZON_NS + FOLD_EMBARGO_NS
+    surviving_ns = train_ns - excluded_ns
+    if surviving_ns <= 0:
+        raise AssertionError(
+            f"model_span fixture geometry is starved: a {train_ns} ns train "
+            f"entry split k={k} gives {block_ns} ns blocks, each excluding "
+            f"{excluded_ns} ns (its own width plus 2*{PURGE_HORIZON_NS} ns "
+            f"purge plus {FOLD_EMBARGO_NS} ns embargo), leaving "
+            f"{surviving_ns} ns -- issue_segment_manifest would refuse it. "
+            "Remedy: a smaller k, or a wider train entry."
+        )
+    if block_ns < step_ns:
+        raise AssertionError(
+            f"model_span fixture geometry: block width {block_ns} ns is "
+            f"narrower than one row ({step_ns} ns), so a block would receive "
+            "no rows at all"
+        )
+    return {
+        "train_ns": train_ns,
+        "block_ns": block_ns,
+        "excluded_ns": excluded_ns,
+        "surviving_ns": surviving_ns,
+        "surviving_rows": surviving_ns // step_ns,
+    }
+
+
+def build_model_span_fixture(
+    lake_root: Path,
+    registry_root: Path,
+    tracking_root: Path | str,
+    *,
+    symbol: str = SYMBOL,
+    date: str = DEFAULT_DATE,
+    start_ns: int = 0,
+    step_ns: int = NS_PER_SECOND,
+    rows: int = DEFAULT_ROWS,
+    train_rows: int = FIXTURE_TRAIN_ROWS,
+    k: int = FIXTURE_K,
+    seed: int = DEFAULT_SEED,
+    flat_fraction: float = DEFAULT_FLAT_FRACTION,
+    noise_scale: float = DEFAULT_NOISE_SCALE,
+    code_hash: str = "deadbeef",
+) -> dict:
+    """One `build_model_span_partition` plus a REAL `compressed_3seg`
+    segment manifest over it, issued through
+    `harness.segments.issue_segment_manifest` -- so the five `oof_block_*`
+    entries come from the real derivation (`harness.kfold`), the admission
+    counts and purge/embargo fields are measured against the real written
+    partition, and nothing in the body is hand-written.
+
+    Geometry, all of it derived from `rows`/`train_rows`/`k`:
+
+    - `covered_end_ns = start_ns + (rows - 1) * step_ns` -- the LAST ROW's
+      own etime, which is what `_covered_range` reads out of the partition
+      entry.
+    - `train  = [start_ns, start_ns + train_rows * step_ns)`
+    - `val    = [train_end, covered_end_ns)` -- ending AT the covered end,
+      the largest range `_validate_segments`' coverage check allows.
+    - `held_out = [covered_end_ns, covered_end_ns)` -- the zero-width
+      D-05-16 sentinel, which is exempt from that upper bound.
+
+    Returns `{"manifest", "span", "geometry"}`. Every caller passes
+    `tmp_path`-derived roots; `tracking_root` must be an INITIALISED MLflow
+    store (the `tracking_root` fixture in `tests/models/conftest.py`),
+    because `issue_segment_manifest` consults the budget for exhausted
+    windows before it writes.
+    """
+    if rows <= train_rows:
+        raise AssertionError(
+            f"model_span fixture: rows={rows} must exceed train_rows="
+            f"{train_rows}, or the val entry is empty before any test runs"
+        )
+    span = build_model_span_partition(
+        lake_root,
+        registry_root,
+        symbol=symbol,
+        date=date,
+        start_ns=start_ns,
+        step_ns=step_ns,
+        rows=rows,
+        seed=seed,
+        flat_fraction=flat_fraction,
+        noise_scale=noise_scale,
+        code_hash=code_hash,
+    )
+
+    covered_end_ns = start_ns + (rows - 1) * step_ns
+    train_end_ns = start_ns + train_rows * step_ns
+    segments = [
+        {
+            "name": "train",
+            "role": "train",
+            "start_ns": start_ns,
+            "end_ns": train_end_ns,
+        },
+        {
+            "name": "val",
+            "role": "val",
+            "start_ns": train_end_ns,
+            "end_ns": covered_end_ns,
+        },
+        {
+            "name": "held_out",
+            "role": "held_out",
+            "start_ns": covered_end_ns,
+            "end_ns": covered_end_ns,
+        },
+    ]
+
+    # Anti-vacuity, the `tests/harness/test_accessor.py::_build_fixture`
+    # rule: the fixture's OWN physical span must be asserted to cover every
+    # declared segment BEFORE any behavioural test relies on it, or a
+    # too-short `rows` passes every `height > 0` check while a segment
+    # silently receives nothing.
+    if span["etime_min"] > start_ns or span["etime_max"] != covered_end_ns:
+        raise AssertionError(
+            f"model_span fixture: partition spans [{span['etime_min']}, "
+            f"{span['etime_max']}] but the declared layout needs "
+            f"[{start_ns}, {covered_end_ns}]"
+        )
+    if train_end_ns >= covered_end_ns:
+        raise AssertionError(
+            f"model_span fixture: train ends at {train_end_ns}, at or past "
+            f"the covered end {covered_end_ns} -- val would be empty"
+        )
+    geometry = _assert_fixture_geometry_is_not_starved(
+        train_start_ns=start_ns, train_end_ns=train_end_ns, k=k, step_ns=step_ns
+    )
+
+    manifest = issue_segment_manifest(
+        layout="compressed_3seg",
+        segments=segments,
+        upstream_feature_manifest_ids=[span["manifest_id"]],
+        admission=dict(FIXTURE_ADMISSION),
+        errata_id=None,
+        budget_allowance=FIXTURE_BUDGET_ALLOWANCE,
+        fold_config_reason=FIXTURE_FOLD_CONFIG_REASON,
+        symbol=symbol,
+        version=1,
+        code_hash=code_hash,
+        registry_root=registry_root,
+        lake_root=lake_root,
+        tracking_root=str(tracking_root),
+        k=k,
+    )
+    geometry.update(
+        {
+            "start_ns": start_ns,
+            "step_ns": step_ns,
+            "rows": rows,
+            "train_rows": train_rows,
+            "train_end_ns": train_end_ns,
+            "covered_end_ns": covered_end_ns,
+            "k": k,
+            "oof_block_names": tuple(f"oof_block_{j}" for j in range(k)),
+        }
+    )
+    return {"manifest": manifest, "span": span, "geometry": geometry}
