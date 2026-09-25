@@ -7,6 +7,17 @@ result" conclusion rests on it: `random_state` is documented as consumed only
 by the `sag`/`saga` solvers, so it is inert exactly as long as `auto` keeps
 resolving to `cholesky` on dense float64 input.
 
+A1's family, added by plan 07-04 -- "`PolynomialFeatures(degree=2,
+include_bias=False)` emits the three linear terms and then the degree-2 terms
+in the upper-triangular sweep". Read from the 1.9.1 source
+(`combinations_with_replacement`), never executed, and
+`models.frozen.poly2_design` rebuilds that design matrix from the stored
+coefficients WITHOUT sklearn. A silently different column order would pair
+every coefficient with the wrong term and still predict plausible numbers, so
+the order is asserted here rather than assumed there. This is the only place
+in `tests/models/` that may import sklearn to check it:
+`test_frozen_no_sklearn.py`'s whole claim is that it does not.
+
 A3 -- "`scipy.stats.spearmanr(...).statistic` is the accessor name in 1.18.1".
 Its NaN-on-constant-input half is what plan 07-07's gate depends on
 (D-07-32): a rank IC of 0.0 on a constant prediction vector is a number you
@@ -38,8 +49,10 @@ import numpy as np
 import pytest
 from scipy.stats import ConstantInputWarning, spearmanr
 from sklearn.linear_model import Ridge
+from sklearn.preprocessing import PolynomialFeatures
 
 from data.lake_paths import DEFAULT_MLFLOW_TRACKING_ROOT, mlflow_tracking_root
+from models.frozen import poly2_design
 
 
 def _dense_float64_design() -> tuple[np.ndarray, np.ndarray]:
@@ -69,6 +82,52 @@ def test_two_ridge_fits_with_different_random_state_give_identical_coefficients(
     assert a.solver_ == b.solver_ == "cholesky"
     assert np.array_equal(a.coef_, b.coef_)
     assert a.intercept_ == b.intercept_
+
+
+def test_sklearns_degree_two_expansion_has_the_nine_columns_frozen_py_documents():
+    """The ORDER, in sklearn's own words. `get_feature_names_out` is the
+    statement of record: three linear terms, then `x0^2, x0 x1, x0 x2, x1^2,
+    x1 x2, x2^2` -- nine for three inputs, not six (which would drop the
+    squares) and not ten (which would add the bias column `include_bias=False`
+    does not emit)."""
+    poly = PolynomialFeatures(degree=2, include_bias=False)
+    x, _y = _dense_float64_design()
+    poly.fit(x)
+
+    assert list(poly.get_feature_names_out(["x0", "x1", "x2"])) == [
+        "x0",
+        "x1",
+        "x2",
+        "x0^2",
+        "x0 x1",
+        "x0 x2",
+        "x1^2",
+        "x1 x2",
+        "x2^2",
+    ]
+
+
+def test_frozen_poly2_design_reproduces_sklearns_expansion_bit_for_bit():
+    """`models.frozen.poly2_design` is what re-evaluates a degree-2 body
+    without sklearn, so its column order has to BE sklearn's, not merely
+    resemble it. `array_equal`, not `allclose`: both sides are the same
+    element-wise products of the same float64 bytes.
+    """
+    x, _y = _dense_float64_design()
+    expected = PolynomialFeatures(degree=2, include_bias=False).fit_transform(x)
+    actual = poly2_design(x)
+
+    assert actual.shape == (40, 9) == expected.shape
+    assert np.array_equal(actual, expected)
+
+    # Anti-vacuity: the nine columns are pairwise distinct, so the equality
+    # above could have failed on a permutation. With two identical columns a
+    # swap would be invisible and this would assert only that 9 == 9.
+    for left in range(9):
+        for right in range(left + 1, 9):
+            assert not np.array_equal(expected[:, left], expected[:, right])
+    permuted = expected[:, [0, 1, 2, 3, 5, 4, 6, 7, 8]]
+    assert not np.array_equal(permuted, expected)
 
 
 def test_spearmanr_exposes_statistic_and_returns_nan_for_a_constant_input():
