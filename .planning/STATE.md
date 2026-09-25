@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Completed 07-01-PLAN.md (Phase 7 wave 1 of 9). scikit-learn 1.9.1 + scipy 1.18.1 locked with numpy 2.4.6/numba 0.65.1/llvmlite 0.47.0 unmoved and zero pandas; the 1.9 pin is now mechanical in check_pin_versions. tests/harness/conftest.py's autouse fixture had been POPPING the tracking-root env var since Phase 5 while claiming to point the store at tmp_path -- every harness test that did not explicitly request tracking_root was resolving the REAL MLflow store (probed: /Volumes/ProjectsSSD/aihedgefund/mlflow -> tmp_path/mlflow_root after the repair). Fixed in harness and in the new tests/models/ floor; tests/lockbox/conftest.py has the same body and is deferred. 1130 -> 1137 tests. budget.look_count still 0 on val and all five oof_block_*."
-last_updated: "2026-09-25T07:29:03.567Z"
+stopped_at: "Completed 07-01-PLAN.md (Phase 7 wave 1 of 9). scikit-learn 1.9.1 + scipy 1.18.1 locked with numpy 2.4.6/numba 0.65.1/llvmlite 0.47.0 unmoved and zero pandas; the 1.9 pin is now mechanical in check_pin_versions. tests/harness/conftest.py's autouse fixture had been POPPING the tracking-root env var since Phase 5 while claiming to point the store at tmp_path -- every harness test that did not explicitly request tracking_root was resolving the REAL MLflow store (probed: /Volumes/ProjectsSSD/aihedgefund/mlflow -> tmp_path/mlflow_root after the repair). Fixed in harness and in the new tests/models/ floor; tests/lockbox/conftest.py has the same body and is deferred. 1130 -> 1137 tests. budget.look_count still 0 on val and all five oof_block_*. 07-02 PARTIAL: Task 1 committed (the issuance script, 0beb7af); Task 2 (the ~19.35 GiB issuance) NOT RUN -- host memory short, see blocker; Task 3 checkpoint not reached; no SUMMARY written."
+last_updated: "2026-09-25T08:27:12.878Z"
 last_activity: "2026-09-25 -- 07-01 executed: scikit-learn 1.9.1/scipy 1.18.1 locked, the 1.9 pin made mechanical, and an autouse fixture that had been resolving the REAL MLflow store since Phase 5 repaired to actually use tmp_path"
 progress:
   total_phases: 11
@@ -212,6 +212,7 @@ Recent decisions affecting current work:
 - [Phase 4, 2026-09-19]: **A green test can be green for the wrong reason, and only mutating the code it claims to cover finds that.** Plan 04-03's tie-order test drew `etime`s from a grid so fine that 4,000 rows shared 3 distinct values -- with no ties the two merge orders were literally the same stream, so the float64-accumulator mutation survived a passing test. Generalises the phase's guardrails-runtime-first lesson: mutate the code behind a test that already passes, not only the code behind a new one.
 - [Phase 8]: Q3 (GPU spec & training budget) unresolved — blocks transformer track; mvp.md says needed before v0
 - [Phase 11]: Q5 (2nd-tier symbol choice) — check tick-size/filter re-tick history of candidates first
+- 07-02 Task 2 (segment-manifest issuance) not run: needs ~19.35 GiB peak on a 32 GiB host; reclaimable memory measured 11.48-13.40 GiB across 8 readings 01:03-01:27 while other sessions ran parallel clang++ builds (cpp-to-rust b49-crtp/b49-matchers worktrees), only ~1.5 GiB swap free. Task 1 script committed (0beb7af); re-run when reclaimable >= 18 GiB.
 
 ## Quick Tasks Completed
 
