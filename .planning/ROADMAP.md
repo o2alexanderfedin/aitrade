@@ -183,7 +183,7 @@ Plans:
 - [x] 07-06-PLAN.md — four estimators over a counted 17-config grid, the Gram oracle, the three price-column refusals (wave 5)
 - [x] 07-07-PLAN.md — metrics with BOTH R² references, the gates, the re-measured ceiling, spec.md (wave 5)
 - [x] 07-08-PLAN.md — materialize-once cache keyed by tracking root, the OOF sweep, the negative-result log (wave 6)
-- [ ] 07-09-PLAN.md — `run_slice`, the CLI and its refusals, the fixture end-to-end proof (wave 7)
+- [x] 07-09-PLAN.md — `run_slice`, the CLI and its refusals, the fixture end-to-end proof (wave 7)
 - [ ] 07-10-PLAN.md — real normalisation, the five OOF looks, the winner frozen and committed (wave 8, **checkpoint**)
 - [ ] 07-11-PLAN.md — the ONE honest `val` look, the stored table, the simulator, the disclosure (wave 9, **checkpoint**)
 
@@ -252,7 +252,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 4. Feature & Label Engine | 7/7 | Complete    | 2026-09-19 |
 | 5. Fold Harness & Overfitting Controls | 8/8 | Complete    | 2026-09-22 |
 | 6. Event-Driven Simulator | 7/7 | Complete    | 2026-09-24 |
-| 7. Regression Track & Vertical Slice | 8/11 | In Progress|  |
+| 7. Regression Track & Vertical Slice | 9/11 | In Progress|  |
 | 8. Trees, Transformer & v0 Gate | 0/TBD | Not started | - |
 | 9. Stage 2 Monetization & v1 Gate | 0/TBD | Not started | - |
 | 10. Agentic Loop | 0/TBD | Not started | - |
