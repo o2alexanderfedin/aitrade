@@ -46,3 +46,36 @@ the number is recoverable, but it is a number 07-03 did not measure and
 transcribing someone else's into a metrics table is how a table stops meaning
 what it says. Whichever plan next runs a `state.*` verb can add it from the
 SUMMARY, with a note that it came from there.
+
+---
+
+## Correction C5's 91.2 MiB is ONE DAY, not the `val` segment
+
+**Found during:** 07-05, measuring the real writer's bytes per row.
+
+C5 corrected D-07-15's "~11.3M rows ≈ 270 MB" to "91.2 MiB zstd at 7.86M
+rows". The bytes per row is right and reproduced exactly -- 12.17 B/row there,
+12.1 to 12.7 B/row measured here through `write_prediction_table` at 100k and
+2M rows -- but the row count is a single day. The approved manifest
+`807125015b...` admits **16,294,059** rows to `val` (two days, Option A), so
+the one table plan 07-11 stores will be **about 190 MiB**, not 91.2 MiB.
+
+NOT a defect and nothing to fix here: D-07-15's decision (store only the
+winner) stands, and 07-05 stores nothing. It is an input to 07-11, because
+D-07-25 makes a committed prediction-table manifest `stat()`-checked on every
+commit from then on, and the number that consequence attaches to is 190 MiB.
+
+---
+
+## The `predictions` tier has no `verify_manifest --full` coverage of its own
+
+**Found during:** 07-05 Task 1.
+
+`tools/check_no_manifest_rewrite` globs `manifests/**`, so a committed
+predictions manifest is covered the moment one exists (D-07-38, confirmed --
+no guardrail edit was needed). What does NOT exist yet is a predictions
+partition inside `tests/fixtures/lake`, so the CI-fixture leg of that hook
+exercises the scan over curated/features bytes only. NOT added here: the
+fixture lake is committed bytes, and adding a partition to it for coverage of
+a tier whose first real table lands in 07-11 is a commit that freezes bytes
+nothing reads.
