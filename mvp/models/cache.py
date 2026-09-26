@@ -86,6 +86,7 @@ __all__ = [
     "look_report",
     "look_run_ids",
     "materialize_once",
+    "repo_root",
     "segment_cache_dir",
     "segment_cache_path",
     "tracking_root_digest",
@@ -455,17 +456,43 @@ def look_run_ids(
     return ids
 
 
+def repo_root() -> Path:
+    """The repository root, derived from THIS file's own location:
+    `mvp/models/cache.py` -> `parents[2]`.
+
+    NOT `data.lake_paths.PKG_ROOT.parent`, which was the first thing tried
+    here and was WRONG in a way that still passed. `PKG_ROOT` is
+    `Path(__file__).resolve().parent` inside `mvp/data/lake_paths.py`, so it
+    is `mvp/data/` and its parent is `mvp/` -- one level short. The check
+    below then proved "outside `mvp/`", which does not imply "outside the
+    repo", and it only came out True because `CACHE_ROOT` happens to sit on
+    a wholly different path. A weaker fact passing for the stronger one.
+
+    The derivation is GUARDED rather than trusted: `mvp/pyproject.toml` must
+    exist under the result, so a future move of this file fails loudly here
+    instead of silently narrowing the claim again.
+    """
+    root = Path(__file__).resolve().parents[2]
+    if not (root / "mvp" / "pyproject.toml").is_file():
+        raise CacheError(
+            f"repo_root: derived {root} from {Path(__file__).resolve()} but "
+            "there is no mvp/pyproject.toml under it -- this module moved and "
+            "the parents[2] hop no longer reaches the repository root. Fix the "
+            "hop rather than letting a containment check prove a weaker fact "
+            "than it claims."
+        )
+    return root
+
+
 def canonical_cache_root_is_outside_repo_and_lake() -> bool:
     """`True` when `CACHE_ROOT` sits outside BOTH the repo tree and the
     default lake root -- the property this module's docstring claims, made
     checkable rather than asserted in prose.
 
-    `data.lake_paths.PKG_ROOT` is `mvp/`, so its parent is the repo root.
     `DEFAULT_LAKE_ROOT` is read as a CONSTANT rather than through
     `lake_paths.lake_root()`, which would `mkdir` the real lake as a side
     effect of answering a question about a path.
     """
     cache = CACHE_ROOT.resolve()
-    repo = lake_paths.PKG_ROOT.resolve().parent
     lake = Path(lake_paths.DEFAULT_LAKE_ROOT).resolve()
-    return not cache.is_relative_to(repo) and not cache.is_relative_to(lake)
+    return not cache.is_relative_to(repo_root()) and not cache.is_relative_to(lake)

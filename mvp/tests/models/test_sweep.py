@@ -607,6 +607,88 @@ def test_the_selection_json_round_trips_the_winner_and_refuses_a_mismatched_mani
     assert "--select" in str(excinfo.value)
 
 
+def test_the_grid_drift_refusals_fire_and_a_poly2_winner_rebuilds_with_its_degree(
+    tmp_path, lake_root, registry_root, tracking_root
+):
+    """`selection_winner_trainer`'s three drift refusals, on hand-built
+    selection bodies, plus the poly2 path the whole design turns on.
+
+    A COMMIT SITS BETWEEN `--select` AND `--freeze`, so a `GRID` reordered in
+    that commit leaves the stored index naming a different config with
+    nothing about the index itself looking wrong. That is why both the index
+    and the recipe are stored -- and a refusal that never fires in a test is
+    a refusal nobody can be sure fires.
+
+    The poly2 case is the reason the comparison is against the trainer's
+    `hyperparameters` and not against `GridEntry.knobs`: grid position 14 is
+    `Poly2RidgeTrainer(alpha=1e-3)`, whose knobs are `{"alpha": 1e-3}` while
+    its hyperparameters are `{"alpha": 1e-3, "degree": 2}` -- and `degree` is
+    the only thing separating it from grid position 2, a plain Ridge at the
+    same alpha, whose `model_class` string is byte-identical.
+    """
+    context = FitContext(
+        symbol=SYMBOL,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        code_hash=CODE_HASH,
+    )
+
+    def body(index: int, model_class: str, hyperparameters: dict, n_configs: int = 17):
+        return {
+            "schema_version": sweep.SELECTION_SCHEMA_VERSION,
+            "n_configs": n_configs,
+            "eligible_count": 1,
+            "winner_grid_index": index,
+            "winner": {
+                "grid_index": index,
+                "model_class": model_class,
+                "hyperparameters": hyperparameters,
+            },
+        }
+
+    # The poly2 winner rebuilds, degree and all. Vacuity guard first: the two
+    # grid rows really do share a class string, so `degree` really is the only
+    # separator.
+    assert GRID[14].build(context).model_class == GRID[2].build(context).model_class
+    rebuilt = sweep.selection_winner_trainer(
+        body(14, "sklearn.Ridge", {"alpha": 1e-3, "degree": 2}), context=context
+    )
+    assert dict(rebuilt.hyperparameters) == {"alpha": 1e-3, "degree": 2}
+    # And the plain Ridge at the same alpha is a DIFFERENT config, refused at
+    # position 14 -- which a `knobs` comparison would have accepted.
+    with pytest.raises(sweep.SelectionError) as excinfo:
+        sweep.selection_winner_trainer(
+            body(14, "sklearn.Ridge", {"alpha": 1e-3}), context=context
+        )
+    assert "grid changed between --select and --freeze" in str(excinfo.value)
+
+    # Grid drift by REORDERING: the stored recipe is grid 3's, the stored
+    # index is 14's. Nothing about the index looks wrong.
+    with pytest.raises(sweep.SelectionError) as excinfo:
+        sweep.selection_winner_trainer(
+            body(14, "sklearn.Ridge", {"alpha": 1.0}), context=context
+        )
+    assert "grid changed" in str(excinfo.value)
+
+    # Grid drift by SIZE, refused before the index is even dereferenced.
+    with pytest.raises(sweep.SelectionError) as excinfo:
+        sweep.selection_winner_trainer(
+            body(4, "sklearn.Ridge", {"alpha": 100.0}, n_configs=16), context=context
+        )
+    assert "16 configs" in str(excinfo.value)
+
+    # An index outside the grid. This branch is ONLY reachable when
+    # `n_configs` AGREES -- measured: with `n_configs=18` the size refusal
+    # fires first and this one never runs -- so the case it guards is a
+    # hand-edited index inside an otherwise consistent file. Refused by its
+    # own message rather than as an IndexError from `grid[index]`.
+    with pytest.raises(sweep.SelectionError) as excinfo:
+        sweep.selection_winner_trainer(
+            body(17, "sklearn.Ridge", {"alpha": 100.0}), context=context
+        )
+    assert "outside the 17-entry grid" in str(excinfo.value)
+
+
 def test_the_sweep_refuses_a_segment_name_that_is_not_an_oof_block(
     tmp_path, lake_root, registry_root, tracking_root
 ):

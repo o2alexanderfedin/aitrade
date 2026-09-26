@@ -44,7 +44,9 @@ key-files:
     - mvp/tests/models/test_sweep.py
   modified: []
 
+
 key-decisions:
+  - "A CLAIM IN PRODUCTION TEXT WAS FALSE AND ITS TEST PASSED ANYWAY. canonical_cache_root_is_outside_repo_and_lake first derived the repo root as lake_paths.PKG_ROOT.parent, and PKG_ROOT is mvp/data/ (it is Path(__file__).resolve().parent inside mvp/data/lake_paths.py, which is also why LAKE_REGISTRY_ROOT lands at mvp/data/lake_registry/), so .parent is mvp/ -- one level short. The check proved 'outside mvp/', which does not imply 'outside the repo', and it passed only because CACHE_ROOT sits on a wholly different path. Now derived from cache.py's own parents[2] and GUARDED by requiring mvp/pyproject.toml under the result, so a future move fails loudly instead of silently narrowing the claim again; the test anchors it two independent ways. Mutation-checked: reverting to PKG_ROOT.parent makes repo_root() raise with the hop named."
   - "The cache-key mutation was caught one assertion EARLIER than predicted, and that is a near-miss worth recording. The stated observable was 'look_count under root B stays 0'; the test failed on `path_b != path_a` instead, so the budget consequence was never exercised by the test run. It was then measured directly against the mutated module: root B received the val frame with ZERO materialize calls and look_count(B) = 0, and against the restored module the same script shows 2 calls and look_count(B) = 1. If somebody later deletes the path-inequality assertion, the look_count assertion behind it does still bite -- but only the standalone measurement proves that, not the mutation run."
   - "run_oof_sweep takes the TRAIN CACHE AS A PATH rather than a train segment name. A `train_segment_name=\"train\"` parameter would have been the obvious shape and it would have been a hole: `val` could be passed through it. With the path, the only route from a caller to a segment name is `oof_block_names`, every entry of which is refused unless it matches oof_block_<int>. The path is additionally required to sit inside this manifest's own tracking-root-keyed cache directory, which is what stops a train frame carrying ANOTHER fold geometry from being fitted on."
   - "One negative-result record per ineligible CONFIG, never one per failing block, and the fingerprint is D-07-14's recipe alone. A config that fails three blocks was tried once; five records for it would make the log's counts meaningless. n_rows_fitted/n_rows_dropped differ per block by construction, so folding either into the hashed body would give one config five fingerprints and warn_if_already_negative would stop deduplicating anything. config_recipe ASSERTS config_fingerprint(recipe) == predictor_id(**recipe), which is what makes a negative record matchable to the predictor_id a later successful run of the same config will carry."
@@ -86,7 +88,9 @@ The tracking-root digest is the load-bearing component. A `val` frame materializ
 | `cache_root / manifest_id` (mutated) | 1 call, `look_count(A)=1`, `look_count(B)=0` | **1 call**, `look_count(B)=0` — bypassed |
 | `cache_root / digest / manifest_id` (shipped) | 1 call, `look_count(A)=1`, `look_count(B)=0` | **2 calls**, `look_count(B)=1` — closed |
 
-`cache_root` is a required keyword with no default anywhere in either module. `CACHE_ROOT` names the canonical location `/Volumes/ProjectsSSD/aihedgefund/scratch/phase07` for a CLI to pass explicitly, and `canonical_cache_root_is_outside_repo_and_lake()` derives the repo root from `lake_paths.PKG_ROOT.parent` and the lake from the `DEFAULT_LAKE_ROOT` constant (never through `lake_root()`, which would `mkdir` the real lake as a side effect of answering a question). That directory does not exist on this machine and nothing in this plan created it.
+`cache_root` is a required keyword with no default anywhere in either module. `CACHE_ROOT` names the canonical location `/Volumes/ProjectsSSD/aihedgefund/scratch/phase07` for a CLI to pass explicitly, and `canonical_cache_root_is_outside_repo_and_lake()` checks it against `repo_root()` and against the `DEFAULT_LAKE_ROOT` constant (never through `lake_root()`, which would `mkdir` the real lake as a side effect of answering a question). That directory does not exist on this machine and nothing in this plan created it.
+
+**A claim in this module was wrong and passing anyway — found in review, fixed, and worth stating plainly.** The first version derived the repo root as `lake_paths.PKG_ROOT.parent`. `PKG_ROOT` is `Path(__file__).resolve().parent` inside `mvp/data/lake_paths.py`, so it is `mvp/data/` and its parent is `mvp/` — one level short of the repo. The containment check therefore proved "outside `mvp/`", which does not imply "outside the repo", and it passed only because `CACHE_ROOT` sits on a wholly different path. `repo_root()` now derives it from `cache.py`'s own location (`parents[2]`) and GUARDS the hop by requiring `mvp/pyproject.toml` under the result; the test anchors it two independent ways (`.git` present, `name != "mvp"`, equal to the test file's own `parents[3]`). Mutation-checked: reverting the derivation to `PKG_ROOT.parent` makes `repo_root()` raise with the hop named (hashes `c00cf83b…` → `0263adb0…` → `c00cf83b…`).
 
 ## `selection.json`: the round trip, the refusals, and the run ids
 
@@ -146,7 +150,7 @@ Both files restored byte-identically; `git diff --stat` empty after each.
 
 **3. [Rule 2] Four additions the plan did not name.** A provenance sidecar `<segment>.cache.json` beside every cached frame (rows, etime range, and `look_count` on both sides of the call, so an operator chasing a look has the before/after in the file); a distinct-fingerprint check over the whole grid before any fitting, because two configs sharing a fingerprint would share one negative record and falsify D-07-20; `_manifest_blocks` asserting `blocks[j]["name"] == f"oof_block_{j}"` after sorting by `start_ns`, because `training_rows_for_block` indexes positionally and a mis-ordered list purges the wrong window while returning a plausible row count; and non-finite metrics stored as JSON `null` rather than as a bare `NaN` literal no strict parser accepts.
 
-**4. [Rule 2] A ninth sweep test.** The plan lists eight; `test_no_eligible_config_is_an_explicit_outcome_and_not_a_silent_best_available` was added because the acceptance criteria require that outcome to be "a distinct, explicit return value" and nothing else would have checked the three places that must agree about it.
+**4. [Rule 2] Two sweep tests beyond the plan's eight.** `test_no_eligible_config_is_an_explicit_outcome_and_not_a_silent_best_available`, because the acceptance criteria require that outcome to be "a distinct, explicit return value" and nothing else checked the three places that must agree about it. And `test_the_grid_drift_refusals_fire_and_a_poly2_winner_rebuilds_with_its_degree`, added in review: `selection_winner_trainer`'s three drift refusals were argued in a docstring and exercised by nothing, and a refusal that never fires in a test is a refusal nobody can be sure fires. It also pins the poly2 path the whole `hyperparameters`-not-`knobs` argument rests on — grid 14 and grid 2 carry byte-identical `model_class` strings and differ only by `degree`, so a `knobs` comparison would have accepted one for the other. Measured while writing it: the out-of-range-index refusal is only reachable when `n_configs` AGREES, because the size refusal fires first — so the case it guards is specifically a hand-edited index in an otherwise consistent file, which the test now says.
 
 **5. `look_run_ids` is NOT scoped to the `harness-looks` experiment**, though the plan's parenthetical says "in the `harness-looks` experiment". `budget.look_count` searches every experiment; a narrower query here could return fewer ids than that function counts, and the invariant the plan's own test demands (`len(ids) == look_count(...)`) would break. The filter string is byte-identical to `look_count`'s, the equality is asserted inside the function per segment, and `LOOK_EXPERIMENT_NAME` is kept as a documented constant cross-checked at import against `record_look`'s own default.
 
@@ -156,16 +160,20 @@ None. `guard_against_ceiling` remains wired into no caller — that is 07-07's c
 
 ## Threat flags
 
-None. The two registered mitigations were implemented as written: T-07-29 by the tracking-root digest (proven by observing the second look), T-07-30 by the signature plus the `oof_block_<int>` refusal, T-07-31 by one negative record per ineligible config, T-07-32 by the copied `_require_filter_safe` with a test asserting the pattern is byte-identical to `budget`'s.
+| Flag | File | Description |
+|------|------|-------------|
+| threat_flag: mlflow-filter-injection | mvp/models/cache.py | `look_run_ids` is a NEW MLflow filtered query, which the plan's own T-07-32 row says this plan adds none of while its Task 1 asks for exactly one. It splices `segment_manifest_id` and every `segment_name` into a `filter_string`; mitigated by the copied `_require_filter_safe` running on all of them before any client is constructed, with `tests/models/test_cache.py` asserting the pattern is byte-identical to `harness.budget`'s and that `oof_block_0' or '1' = '1` is refused. |
+
+T-07-29, T-07-30 and T-07-31 were implemented as registered: the tracking-root digest (proven by observing the second look), the signature plus the `oof_block_<int>` refusal, and one negative record per ineligible config.
 
 ## Verification
 
 - `pytest tests/models/test_cache.py` — 6 passed in 5.4 s.
-- `pytest tests/models/test_sweep.py` — 9 passed in 8.3 s.
-- `pytest tests/models` — 186 passed in 15.8 s (was 171).
-- `pytest tests` — **1330 passed** in 173.9 s (was **1315**; +15 = 6 cache + 9 sweep).
+- `pytest tests/models/test_sweep.py` — 10 passed in 8.6 s.
+- `pytest tests/models` — 187 passed in 16.1 s (was 171).
+- `pytest tests` — **1331 passed** in 174 s (was **1315**; +16 = 6 cache + 10 sweep).
 - `inspect.signature(run_oof_sweep).parameters` contains no `val`; parameters are `segment_manifest_id, oof_block_names, train_cache_path, registry_root, lake_root, tracking_root, cache_root, run_tags, normalization_manifest_id, symbol, code_hash, seed, grid`.
-- All 19 pre-commit hooks passed on every one of the three commits; `--no-verify` never used.
+- All 19 pre-commit hooks passed on every one of the four commits; `--no-verify` never used.
 - `git status` clean; no scratch-cache path anywhere in the tree.
 
 **`budget.look_count` on all twelve canonical counters — `val` and `oof_block_0..4` of both `807125015b25…` and `97964cb27f62…` — read before the first commit and after the last: 0 and 0. Unchanged.** `/Volumes/ProjectsSSD/aihedgefund/scratch` does not exist.
@@ -184,4 +192,5 @@ Files verified present: `mvp/models/cache.py`, `mvp/models/sweep.py`, `mvp/tests
 - **Determinism of the FIT is not claimed.** `test_the_winner_is_the_same_across_two_runs_of_the_same_sweep` asserts determinism of SELECTION — that the rule carries no ordering dependence — on the same machine, the same BLAS and the same cached frames. Cross-machine fit reproducibility is 07-04's frozen-JSON boundary, not this.
 - **`budget_allowance` was never exercised toward exhaustion.** The fixture's allowance is 50; `BudgetExhaustedError` propagating out of `materialize_once` is asserted nowhere, only documented as never swallowed.
 - **FCST-01 stays Pending.** A sweep that names a winner on a synthetic fixture is the mechanism, not the requirement: no real fold has been scored, nothing has been frozen, and `val` has not been read.
+- **`repo_root()`'s guard is not proven against a real move of the file**, only against a reverted derivation. If `cache.py` moves, the guard raises — that is asserted by mutation — but no test moves the file.
 - **No guardrail, tool, manifest, `spec.md` section or lockfile was touched**; `mvp/data/lake_registry/` is byte-unchanged.

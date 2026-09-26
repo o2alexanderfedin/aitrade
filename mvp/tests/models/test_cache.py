@@ -413,6 +413,15 @@ def test_the_cache_root_is_a_required_keyword_and_the_named_constant_sits_outsid
     assert cache.CACHE_ROOT.is_relative_to(
         Path("/Volumes/ProjectsSSD/aihedgefund/scratch")
     )
+    # `repo_root()` must be the REPOSITORY root and not `mvp/`, which is what
+    # `lake_paths.PKG_ROOT.parent` gives (PKG_ROOT is `mvp/data/`, not `mvp/`).
+    # With `mvp/` the containment check above proves "outside mvp/", which does
+    # not imply "outside the repo" -- a weaker fact passing for the stronger
+    # one. Two independent anchors, so neither can drift alone.
+    repo = cache.repo_root()
+    assert (repo / ".git").exists() and (repo / "mvp" / "pyproject.toml").is_file()
+    assert repo == Path(__file__).resolve().parents[3]
+    assert repo.name != "mvp"
     # And no test in this file ever named it -- the paths above are all
     # under `tmp_path`, which is what keeps the canonical counters at 0.
     assert not cache.CACHE_ROOT.exists() or not any(
