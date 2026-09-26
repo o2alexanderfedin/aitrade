@@ -752,3 +752,74 @@ def test_the_slice_reports_n_pred_missing_as_a_metric(
     assert int(scored.metrics["ceiling_closed_pnl_ticks"]) == int(
         perfect_foresight_ceiling(val, label_column=TARGET_NAME)["closed_pnl_ticks"]
     )
+
+
+# --------------------------------------------------------------------------
+# 13. The provenance rule THIS FIXTURE CANNOT SEE
+# --------------------------------------------------------------------------
+
+
+def test_only_the_train_days_feature_manifests_reach_the_normalisation_artifact():
+    """`select_train_day_manifests` keeps the manifests whose rows lie inside
+    the train window and derives `train_end_date` from the LAST of them --
+    checked on hand-built bodies, because the fixture cannot check it at all.
+
+    THE FIXTURE HAS EXACTLY ONE UPSTREAM FEATURE MANIFEST covering exactly one
+    date, so "keep the five train days and exclude days 17 and 18" is
+    INDISTINGUISHABLE on it from "keep everything". Replacing the whole filter
+    with `manifest["upstream_feature_manifest_ids"]` would leave every other
+    test in this file green while making the normalisation artifact assert that
+    its parameters saw the two `val` days -- false, and false in precisely the
+    record an auditor reads to decide whether the val look was honest. This is
+    the test that is not vacuous, so it is a PURE one.
+
+    THE FILTER IS ON THE ns CLOCK, NEVER ON THE DATE STRING, and the bodies
+    below are built to make that visible: their `date` fields run 09-12..09-18
+    while their `etime` values are plain integers. A date-string filter would
+    still pass on them by accident; only the ns overlap gives the right answer
+    when the two disagree, which is exactly the fixture's own condition (its
+    partition is dated 2026-09-13 with etimes starting at epoch 0).
+    """
+    day_ns = 86_400 * 1_000_000_000
+    bodies = [
+        {
+            "manifest_id": f"{index:064d}",
+            "partitions": [
+                {
+                    "date": f"2026-09-{12 + index}",
+                    "etime_min": index * day_ns,
+                    "etime_max": (index + 1) * day_ns - 1,
+                }
+            ],
+        }
+        for index in range(7)
+    ]
+    kept, train_end_date = slice_module.select_train_day_manifests(
+        bodies, train_start_ns=0, train_end_ns=5 * day_ns
+    )
+    assert [body["manifest_id"] for body in bodies[:5]] == list(kept)
+    assert train_end_date == "2026-09-16"
+    assert f"{5:064d}" not in kept and f"{6:064d}" not in kept, (
+        "a val day's feature manifest reached the normalisation provenance"
+    )
+
+    # The two refusals, both of which fail CLOSED rather than guessing.
+    with pytest.raises(SliceError, match="no upstream feature manifests"):
+        slice_module.select_train_day_manifests(
+            [], train_start_ns=0, train_end_ns=day_ns
+        )
+    with pytest.raises(SliceError, match="overlapping the train window"):
+        slice_module.select_train_day_manifests(
+            bodies, train_start_ns=99 * day_ns, train_end_ns=100 * day_ns
+        )
+    with pytest.raises(SliceError, match="no 'date' key"):
+        slice_module.select_train_day_manifests(
+            [
+                {
+                    "manifest_id": "a" * 64,
+                    "partitions": [{"etime_min": 0, "etime_max": 9}],
+                }
+            ],
+            train_start_ns=0,
+            train_end_ns=day_ns,
+        )
