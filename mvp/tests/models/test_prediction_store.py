@@ -41,6 +41,7 @@ from data.store import (
 )
 from data.holdout import QuarantinedDateError
 from harness.segments import segment_manifest_path
+from models import predictions
 from models.predictions import (
     PREDICTION_TABLE_SCHEMA,
     PREDICTIONS_SCHEMA_VERSION,
@@ -104,11 +105,14 @@ def _write(rig: dict, lake_root: Path, registry_root: Path, **kwargs) -> dict:
     frame = kwargs.pop("frame", None)
     if frame is None:
         frame = _val_shaped_frame(rig)
+    segment_manifest_id = kwargs.pop(
+        "segment_manifest_id_override", rig["manifest"]["manifest_id"]
+    )
     return build_prediction_span(
         lake_root,
         registry_root,
         frame=frame,
-        segment_manifest_id=rig["manifest"]["manifest_id"],
+        segment_manifest_id=segment_manifest_id,
         **kwargs,
     )
 
@@ -585,6 +589,115 @@ def test_partition_overlaps_segment_treats_the_ranges_as_the_two_conventions_the
     assert partition_overlaps_segment(120, 130, 100, 200)
     # A zero-width segment -- the held_out sentinel -- overlaps nothing.
     assert not partition_overlaps_segment(0, 500, 200, 200)
+
+
+#: A day far outside the rig's own physical span, and therefore outside every
+#: segment the rig declares.
+UNSCORED_DATE = "2026-09-30"
+
+
+def _segment_manifest_naming_a_second_unscored_day(
+    rig: dict, registry_root: Path
+) -> str:
+    """Re-sign a copy of the rig's segment manifest that names a SECOND
+    upstream feature manifest, covering a day whose etimes are far past the
+    rig's own covered end. Returns the new segment manifest id.
+
+    Hand-built on purpose: `build_model_span_fixture` writes exactly one
+    feature partition, and with one partition the narrowing in `_scored_dates`
+    cannot be distinguished from no narrowing at all -- the mutation that
+    replaces the overlap test with `if True` passes the whole suite. The second
+    manifest needs no bytes on the lake, because the date derivation reads
+    manifest JSON and never resolves a feature partition.
+    """
+    far_start = rig["geometry"]["covered_end_ns"] + 10 * 24 * 3_600 * 1_000_000_000
+    second_id = "c" * 64
+    second = registry_root / "manifests" / f"{SYMBOL}.{FEATURES_TIER}"
+    second.mkdir(parents=True, exist_ok=True)
+    (second / f"{second_id}.json").write_text(
+        json.dumps(
+            {
+                "manifest_id": second_id,
+                "tier": FEATURES_TIER,
+                "symbol": SYMBOL,
+                "row_count": 10,
+                "partitions": [
+                    {
+                        "date": UNSCORED_DATE,
+                        "etime_min": far_start,
+                        "etime_max": far_start + 1_000_000_000,
+                    }
+                ],
+            }
+        )
+    )
+    body = dict(rig["manifest"])
+    body["upstream_feature_manifest_ids"] = [
+        *body["upstream_feature_manifest_ids"],
+        second_id,
+    ]
+    body.pop("manifest_id")
+    body["manifest_id"] = store.compute_manifest_id(body)
+    path = segment_manifest_path(registry_root, body["manifest_id"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(body, sort_keys=True, indent=2))
+    return body["manifest_id"]
+
+
+def test_the_scored_dates_exclude_an_upstream_day_the_segment_never_covered(
+    lake_root, registry_root, tracking_root
+):
+    """The narrowing, with a second upstream day that no segment covers.
+
+    WHY IT MATTERS: without it, a `val` table's scored dates are every day the
+    POOL spans. Quarantine a TRAIN day later -- which is exactly what
+    declaring a held-out window does -- and a val table that never read that
+    day becomes unreadable. A false refusal is not a safe failure: it teaches
+    the next reader to route around the gate.
+
+    This test exists because a mutation check found the gap. The overlap
+    PREDICATE was unit-tested; replacing its CALL with `if True` still passed
+    the whole suite, because the fixture writes exactly one feature partition
+    and one partition cannot tell the two behaviours apart."""
+    rig = _rig(lake_root, registry_root, tracking_root)
+    wide_segment_id = _segment_manifest_naming_a_second_unscored_day(rig, registry_root)
+    written = _write(
+        rig,
+        lake_root,
+        registry_root,
+        segment_manifest_id_override=wide_segment_id,
+    )
+    manifest_body = json.loads(
+        (
+            registry_root
+            / "manifests"
+            / written["dataset"]
+            / f"{written['manifest']['manifest_id']}.json"
+        ).read_text()
+    )
+    dates = predictions._scored_dates(manifest_body, registry_root=registry_root)
+    assert dates == [DEFAULT_DATE], (
+        f"scored dates {dates} -- the val segment covers only {DEFAULT_DATE}, "
+        f"and {UNSCORED_DATE} is an upstream day it never read"
+    )
+
+    # Quarantining the day the table never scored does NOT refuse the read...
+    write_holdout_registry(registry_root, [UNSCORED_DATE], symbol=SYMBOL)
+    load_prediction_table(
+        written["manifest"]["manifest_id"],
+        written["dataset"],
+        registry_root=registry_root,
+        lake_root=lake_root,
+    )
+    # ...and the day it DID score still does, so the gate is live either way.
+    write_holdout_registry(registry_root, [DEFAULT_DATE], symbol=SYMBOL)
+    with pytest.raises(QuarantinedDateError, match=DEFAULT_DATE):
+        load_prediction_table(
+            written["manifest"]["manifest_id"],
+            written["dataset"],
+            registry_root=registry_root,
+            lake_root=lake_root,
+        )
 
 
 def test_assert_decision_order_returns_the_etime_array_it_proved(tmp_path):
