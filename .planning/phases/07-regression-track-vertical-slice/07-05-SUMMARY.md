@@ -402,8 +402,29 @@ committed, and `mvp/data/lake_registry/` is byte-unchanged.
 - **`tests/fixtures/lake` gained no predictions partition**, so the
   CI-fixture leg of `check_no_manifest_rewrite --full` still scans
   curated/features bytes only. Logged to `deferred-items.md`.
+- **`harness/accessor.py` was NOT touched, and the order assertions are not
+  wired into it.** `assert_decision_order` and `assert_table_aligned` are
+  exported helpers that this plan's own tests call; nothing yet asserts a
+  frame's order at the accessor's exit against its pre-errata-join `etime`
+  column. D-07-31 says "every frame that reaches a fit, a prediction or the
+  simulator" — those call sites are 07-08's cache and 07-09's slice runner, and
+  a reader should not infer the wiring landed here.
+- **The branch was not pushed.** `feature/phase-07-regression-track-vertical-slice`
+  is five commits ahead of `8e953cd` locally; pushing is the orchestrator's
+  call, not this plan's.
 - **`BY_DATE_INDEXED_TIERS` is byte-unchanged**, and a test now asserts the
   whole frozenset rather than only this tier's absence from it.
+
+## One Near-Miss Worth Keeping
+
+Test 2's natural first draft asserts that the trade COUNT changes when `pred` is
+rolled by one row. It does not: 23 before, 23 after. The sweep script measured
+that before the test was written, which is the only reason the test hashes the
+sliced trade log and compares the closed P&L instead. Had the count assertion
+been written first it would have failed, and the obvious reading of that failure
+is "the hazard is undetectable on this fixture" — when in fact two other
+witnesses see it plainly. Measure the observable before choosing the assertion
+that watches it.
 
 ## Self-Check: PASSED
 
