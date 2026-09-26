@@ -79,3 +79,42 @@ exercises the scan over curated/features bytes only. NOT added here: the
 fixture lake is committed bytes, and adding a partition to it for coverage of
 a tier whose first real table lands in 07-11 is a commit that freezes bytes
 nothing reads.
+
+---
+
+## Seven of the nine ElasticNet configs return a coefficient vector of exactly zero
+
+**Found during:** 07-06, timing all 17 configs on the fixture rig.
+
+sklearn's ElasticNet objective carries `1 / (2 n)` on the squared-error term,
+so `alpha * l1_ratio` is a soft threshold in per-sample GRADIENT units. The
+target is a 10-second return of order 1e-4 and the normalised features are
+unit-variance, so the OLS coefficients are order 1e-7 — every grid alpha at or
+above 1e-4 thresholds all three to exactly 0.0. Those seven configs ARE the
+zero-skill control: their fixture `R^2` of -0.00592 is bit-identical to the
+constant-at-train-mean control measured beside them.
+
+NOT FIXED and NOT to be fixed here. The grid is D-07-08's, hand-written and
+counted; 07-07's eligibility gates own which configs are viable and D-07-20
+writes each failure to the negative-result log. A trainer that refused to be
+useless would hide a real property of the grid.
+
+**What 07-07 needs from this:** the grid's LIVE membership on real data is
+likely ~10 of 17 (the number may differ at real scale — the real target's
+standard deviation and the real Gram are not the fixture's), while the
+selection-bias denominator stays 17. If the intent was nine INFORMATIVE
+ElasticNet configs, the alpha decades would have to move down by about four —
+a decision for the discuss step of a later plan, not an executor's.
+
+---
+
+## An untracked `.gitignore` sits at the repo root
+
+**Found during:** 07-06, first `git status` before committing.
+
+`/Volumes/ProjectsSSD/aihedgefund/repo/.gitignore` is untracked and ignores
+`timesfm/`, `hf-cache/`, `*.safetensors`, `*.ckpt`, `*.pt`, `*.pth` — a model
+-weights experiment unrelated to the MVP. `mvp/.gitignore` is the tracked one.
+
+NOT staged, NOT modified, NOT deleted. It is outside `mvp/` and outside this
+phase, and whether the repo root should carry it is the repo owner's call.
