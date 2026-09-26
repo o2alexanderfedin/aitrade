@@ -44,6 +44,7 @@ Listed roughly in the order they were given. Each is the human input that trigge
 - [Label catalogue](#label-catalogue)
 - [Decision rule (Stage 2)](#decision-rule-stage-2)
 - [Simulator](#simulator)
+- [Stage 1 — Regression track](#stage-1--regression-track)
 - [DOs](#dos)
 - [DONTs](#donts)
 - [Known HFT/MFT pitfalls](#known-hftmft-pitfalls)
@@ -360,6 +361,155 @@ is its own regression proof: the v1-vs-v2 label diff is measured at exactly 249 
 `ret_1s_mid`, 69 `ret_10s_mid`), matching Phase 5's independently-computed errata manifest
 cell-for-cell, and confined to 2026-09-12/13 as required — proving the migration changed only
 what it was supposed to change.
+
+---
+
+## Stage 1 — Regression track
+
+Phase 7's regression track (`mvp/models/`) runs the cheapest model class end to end, so the whole
+Stage-1 plumbing — Trainer protocol, frozen predictors, prediction tables, scoring gates — is
+proved by something whose arithmetic can be checked against a hand-written oracle before a
+transformer is trusted with the same pipes. Every number below was measured; none is asserted by
+a test against the real `val` window, because reading it spends an irreversible validation look
+and the pre-commit suite runs on every commit (see the fold-harness section below).
+
+### Feature and target contract
+
+The estimator's inputs are exactly three catalogue features, in this pinned order: `imb_top`,
+`ofi`, `trade_flow`. The target is `ret_10s_mid` — the 10-second simple midprice return — and
+only that one: `ret_1s_mid`, `ret_1min_mid` and `ret_10min_mid` are REPORTED as diagnostics and
+never fitted, because a fit on a different horizon scored against this section's gates would look
+like a modelling result while being a units mistake.
+
+`mid`, `bid_price` and `ask_price` are BOOKKEEPING columns — raw observed state, like `etime` —
+and never reach an estimator: a raw price level in the design matrix smuggles the day's trend into
+the fit. Three INDEPENDENT assertions enforce that, because no single one sees every way a price
+can get in:
+
+1. A feature list naming `mid`, `bid_price` or `ask_price` RAISES, by name, before any data is
+   read — the refusal itself, not the omission.
+2. The FITTED coefficient vector has exactly three entries in the pinned order, which catches a
+   fourth column that arrived past the name check.
+3. The degree-2 design matrix has exactly NINE columns. This is the only one of the three that can
+   see a price entering through an INTERACTION term: a fourth input leaves all three input names
+   untouched and widens the expansion to 14, so neither other assertion moves.
+
+The `features_norm` artifact does carry a `mid` row — the normalisation fit covers every catalogue
+feature — so "it came from the normalisation artifact" is not a sufficient filter. That is not a
+loophole: the refusal is scoped to the ESTIMATOR'S INPUT COLUMNS, and `mid` is required by exactly
+one site (`models/conversion.py`) to turn a predicted return back into a price.
+
+### Prediction table contract
+
+Stored schema is exactly three columns: `etime Int64`, `decision_seq Int64`, `pred Float64`.
+`pred` is stored in RETURN units, never as a price — storing a price would bake a `mid` snapshot
+into the artifact and make the table unreadable against any other book. The conversion to the
+simulator's raw USDT price happens at exactly ONE site, `mid * (1.0 + pred)` in float64
+(`models/conversion.py`), and the perfect-foresight ceiling below shares that same site so the two
+can never diverge by a conversion difference. `pred` is Float64 and not Float32 because the kernel
+quantises it to ticks with a symmetric floor/ceil rule and a float32 rounding error near the
+half-tick boundary flips a trigger.
+
+A table is keyed by the triple `(segment_manifest_id, segment_name, predictor_id)` — what it
+BELONGS TO, not what day it "is" — and lives in the lake under `predictions/`, manifest-addressed
+through the same issuer every other tier uses.
+
+**`etime` ALONE is the join key.** It is globally unique and strictly sorted across the whole
+pool: 60,926,503 distinct values in 60,926,503 rows, measured. "Many rows share an `etime`"
+describes the RAW merged event stream, not the decision rows — the last-row-per-`etime` rule is
+exactly what makes `etime` unique. `decision_seq` is NOT unique on its own and must never be used
+as a key; it is carried as a cross-check column. Alignment between a prediction table and the
+decision rows it scores is ASSERTED with `np.array_equal` on both key columns rather than trusted,
+because polars documents a join's output order as unspecified: a silent reorder would misalign
+every prediction against its decision row and raise nothing.
+
+### Beating the zero baseline
+
+"Beats the zero baseline" is TWO gates, both required.
+
+**(a) Forecast.** Out-of-sample, on the scorable rows (finite prediction and finite target, one
+row set shared by every statistic):
+
+1. `r2_vs_zero = 1 − SSE / Σy² > 0` — the constant-ZERO predictor as the reference.
+2. `r2_vs_mean = 1 − SSE / Σ(y − ȳ)² > 0` — the ordinary R², the unconditional mean as the
+   reference. Both are reported. They differ by exactly `n·ȳ²`, and with `ȳ` tiny but nonzero the
+   small absolute difference is a large relative one: measured on 2026-09-18,
+   `SS_mean / SS_zero = 0.9983534` and the two R² are 7.8% apart.
+3. `rank_ic_non_tied > 0`, a `scipy.stats.spearmanr` over the rows where `y != 0.0`, with
+   `rank_ic_all` reported beside it.
+4. A NON-FINITE rank IC is a FAIL with its OWN message. `spearmanr` returns NaN for a constant
+   input, and `np.nan > 0` is `False` — so a naive comparison does fail closed, but it reports "IC
+   not positive" when the truth is "the prediction has no ordering at all". Those are different
+   findings.
+
+**Why both R² references, stated as the pitfall it is: scale-free skill versus scale-dependent
+skill.** Rank IC is invariant to any monotone rescaling of the prediction and R² is not. So a
+model shrunk toward zero keeps its FULL rank IC and loses all its R² (measured: IC +0.207
+unchanged, `r2_vs_zero` +0.000000 to six decimals — and strictly positive underneath, which is why
+it passes a `> 0` check), while a model capturing only the unconditional drift has a POSITIVE
+`r2_vs_zero` and an UNDEFINED IC (measured: +0.001647 with no feature used at all). Neither is
+skilful and each passes one half. The gate is meaningful only because it requires both halves, plus
+the second R² reference, plus a non-finite IC read as FAIL. A third column — the R² of a constant
+predictor at the TRAIN mean, carried in the frozen predictor's body because `val` never opens the
+train frame — is scored in every metrics table, so the zero-skill baseline is visible beside the
+model rather than assumed harmless.
+
+**The tie fraction is reported PER SEGMENT, as a first-class number beside the IC, never folded
+into it.** The target has a point mass at exactly zero (an unchanged mid over the horizon), and its
+size is a property of the segment, not of the target: 43.89% on 2026-09-13 alone, 9.60% on
+2026-09-18, 13.83% on the approved `val` window, 20.01% pooled over the seven days. A single
+pool-wide number is not a thing that exists. Nor do the ties reliably flatter anything: measured,
+including them INFLATES the IC by 1.3% on 2026-09-18 and DEFLATES it by 3.2% on 2026-09-13. The
+two statistics answer different questions — can the model order the whole population, versus can it
+order the rows whose target actually moved — and the second is what a threshold-crossing policy
+monetises. Report both; neither is a correction of the other.
+
+**(b) Monetization.** The simulator on `val` yields strictly more than 0 trades AND strictly more
+than $0, read off the trade log sliced to `[:fill_count]`. Strictly, both: a run with zero trades
+has a P&L of exactly $0 and would pass a `>= 0` check while having monetised nothing.
+
+**The perfect-foresight ceiling is a hard guard on (b), and it is code.** `pred = mid * (1 +
+ret_10s_mid)` over the ADMITTED segment frame — the exact rows the simulator walks, after admission
+and errata, in their own order — at `x_bps=0` and every other default. Rows whose label is null get
+`pred = mid`, which is measured to produce exactly 0 trades and therefore cannot fabricate one.
+Any reported P&L at or above the ceiling MEASURED FOR THAT SEGMENT raises. The ceiling is
+PER SEGMENT and must be re-measured: 2,192 trades / 294,554 ticks / $29.4554 on 2026-09-13 is not
+the approved `val` window's, which measures 9,946 trades / 1,120,460 closed ticks / $112.0460 over
+16,294,059 admitted rows. Both USD conventions are stated whenever a figure is cited, per
+"Outputs: trade log, equity curve, counters" above. And the ceiling is a STRONG SANITY BOUND, NOT A
+THEOREM: perfect foresight through the flip-only rule at `x_bps=0` is one particular policy, not
+the path's P&L maximum, so the exception says INVESTIGATE — a misaligned prediction table or a
+label leaking into a feature, in that order of likelihood — rather than "impossible".
+
+### Determinism guarantee (Stage 1)
+
+CLAIMED. Given the coefficient JSON, the prediction table is bit-identical across processes on one
+host, and the JSON re-evaluated by a bare numpy dot product reproduces `predict()` EXACTLY — proved
+in a test that does not import sklearn at all, which is the strongest available check that a frozen
+predictor is genuinely frozen.
+
+NOT CLAIMED. Cross-platform bit equality of a FIT. This host's numpy links Apple Accelerate, CI is
+Linux/OpenBLAS, and `threadpoolctl` ships no Accelerate controller — so `OMP_NUM_THREADS` and its
+relatives control nothing here. No committed test may pin a coefficient digest; what is pinned is
+the arithmetic relationship between the stored coefficients and the predictions they produce.
+
+### Normalisation scope
+
+One train-wide normalisation artifact is fitted per fold and applied frozen; refitting per OOF
+block is forbidden. That means an OOF block's metrics use scaling parameters estimated from data
+that included that block, and the honest magnitude of the leak is this: ZERO for any model with an
+intercept, because an affine rescaling of the design matrix is absorbed exactly by the coefficients
+and the intercept; NONZERO but confined to two scalars per feature, estimated from roughly 44M rows,
+for Ridge and ElasticNet, whose penalties are not scale-invariant. Accepted at this magnitude and
+recorded here rather than left implicit.
+
+### MLflow stage vocabulary
+
+Three run kinds exist at the end of this phase, so the next phase inherits a list rather than a
+guess. The `stage` tag takes the value `val_look` for a counted validation/OOF-block look,
+`negative_result` for a config that failed either gate above, and `stage1_regression` for a
+regression-track fit/score run. The eight mandatory tag keys themselves are unchanged — see the
+tag-schema section below.
 
 ---
 
