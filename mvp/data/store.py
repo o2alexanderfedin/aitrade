@@ -98,6 +98,18 @@ FEATURES_TIER = "features"
 #: normalization artifact belongs to a fold, not to a date.
 FEATURES_NORM_TIER = "features_norm"
 
+#: The stored-prediction tier (07-CONTEXT.md D-07-26), read by
+#: `models.predictions.load_prediction_table` and by nothing else. Named
+#: here alongside its siblings so the plan that uses it never has to edit
+#: this file; it is deliberately NOT in `BY_DATE_INDEXED_TIERS` -- a
+#: prediction table belongs to a `(segment_manifest, segment, predictor)`
+#: triple, exactly as a normalization artifact belongs to a fold, not to a
+#: date. A caller of `issue_manifest` for this tier must therefore pass
+#: `dates=[]` EXPLICITLY: `covered_dates` is computed from `p["date"]`
+#: before the tier is consulted, and this tier's partition entries carry
+#: no `date` key at all.
+PREDICTIONS_TIER = "predictions"
+
 #: Tiers whose manifests get a by-date `(dataset, symbol, stream, date)`
 #: pointer. Everything else is addressable by `manifest_id` only.
 #:
