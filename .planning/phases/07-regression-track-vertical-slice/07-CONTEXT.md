@@ -295,7 +295,17 @@ below disagrees with a number above, **the number below wins**.
   trade generator.
 
 - **C5 — D-07-15's size estimate was 3x too big.** The real stored table is
-  **91.2 MiB zstd at 7.86M rows**, not ~270 MB. The decision to store only the
+  **91.2 MiB zstd at 7.86M rows**, not ~270 MB.
+  **C5 RE-CORRECTED after plan 07-05 measured the real writer (2026-09-25).** The
+  RATE is right and the ROW COUNT is wrong. Measured through the actual writer at
+  zstd: **12.13 B/row** at 2M arithmetic-etime rows, 12.71 at 2M irregular,
+  12.43-13.06 at 100k, and 14.74 at a 1,799-row fixture (per-file overhead, a
+  floor rather than a rate). 91.2 MiB / 7.86M rows is 12.167 B/row -- dead centre
+  of that measurement. But 7.86M rows is ONE day, and the approved manifest admits
+  **16,294,059** rows to `val` (two days, Option A). So 07-11's single stored table
+  is **~190 MiB**, not 91.2. This matters beyond bookkeeping: D-07-25 makes those
+  bytes and their mtime `stat()`-checked on every commit from the moment the
+  manifest lands. The decision to store only the
   winner stands, but it is now a modest saving rather than a gigabyte-scale one.
 
 - **C6 — D-07-12's named mechanism is INERT on this host.** numpy here links
