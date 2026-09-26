@@ -68,7 +68,7 @@ completed: 2026-09-26
 |---|---|
 | Suite | 1,293 -> 1,315 tests (22 added: 9 metrics, 13 gates) |
 | `pytest tests/models` | 158 -> 180 tests, 14.4 s (runs on every commit, hook 19) |
-| Full suite | 181 s before, 186 s after -- the 22 new tests cost about 5 s, and the fixture ceiling run is 1,799 rows of real kernel |
+| Full suite | 181 s before, 186 s after. That 5 s is NOT the new tests' cost: `pytest tests/models` moved 14.2 s -> 14.4 s, so the 22 tests cost about 0.2 s and the rest of the gap is cache warmth |
 | Looks spent | ZERO. `budget.look_count` is 0 on `val` and all five `oof_block_*` of BOTH manifests, read before the first commit and again after the last |
 
 ## Commits
@@ -165,7 +165,7 @@ Never pooled, and never hardcoded -- nothing in `models/metrics.py` carries a ti
 | pool | 60,926,503 | 12,189,019 | 20.01% |
 | the approved `val` window (scorable rows) | — | — | 13.83% |
 | this repo's synthetic fixture | 40,000 | 7,293 | 18.23% |
-| the model-span test fixture's `val` | 1,799 | — | (9 NULL labels, a different thing) |
+| the model-span fixture's partition (its own docstring's measurement) | 19,800 | — | 14.66% |
 
 And the ties do not reliably flatter anything (correction C2): including them INFLATES the IC by 1.3% on 2026-09-18 and DEFLATES it by 3.2% on 2026-09-13. On this repo's synthetic set they deflate it by 13.3%. The two statistics answer different questions; `models/metrics.py` returns both and presents neither as a correction of the other.
 
@@ -255,9 +255,24 @@ The plan's `<verify>` blocks call `uv run --locked --directory mvp pytest`. Run 
 
 Twelve counters, unchanged. **`harness.accessor.materialize` was never called against the real lake in this plan.** The four ceiling tests call it against the fixture lake in `tmp_path`, whose manifest carries its own allowance of 50.
 
-## Research Disclosure, Carried Forward Verbatim
+## Research Disclosure, Carried Forward
 
-Every research measurement that read the candidate `val` days (2026-09-17 / 2026-09-18) read Parquet directly with polars. **None is a `harness.accessor.materialize` call**, so no look was spent, no `harness-looks` MLflow run exists, and `budget.look_count` is still 0 for every segment of every manifest. **None can steer model selection**, which D-07-04 confines to the OOF blocks. The measurements are: per-day row/null/exact-zero counts; admission counts for both candidate windows; the perfect-foresight ceiling and the `pred = mid` zero-trade oracle for both candidate windows; an in-sample 3-feature OLS on day 18 and days 17+18; in-sample rank IC on day 18 all-rows and non-tied plus the constant-at-mean and shrunk-by-1e-6 rows; a Gram-vs-dense ridge equivalence check; and the prediction-table parquet byte measurement. The model-fit items produced numbers INSIDE the range the train-internal splits (days 12-17) already establish, so nothing in the plan depends on them -- they are reported only so nobody mistakes a passing honest look for a surprise.
+07-RESEARCH.md requires this in the SUMMARY. Every research measurement in that document that read the candidate `val` days (2026-09-17 / 2026-09-18) read Parquet directly with polars. **None is a `harness.accessor.materialize` call**, so no look was spent, no `harness-looks` MLflow run exists, and `budget.look_count` is still 0 for every segment of every manifest. **None can steer model selection**, which D-07-04 confines to the OOF blocks. Listed in full so this is auditable rather than asserted.
+
+*Structural -- the phase's own decisions require these numbers:*
+
+1. Per-day row counts, null counts and exact-zero counts (Q4's per-day table).
+2. Admission counts for both candidate `val` windows (Q1's tables) -- D-07-01 needs them to specify the manifest at all.
+3. The perfect-foresight ceiling and the `pred = mid` zero-trade oracle for both candidate `val` windows (Q7) -- D-07-19 explicitly requires re-measurement.
+
+*Model fits -- these are the ones worth disclosing:*
+
+4. An in-sample 3-feature OLS on day 18 and on days 17+18: R²_vs_zero +0.022238 / +0.029105, R²_vs_mean, coefficients, and the raw/standardised Gram condition numbers (Q3b, Q4).
+5. In-sample rank IC on day 18, all-rows and non-tied, plus the constant-at-mean and shrunk-by-1e-6 comparison rows (Q4's pitfall table) -- this is the evidence for the R²_vs_zero loophole, and day 13 carries the same demonstration.
+6. A Gram-vs-dense ridge equivalence check at α ∈ {1e-6, 1, 100, 1e4} on day 18's rows, and the cross-process/cross-thread determinism hashes of the resulting coefficients and prediction array (Q3a, Q3c).
+7. The prediction-table parquet byte measurement, which used day 18's `etime`/`decision_seq` columns and a day-18-fitted `pred` column (Q1, D-07-15).
+
+Items 4-7 produced numbers that sit **inside** the range the train-internal splits (days 12-17) already establish, so nothing in the plan depends on them -- they are reported only so nobody mistakes a passing honest look for a surprise.
 
 ## Threat Register Outcomes
 

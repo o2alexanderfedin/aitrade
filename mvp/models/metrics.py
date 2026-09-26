@@ -23,11 +23,12 @@ invariant to any monotone rescaling and R-squared is not -- "scale-free
 skill versus scale-dependent skill", 07-RESEARCH.md's named pitfall -- so
 the gate is only meaningful because it requires BOTH halves AND the second
 R-squared reference. `r2_vs_mean` is the number that means "has conditional
-signal"; `r2_vs_zero` is the number D-07-18 names. They differ by exactly
-`n * y_mean**2`, because `sum((y - ybar)**2) == sum(y**2) - n * ybar**2`.
-With `ybar` tiny but nonzero and R-squared itself a couple of percent, that
-small ABSOLUTE difference is a large RELATIVE one: measured,
-`SS_mean / SS_zero = 0.9983534` and the two R-squareds are 7.8% apart.
+signal"; `r2_vs_zero` is the number D-07-18 names. Their DENOMINATORS differ
+by exactly `n * y_mean**2`, because `sum((y - ybar)**2) == sum(y**2) -
+n * ybar**2`. With `ybar` tiny but nonzero and R-squared itself a couple of
+percent, that small ABSOLUTE difference in the denominator is a large
+RELATIVE difference between the two R-squareds themselves: measured,
+`SS_mean / SS_zero = 0.9983534` and the two are 7.8% apart.
 
 `r2_vs_zero_of_constant_train_mean` is the third column that makes the
 loophole visible rather than latent, and it is computed from the TRAIN mean

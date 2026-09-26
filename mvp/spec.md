@@ -432,9 +432,10 @@ row set shared by every statistic):
 
 1. `r2_vs_zero = 1 − SSE / Σy² > 0` — the constant-ZERO predictor as the reference.
 2. `r2_vs_mean = 1 − SSE / Σ(y − ȳ)² > 0` — the ordinary R², the unconditional mean as the
-   reference. Both are reported. They differ by exactly `n·ȳ²`, and with `ȳ` tiny but nonzero the
-   small absolute difference is a large relative one: measured on 2026-09-18,
-   `SS_mean / SS_zero = 0.9983534` and the two R² are 7.8% apart.
+   reference. Both are reported. Their DENOMINATORS differ by exactly `n·ȳ²`, since
+   `Σ(y − ȳ)² = Σy² − n·ȳ²`; and with `ȳ` tiny but nonzero, that small absolute difference in the
+   denominator is a large RELATIVE difference between the two R² themselves — measured on
+   2026-09-18, `SS_mean / SS_zero = 0.9983534` and the two R² are 7.8% apart.
 3. `rank_ic_non_tied > 0`, a `scipy.stats.spearmanr` over the rows where `y != 0.0`, with
    `rank_ic_all` reported beside it.
 4. A NON-FINITE rank IC is a FAIL with its OWN message. `spearmanr` returns NaN for a constant
