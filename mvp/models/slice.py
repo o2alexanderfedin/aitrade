@@ -1144,10 +1144,34 @@ def run_slice(
     for name in DIAGNOSTIC_TARGET_NAMES:
         # D-07-10: reported alongside, never fitted. One `pred` array against
         # the other three horizons -- no extra table, no extra bytes.
+        #
+        # A DIAGNOSTIC HORIZON CAN HAVE NO SCORABLE ROW AT ALL, and that must
+        # not stop the run. `forecast_metrics` refuses a zero-row score (a
+        # correct refusal: an empty score is not a score), and a segment
+        # SHORTER than a horizon is entirely inside that label's trailing
+        # null tail -- measured on a 599-row val segment, where every row is
+        # in `ret_10min_mid`'s 600-row tail. Raising there would kill a run
+        # over a number the phase explicitly never fits on. So the scorable
+        # count is published ALWAYS and the two R-squareds only when there is
+        # something to compute them from: absent, never fabricated.
+        horizon = np.asarray(
+            val[name].fill_null(float("nan")).to_numpy(), dtype=np.float64
+        )
+        scorable = int((np.isfinite(stored_pred) & np.isfinite(horizon)).sum())
+        metrics[f"n_scorable_{name}"] = float(scorable)
+        if scorable == 0:
+            logger.warning(
+                "run_slice: diagnostic horizon %s has no row with both a "
+                "finite prediction and a finite target on this %d-row "
+                "segment -- reporting n_scorable_%s=0 and no R-squared, "
+                "rather than raising over a horizon this phase never fits on",
+                name,
+                val.height,
+                name,
+            )
+            continue
         diagnostic = forecast_metrics(
-            stored_pred,
-            np.asarray(val[name].fill_null(float("nan")).to_numpy(), dtype=np.float64),
-            train_mean=predictor.train_target_mean,
+            stored_pred, horizon, train_mean=predictor.train_target_mean
         )
         metrics[f"r2_vs_zero_{name}"] = float(diagnostic["r2_vs_zero"])
         metrics[f"r2_vs_mean_{name}"] = float(diagnostic["r2_vs_mean"])
