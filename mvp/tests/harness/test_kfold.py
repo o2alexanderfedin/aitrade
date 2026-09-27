@@ -10,7 +10,7 @@ import numpy as np
 import polars as pl
 import pytest
 from data.time_ns import LABEL_HORIZON_NS, NS_PER_SECOND
-from features.tier import load_features
+from features.tier import FEATURE_ROW_SCHEMA, load_features
 from harness.accessor import materialize
 from harness.budget import look_count
 from harness.kfold import purged_embargoed_blocks, training_rows_for_block
@@ -19,7 +19,7 @@ from harness.purge_embargo import (
     PURGE_HORIZON_NS,
     effective_train_intervals,
 )
-from harness.segments import issue_segment_manifest
+from harness.segments import UPSTREAM_DERIVATION_COLUMNS, issue_segment_manifest
 from tests.fixtures.harness_span import build_span_partition
 
 S = NS_PER_SECOND
@@ -496,3 +496,50 @@ def test_anti_vacuity_the_wide_kfold_fixture_has_no_starved_oof_block(
     counts = manifest["oof_training_row_counts"]
     assert len(counts) == BLOCK_COUNT
     assert all(count > 0 for count in counts.values()), counts
+
+
+# --------------------------------------------------------------------------
+# 07-02-PLAN.md Task 1: load_features grew a `columns` projection for the
+# segment issuer. Its DEFAULT must be the whole feature row -- the accessor and
+# every other reader depend on that, and this file is one of the six places
+# hook 17 (`tools.check_harness_accessor_only`) lets the tier be called directly
+# --------------------------------------------------------------------------
+
+
+def test_load_features_without_a_columns_argument_still_returns_the_whole_feature_row_schema(
+    lake_root, registry_root
+):
+    """`columns=None` is the default and means "everything", so no existing
+    caller changed behaviour when the parameter was added. Pins the schema by
+    NAME, ORDER and DTYPE against `FEATURE_ROW_SCHEMA` itself -- a width check
+    alone would survive a projection that returned 16 of the wrong columns.
+
+    The projected form is exercised in the same breath, on the same manifest, so
+    the two are not compared across different fixtures: asking for the issuer's
+    own two columns returns exactly those two, in the order requested, with the
+    same row count as the full read.
+    """
+    span = build_span_partition(
+        lake_root, registry_root, date="2026-09-13", start_ns=0, step_ns=S, rows=120
+    )
+    full = load_features(
+        span["manifest_id"],
+        "BTCUSDT.features",
+        registry_root=registry_root,
+        lake_root=lake_root,
+    )
+    assert dict(full.schema) == dict(FEATURE_ROW_SCHEMA)
+    assert full.columns == list(FEATURE_ROW_SCHEMA)
+    assert full.height == 120
+
+    projected = load_features(
+        span["manifest_id"],
+        "BTCUSDT.features",
+        registry_root=registry_root,
+        lake_root=lake_root,
+        columns=UPSTREAM_DERIVATION_COLUMNS,
+    )
+    assert projected.columns == list(UPSTREAM_DERIVATION_COLUMNS)
+    assert projected.height == full.height
+    for name in UPSTREAM_DERIVATION_COLUMNS:
+        assert projected[name].to_list() == full[name].to_list()

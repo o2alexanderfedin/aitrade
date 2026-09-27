@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
+
 import polars as pl
 
 from data.dq.checks import load_dq_thresholds
@@ -78,6 +80,96 @@ def test_mask_errata_cells_empty_list_is_a_no_op():
     df = _labelled_frame()
     out = mask_errata_cells(df, [])
     assert out.equals(df)
+
+
+def _decision_rows(rows: int = 2_000) -> pl.DataFrame:
+    """A decision-row-shaped frame: `etime` strictly ascending and globally
+    unique, which is what the last-row-per-`etime` rule produces on the real
+    pool (60,926,503 distinct values in 60,926,503 rows, correction C1).
+    `_labelled_frame` above deliberately repeats etimes to exercise the join
+    KEY; this one exercises the join's ORDER, and needs enough rows that a
+    reordering would be a real reordering."""
+    return pl.DataFrame(
+        {
+            "etime": pl.Series(
+                "etime",
+                [1_000_000_000 + i * 1_000 for i in range(rows)],
+                dtype=pl.Int64,
+            ),
+            "decision_seq": pl.Series("decision_seq", range(rows), dtype=pl.Int64),
+            "ret_1s_mid": pl.Series(
+                "ret_1s_mid", [0.001 * i for i in range(rows)], dtype=pl.Float64
+            ),
+            "ret_10s_mid": pl.Series(
+                "ret_10s_mid", [0.002 * i for i in range(rows)], dtype=pl.Float64
+            ),
+        }
+    )
+
+
+def test_mask_errata_cells_preserves_the_input_etime_sequence():
+    """A REGRESSION GUARD, NOT A DEMONSTRATION -- and the distinction is the
+    honest half of this test.
+
+    polars 1.41.2 documents join output order as unspecified by default
+    (`maintain_order=None` resolves to `"none"`: "the ordering might differ
+    across Polars versions or even between different runs"), and this function
+    joins on EVERY look-role frame on its way out of
+    `harness.accessor.materialize`. Phase 7 is the first consumer for which
+    that order is load-bearing: a prediction array is positional against its
+    decision rows, so a silent reorder misattributes every prediction and
+    nothing fails (D-07-31).
+
+    The order is preserved today, so THIS TEST PASSED BEFORE
+    `maintain_order="left"` was added as well as after. It does not
+    demonstrate that the one-liner works; it is what will fail if a future
+    polars release changes the default, or if someone removes the argument.
+
+    Two things it does make sensitive rather than decorative:
+
+    * the cells are REAL HITS across BOTH label columns, so the function
+      performs two sequential joins rather than returning early;
+    * the cell list is built in a SCRAMBLED order, so an implementation that
+      followed the right-hand frame's order would produce a visibly different
+      sequence rather than accidentally agreeing with the left's.
+    """
+    df = _decision_rows()
+    before_etime = df["etime"].to_numpy().copy()
+    before_seq = df["decision_seq"].to_numpy().copy()
+
+    # Scrambled on purpose (see the docstring): descending, interleaved across
+    # the two columns, and not aligned with either frame's row order.
+    hit_rows = list(range(1_900, 100, -37))
+    cells = [
+        {
+            "date": "2026-09-12",
+            "etime": int(df["etime"][row]),
+            "decision_seq": int(df["decision_seq"][row]),
+            "label_column": "ret_1s_mid" if index % 2 else "ret_10s_mid",
+        }
+        for index, row in enumerate(hit_rows)
+    ]
+
+    out = mask_errata_cells(df, cells)
+
+    assert np.array_equal(out["etime"].to_numpy(), before_etime), (
+        "mask_errata_cells reordered the frame's etime sequence -- every "
+        "prediction downstream is positional against these rows"
+    )
+    assert np.array_equal(out["decision_seq"].to_numpy(), before_seq)
+    assert out.height == df.height
+
+    # Anti-vacuity: the join really did null cells in both columns, so the
+    # order above was preserved ACROSS two joins and not across two no-ops.
+    nulled = {
+        column: out[column].null_count() for column in ("ret_1s_mid", "ret_10s_mid")
+    }
+    assert nulled["ret_1s_mid"] > 0 and nulled["ret_10s_mid"] > 0, nulled
+    assert nulled["ret_1s_mid"] + nulled["ret_10s_mid"] == len(hit_rows)
+    # ...and the values that were NOT hit are still in their own rows, which is
+    # the property a reorder would break without changing any null count.
+    untouched = [row for row in range(df.height) if row not in set(hit_rows)]
+    assert out["ret_10s_mid"][untouched[-1]] == df["ret_10s_mid"][untouched[-1]]
 
 
 def _build_ground_truth_frame(lake_root: Path, registry_root: Path) -> pl.DataFrame:

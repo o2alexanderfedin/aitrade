@@ -20,13 +20,33 @@ from tracking.mlflow_utils import build_tracking_uri
 
 
 @pytest.fixture(autouse=True)
-def isolated_canonical_tracking_root():
-    """Points the canonical MLflow store at each test's own `tmp_path`
-    through the documented env var (same posture as
-    `tests/lockbox/conftest.py`), cleared before and restored after every
-    test so one test's store can never leak into the next."""
+def isolated_canonical_tracking_root(tmp_path: Path):
+    """SETS `AIHF_MLFLOW_TRACKING_ROOT` to this test's own
+    `tmp_path/mlflow_root` for the duration of the test, and restores the
+    previous value (or its absence) afterwards.
+
+    SETS, not pops -- this used to `os.environ.pop(...)` and claim in its
+    docstring that it pointed the store at `tmp_path`. It did not. With the
+    variable ABSENT, `data.lake_paths.mlflow_tracking_root(None)` falls
+    through to `DEFAULT_MLFLOW_TRACKING_ROOT`, the REAL store at
+    /Volumes/ProjectsSSD/aihedgefund/mlflow. Only a test that explicitly
+    requested the `tracking_root` fixture below was isolated; any other test
+    that reached a canonical-root resolution resolved the real one, and
+    `_require_canonical_tracking_root` could not catch it because the real
+    root IS canonical. Measured directly before the repair: a probe test
+    requesting no fixture resolved /Volumes/ProjectsSSD/aihedgefund/mlflow;
+    after it, the `tmp_path` one.
+
+    `tmp_path/mlflow_root` is one path that EITHER this fixture or
+    `tracking_root` may create and NEITHER owns exclusively -- hence
+    `exist_ok=True` on both sides. Creating it here is deliberate: a
+    canonical root that does not exist surfaces as a confusing
+    "no existing mlflow.db" refusal rather than as isolation.
+    """
     previous = os.environ.get(MLFLOW_TRACKING_ROOT_ENV)
-    os.environ.pop(MLFLOW_TRACKING_ROOT_ENV, None)
+    root = tmp_path / "mlflow_root"
+    root.mkdir(parents=True, exist_ok=True)
+    os.environ[MLFLOW_TRACKING_ROOT_ENV] = str(root)
     try:
         yield
     finally:
@@ -63,9 +83,15 @@ def tracking_root(tmp_path: Path) -> Path:
     both refuse an uninitialised or non-canonical store before
     constructing any client, so tests that exercise the real counting
     path need a real, already-migrated store to point at (same pattern as
-    `tests/lockbox/test_token_one_look.py:_seed_tracking_db`)."""
+    `tests/lockbox/test_token_one_look.py:_seed_tracking_db`).
+
+    Same path as `isolated_canonical_tracking_root` above, which runs FIRST
+    and has already created it -- so `exist_ok=True`, not a bare `mkdir()`,
+    which would now raise `FileExistsError` in every test that asks for this
+    fixture. The directory is shared between the two fixtures and owned
+    exclusively by neither."""
     root = tmp_path / "mlflow_root"
-    root.mkdir()
+    root.mkdir(parents=True, exist_ok=True)
     MlflowClient(build_tracking_uri(str(root))).search_experiments()
     assert (root / "mlflow.db").exists()
     os.environ[MLFLOW_TRACKING_ROOT_ENV] = str(root)

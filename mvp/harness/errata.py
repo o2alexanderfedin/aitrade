@@ -283,7 +283,21 @@ def mask_errata_cells(df: pl.DataFrame, cells: list[dict]) -> pl.DataFrame:
                 "_errata_hit": [True] * len(pairs),
             }
         )
-        out = out.join(hit, on=("etime", "decision_seq"), how="left")
+        # maintain_order="left" (07-05, D-07-31). polars 1.41.2 documents the
+        # default -- `maintain_order=None`, resolving to "none" -- as: "the
+        # ordering might differ across Polars versions or even between
+        # different runs". This join runs on EVERY look-role frame on its way
+        # out of `harness.accessor.materialize`, and Phase 7 is the first
+        # consumer for which that order is load-bearing: a prediction array is
+        # positional against its decision rows, so a reordered frame
+        # misattributes every pred with nothing failing anywhere. The order
+        # holds today, measured -- this asks for it out loud instead.
+        # NOT `validate="1:1"`: that would change this Phase 5 module's
+        # refusal semantics, which is a different decision than asking for an
+        # order.
+        out = out.join(
+            hit, on=("etime", "decision_seq"), how="left", maintain_order="left"
+        )
         out = out.with_columns(
             pl.when(pl.col("_errata_hit").is_not_null())
             .then(None)

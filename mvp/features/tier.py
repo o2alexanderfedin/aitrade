@@ -508,7 +508,12 @@ def refused_dates_for(manifest: dict) -> list[str]:
 
 
 def load_features(
-    manifest_id: str, dataset: str, *, registry_root: Path, lake_root: Path
+    manifest_id: str,
+    dataset: str,
+    *,
+    registry_root: Path,
+    lake_root: Path,
+    columns: Sequence[str] | None = None,
 ) -> pl.DataFrame:
     """The features tier's own loader -- `data.store.load_curated` one tier
     over, and the only reading path into `lake/features/`.
@@ -547,6 +552,16 @@ def load_features(
     recent day never does) AND `features/date=X-1` unreadable here, because
     X-1's label tail is X's price path. It is the day BEFORE the declared
     date that carries the held-out bytes.
+
+    `columns` PROJECTS THE PARSE AND NOTHING ELSE (07-02-PLAN.md Task 1). All
+    four gates above run first and unchanged -- integrity over the WHOLE file
+    bytes, the holdout refusal, the DQ pause, provenance logging -- and only
+    then does `read_verified_partitions` decide how much of the already-verified
+    buffer to turn into columns. `None` (the default) returns the entire
+    `FEATURE_ROW_SCHEMA`, so `harness.accessor.materialize` and every other
+    existing caller is byte-for-byte unchanged; a caller that genuinely reads
+    two of sixteen columns (`harness.segments`' issuance-time derivations) may
+    ask for two and stop paying for the other fourteen.
     """
     manifest = store.resolve_manifest(
         manifest_id,
@@ -569,5 +584,7 @@ def load_features(
         manifest, registry_root=registry_root, lake_root=lake_root
     )
     store._log_provenance(manifest, acks)
-    frames = store.read_verified_partitions(manifest, lake_root=Path(lake_root))
+    frames = store.read_verified_partitions(
+        manifest, lake_root=Path(lake_root), columns=columns
+    )
     return pl.concat(frames, how="vertical")

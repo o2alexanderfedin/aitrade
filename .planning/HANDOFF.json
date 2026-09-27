@@ -1,60 +1,61 @@
 {
-  "version": "1.0",
-  "timestamp": "2026-09-19T19:22:36.191Z",
-  "phase": "4",
-  "phase_name": "feature-label-engine",
-  "phase_dir": ".planning/phases/04-feature-label-engine",
-  "plan": 7,
-  "task": 7,
-  "total_tasks": 7,
-  "status": "phase_complete_merged",
-  "completed_tasks": [
-    {"id": 1, "name": "04-01 merged event stream, decision-row rule, ns constant module", "status": "done", "commit": "946f95d"},
-    {"id": 2, "name": "04-02 lake/features tier, load_features, holdout refusal, feature DQ", "status": "done", "commit": "6eeab5f"},
-    {"id": 3, "name": "04-03 numba kernel (mid, imb_top, ofi, trade_flow) + pure-Python reference", "status": "done", "commit": "96dd371"},
-    {"id": 4, "name": "04-04 labels at four horizons, backward as-of, day-boundary refusal", "status": "done", "commit": "31d4449"},
-    {"id": 5, "name": "04-05 real build of 2026-09-12/13/14 into the features tier", "status": "done", "commit": "cffb1ac"},
-    {"id": 6, "name": "04-06 FEAT-03 leakage suite as a named CI gate + embargo assertion", "status": "done", "commit": "65f4aeb"},
-    {"id": 7, "name": "04-07 one entry point, three call sites byte-identical, train-only normalization", "status": "done", "commit": "f399a1e"},
-    {"id": 8, "name": "04 verification 5/5 + code review (1 critical, 7 warning) + full fix pass", "status": "done", "commit": "d9594b7"},
-    {"id": 9, "name": "Phase 4 merged to develop, branch deleted, CI green", "status": "done", "commit": "7b89e44"}
+  "status": "paused_at_checkpoint",
+  "created": "2026-09-27T07:12:00Z",
+  "phase": "07-regression-track-vertical-slice",
+  "plan": "07-10 (wave 8) not started",
+  "task": 0,
+  "total_tasks": 2,
+  "branch": "feature/phase-07-regression-track-vertical-slice",
+  "head": "42305ce",
+  "pushed": true,
+  "uncommitted_files": [],
+  "next_action": "Present the wave-8 checkpoint to the user and WAIT. 07-10 spends 5 of the 6 irreversible looks on the approved segment manifest 807125015b252014ad8ee5282a21b2eccbfe01a287122cce5512ec9885aa3548 (budget_allowance 3 for val, five OOF blocks). It must not be launched autonomously.",
+  "why_paused": "Nine of eleven plans are done and all of it is reversible. Waves 8 and 9 are not: they spend looks that cannot be un-spent. The prior session stopped here on purpose rather than begin look-spending work on an exhausted context.",
+  "verified_by_running_not_reading": {
+    "suite": "1372 passed in 247.80s (own run, 2026-09-27)",
+    "look_counters": "all 16 (2 committed segment manifests x 8 names, 12 look-bearing) read 0, queried twice against the real store at /Volumes/ProjectsSSD/aihedgefund/mlflow",
+    "dq_preflight_on_real_manifests": "([], []) -- all seven days 2026-09-12..18 read ok; zero materialize calls, proven with a spy on every BOUND name plus a positive control",
+    "hooks": "18 at pre-commit stage + check_no_manifest_rewrite --full at pre-push, all passed; --no-verify never used"
+  },
+  "wave_8_scope": [
+    "Build the REAL normalization artifact at the derived train_end (2026-09-16 for the approved manifest; derived by select_train_day_manifests over the ns clock, never typed as a literal).",
+    "Spend the five OOF looks via --select (oof_block_0..4). This is the irreversible part.",
+    "Freeze the winner and commit the frozen body TOGETHER WITH the lake_registry/predictors/ guardrail extension in ONE commit -- 07-09 deliberately created no body outside tmp_path so that these land together."
   ],
-  "remaining_tasks": [
-    {"id": 10, "name": "Phase 5: Fold Harness & Overfitting Controls (discuss -> plan -> execute)", "status": "not_started"}
+  "wave_9_scope": [
+    "The ONE honest val look (--spend-val-look).",
+    "The stored prediction table, ~190 MiB (12.167 B/row x 16,294,059 admitted val rows -- the rate was right and the row count wrong in the first two estimates; this is the third and measured one).",
+    "The simulator run and the disclosure block."
   ],
-  "blockers": [
-    {
-      "description": "Capture daemon PID 72546 still runs the pre-fix source: the battery-sleep probe that reads `pmset -g custom` (which never prints `disablesleep`, so it can only ever warn falsely) and the wall-clock segment stamp. Both fixes are merged but take effect only at the next restart.",
-      "type": "human_action",
-      "workaround": "None needed operationally -- capture itself is healthy. The cost is a permanently false SLEEP RISK warning in the log and in `__power__` gap-ledger rows."
-    },
-    {
-      "description": "249 labels already written to lake/features are fabricated zeros from the pre-fix staleness rule (180 ret_1s_mid, 69 ret_10s_mid; 0 at 1min/10min). Partitions are write-once.",
-      "type": "technical",
-      "workaround": "A rebuild under a NEW manifest is Phase 5's call; the existing partitions must not be rewritten."
-    },
-    {
-      "description": "A held-out day's feature BYTES stay readable by a bare `read_parquet`. `load_features` refuses the code path, not the bytes -- one barrier where Phase 3's lockbox had two.",
-      "type": "technical",
-      "workaround": "Phase 5's holdout-declaration step must MOVE or DELETE the partition for the day BEFORE the declared date -- that is the one whose label tail carries the held-out prices, not the declared date's own partition."
-    }
+  "blockers": [],
+  "known_residue": [
+    "--freeze and --resume-from-cache do NOT get the DQ pre-flight, as scoped. Neither can spend a look (record_look appears in models/ and scripts/ only as docstring prose; materialize_once returns on the cache hit before reaching materialize), so the price is a LATE refusal at step 9, not a spent budget. The user has not been asked to decide this yet.",
+    "_dq_verdict_for_date has never run against a real non-ok day -- no such day exists. Every refusal is proven on synthetic tmp_path reports only.",
+    "data/dq/report.py and data/dq/feature_checks.py were not read; a producer/consumer shape mismatch would go unnoticed.",
+    "The ack-sha-conflict refusal inside dq_preflight is covered by no test.",
+    "tests/lockbox/conftest.py still POPS AIHF_MLFLOW_TRACKING_ROOT instead of setting it (deferred at 07-01 D1; its docstring is honest and no look flows through it).",
+    "STATE.md's Performance Metrics table has no row for 07-02.",
+    "FCST-01 and FCST-04 stay Pending on purpose: a slice that runs on a synthetic fixture is the mechanism, not the requirement."
   ],
   "human_actions_pending": [
-    {
-      "action": "Approve a capture-daemon restart (kill -TERM 72546, then relaunch per the documented command)",
-      "context": "Picks up the fixed `pmset -g live` power probe and the monotonic segment stamp. Costs ~3s of capture; the daemon resumes `seq` from its sidecar. Never restart without explicit approval -- Binance L1 is not backfillable.",
-      "blocking": false
-    }
+    "Approve (or decline) a capture-daemon relaunch. It has been stopped since the 2026-09-19 reboot and the user declined a relaunch once.",
+    "Remove /Library/LaunchDaemons/com.aihedgefund.disablebatterysleep.plist (must NOT be reinstalled).",
+    "Decide whether --freeze/--resume-from-cache should also get the DQ pre-flight."
   ],
-  "decisions": [
-    {"decision": "Static source scanners are defense-in-depth; runtime/data invariants carry the correctness guarantee", "rationale": "Three review rounds in Phase 3 each closed the reviewer's exact reproduction and the next reviewer found another spelling. Convergence came only after declaring the data gates load-bearing. The user later asked for the static classes to be closed anyway, and they were -- but the ordering stands.", "phase": "3"},
-    {"decision": "Battery sleep is held by a LaunchDaemon, not a one-shot command", "rationale": "`pmset -b disablesleep 1` applied by hand on 09-17 had reset itself to 0 by 09-19 with no reboot; 14.17h of irreplaceable L1 was lost over 34 outages in three days. The daemon re-asserts every 300s. Proved: flipped to 0, restored after ~195s.", "phase": "3"},
-    {"decision": "The feature tier refuses a held-out date at BOTH the write and the read, and the refusal covers day D when D+1 is held out", "rationale": "Day D's 10-minute label tail stores D+1's prevailing mids; `mid_t * (1 + ret_10min_mid)` reconstructs them to 1.5e-11 USDT. Without the D+1 rule the feature tier would hand back exactly what the lockbox withholds.", "phase": "4"},
-    {"decision": "trade_flow accumulates in int64, not float64", "rationale": "With a float64 running sum, changing the same-etime tie order changes trade_flow on 95% of decision rows (float addition is not associative). In int64 the result is bit-identical under either tie order, so reproducibility stops depending on the merge convention. int64 also measured 6% faster.", "phase": "4"},
-    {"decision": "Label staleness is bounded by the horizon itself (no quote in (t, t+h]), not by one absolute 30s threshold", "rationale": "One absolute threshold served horizons of 1s and 10s alike, so a silence up to 3x the primary horizon produced a finite 0.0 from a carried-forward price. The horizon-relative bound needs no config and avoids the opposite error a per-horizon table introduces.", "phase": "4"},
-    {"decision": "Every invariance property needs an anti-vacuity counterpart", "rationale": "A constant-returning feature passes both shuffle-invariance properties -- a constant genuinely cannot see the future. Only a sensitivity assertion catches the stub.", "phase": "4"}
+  "safety_constraints_still_in_force": [
+    "Work ONLY from /Volumes/ProjectsSSD/aihedgefund/repo and cd there in EVERY Bash call. The OneDrive path is a stale dehydrated copy that HANGS on read.",
+    "/Volumes/ProjectsSSD/aihedgefund/capture/ is READ-ONLY. Never start, signal or restart the capture daemon.",
+    "Never install LaunchDaemons/LaunchAgents or change pmset without the user's explicit per-change approval.",
+    "Write-once: curated/raw partitions, committed manifest bodies, v1 and v2 feature partitions, the normalization artifact, and the three committed registry bodies. A wrong build is corrected by a NEW manifest, never by rewriting bytes.",
+    "Never launch long-lived processes with `uv run` (holds ~/.cache/uv/.lock); use ./.venv/bin/python3 and ./.venv/bin/pytest from mvp/.",
+    "Never pass --no-verify. Guardrail commands must be byte-identical between .pre-commit-config.yaml entry: and .github/workflows/ci.yml run:.",
+    "Export NUMBA_CACHE_DIR=/tmp/nbc for any bare python3 that imports the numba kernel.",
+    "NEVER call harness.accessor.materialize against the real lake or the real mlflow store outside a deliberate, user-approved look.",
+    "torch must never enter mvp/.venv. TimesFM lives at /Volumes/ProjectsSSD/aihedgefund/timesfm/ with its own .venv, gitignored.",
+    "A DQ acknowledgement is a human decision -- agents never write one.",
+    "Commit messages end with EXACTLY: Co-Authored-By: AI Hive(R) <sales@hupyy.com> / Claude-Session: https://claude.ai/code/session_01RCuyRej4LNRLXQnszUC9Ho",
+    "Executors must commit each task as they finish it -- two were killed by a stall watchdog while accumulating uncommitted work.",
+    "gsd-sdk query state.add-blocker silently OVERWRITES STATE.md's stopped_at. Read it first and restore, or hand-edit."
   ],
-  "uncommitted_files": [],
-  "next_action": "Run `/gsd-autonomous --from 5` in a FRESH session (`/clear` first). Phase 5 is Fold Harness & Overfitting Controls: 5-segment walk-forward with embargo, compressed 3-segment + OOF fallback, selection-bias budget in MLflow, negative-result log. Its discuss step must confront the four carry-forwards in `blockers` plus the 43.89% zero mass in the primary label.",
-  "context_notes": "Clean phase boundary: develop is at 7b89e44, working tree clean, 953 tests green, CI green, no feature branches open. Phases 1-4 complete and merged. Phase 5 has not been discussed or planned. Everything runs from /Volumes/ProjectsSSD/aihedgefund/repo -- the OneDrive checkout is dehydrated and must never be read or written."
+  "context_notes": "The most consequential finding of the phase was a BOOKKEEPING TAG THAT SPENT THE BUDGET: harness.budget.look_count matches (segment_manifest_id, segment_name) across EVERY experiment, and segment_manifest_id is a mandatory tag, so a run tagged segment_name=\"val\" IS a counted look. Measured: look_count(val) read 2 after one honest look and 3 after a cache-only re-invocation. The key is now scored_segment_name. Any new tracked run must not carry segment_name unless it IS a look. Second: a frozen predictor body is located by the recipe MINUS code_hash, because the freeze runs at a later commit than the select by design. Third: etime is globally unique and strictly sorted across all 60,926,503 decision rows, so the join key is etime alone -- decision_seq is NOT unique. Fourth: never pin a coefficient or prediction digest as a committed constant -- numpy links Apple Accelerate here and OpenBLAS in CI."
 }

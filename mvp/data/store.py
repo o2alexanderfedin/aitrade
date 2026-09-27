@@ -46,6 +46,7 @@ import re
 import subprocess
 import time
 import unicodedata
+from collections.abc import Sequence
 from pathlib import Path
 
 import polars as pl
@@ -96,6 +97,18 @@ FEATURES_TIER = "features"
 #: file; it is deliberately NOT in `BY_DATE_INDEXED_TIERS` -- a
 #: normalization artifact belongs to a fold, not to a date.
 FEATURES_NORM_TIER = "features_norm"
+
+#: The stored-prediction tier (07-CONTEXT.md D-07-26), read by
+#: `models.predictions.load_prediction_table` and by nothing else. Named
+#: here alongside its siblings so the plan that uses it never has to edit
+#: this file; it is deliberately NOT in `BY_DATE_INDEXED_TIERS` -- a
+#: prediction table belongs to a `(segment_manifest, segment, predictor)`
+#: triple, exactly as a normalization artifact belongs to a fold, not to a
+#: date. A caller of `issue_manifest` for this tier must therefore pass
+#: `dates=[]` EXPLICITLY: `covered_dates` is computed from `p["date"]`
+#: before the tier is consulted, and this tier's partition entries carry
+#: no `date` key at all.
+PREDICTIONS_TIER = "predictions"
 
 #: Tiers whose manifests get a by-date `(dataset, symbol, stream, date)`
 #: pointer. Everything else is addressable by `manifest_id` only.
@@ -1041,7 +1054,9 @@ def _log_provenance(manifest: dict, acks: list[tuple[str, str]]) -> None:
     )
 
 
-def read_verified_partitions(manifest: dict, *, lake_root: Path) -> list[pl.DataFrame]:
+def read_verified_partitions(
+    manifest: dict, *, lake_root: Path, columns: Sequence[str] | None = None
+) -> list[pl.DataFrame]:
     """Read each of `manifest`'s partitions ONCE, verify the sha256 of THOSE
     bytes, and parse the DataFrame out of the same buffer.
 
@@ -1054,6 +1069,18 @@ def read_verified_partitions(manifest: dict, *, lake_root: Path) -> list[pl.Data
     The cost is one extra read of each partition relative to
     `resolve_manifest`'s own verification pass (largest real partition: 516
     MiB), which is the price of the two hashes being over the same bytes.
+
+    `columns` NARROWS THE PARSE, NEVER THE BYTES THAT ARE HASHED (07-02-PLAN.md
+    Task 1). `path.read_bytes()` still reads the WHOLE file and
+    `hashlib.sha256(buffer)` still hashes ALL of it, BEFORE `pl.read_parquet`
+    touches the buffer -- so IN-10's guarantee (the verified bytes and the
+    returned rows come from one buffer) holds identically whether one column is
+    parsed out of it or sixteen. What a projection buys is memory: the caller
+    that only filters on `etime` no longer materializes fifteen float64 columns
+    it will never read (`harness.segments` measured 19.35 GiB -> a few GiB).
+    `None` (the default) parses every column, so every pre-existing caller is
+    byte-for-byte unchanged. A name not present in the file raises out of
+    polars rather than yielding a silently missing column.
     """
     frames: list[pl.DataFrame] = []
     for part in manifest["partitions"]:
@@ -1062,7 +1089,12 @@ def read_verified_partitions(manifest: dict, *, lake_root: Path) -> list[pl.Data
         digest = hashlib.sha256(buffer).hexdigest()
         if digest != part["sha256"]:
             raise ManifestHashMismatch(str(path), part["sha256"], digest)
-        frames.append(pl.read_parquet(io.BytesIO(buffer)))
+        frames.append(
+            pl.read_parquet(
+                io.BytesIO(buffer),
+                columns=list(columns) if columns is not None else None,
+            )
+        )
     return frames
 
 

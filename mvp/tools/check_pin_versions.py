@@ -1,4 +1,4 @@
-"""CI-callable guardrail: assert numba/numpy/llvmlite pins and pandas absence
+"""CI-callable guardrail: assert the PINNED_PREFIXES pins and pandas absence
 against a uv.lock-shaped TOML file.
 
 Invoked as `uv run --directory mvp python -m tools.check_pin_versions` (process
@@ -21,10 +21,21 @@ from pathlib import Path
 
 PKG_ROOT = Path(__file__).resolve().parents[1]
 
+#: The first three are the load-bearing triple pin: numba 0.65 hard-pins
+#: `numpy>=1.22,<2.5` and `llvmlite>=0.47,<0.48`, so any one of them moving
+#: alone breaks every `@njit` import.
+#:
+#: `scikit-learn` (Phase 7, D-07-28) is here for a different reason: CLAUDE.md's
+#: mandated stack names the 1.9 line, and this guardrail is where a mandate
+#: becomes mechanical rather than prose. Deliberately NOT extended to the
+#: transitive closure it drags in (scipy, joblib, narwhals, threadpoolctl) --
+#: CLAUDE.md pins none of them, and pinning them here would turn a routine
+#: `uv lock` refresh into a guardrail failure.
 PINNED_PREFIXES: dict[str, str] = {
     "numba": "0.65",
     "numpy": "2.4",
     "llvmlite": "0.47",
+    "scikit-learn": "1.9",
 }
 
 BANNED_PACKAGES: frozenset[str] = frozenset({"pandas"})
@@ -102,7 +113,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"FAIL: {exc}")
         return 1
 
-    print(f"PASS: {lock_path} pins match numba/numpy/llvmlite; pandas absent")
+    pinned = "/".join(PINNED_PREFIXES)
+    print(f"PASS: {lock_path} pins match {pinned}; pandas absent")
     return 0
 
 

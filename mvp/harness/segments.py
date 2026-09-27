@@ -40,13 +40,14 @@ from __future__ import annotations
 
 import itertools
 import json
+from collections.abc import Sequence
 from pathlib import Path
 
 import polars as pl
 
 from data import store
 from data.store import FEATURES_TIER, compute_manifest_id
-from features.tier import load_features
+from features.tier import FEATURE_ROW_SCHEMA, load_features
 from harness import budget, kfold, row_admission
 from harness.purge_embargo import (
     FOLD_EMBARGO_NS,
@@ -57,6 +58,7 @@ from harness.purge_embargo import (
 __all__ = [
     "FIVE_SEG_NAMES",
     "FIVE_SEG_ROLES",
+    "UPSTREAM_DERIVATION_COLUMNS",
     "issue_segment_manifest",
     "segment_manifest_path",
     "read_segment_manifest",
@@ -164,26 +166,86 @@ def _validate_compressed_3seg_shape(segments: list[dict]) -> None:
         )
 
 
+#: The column union issuance's derivations actually read -- TWO of
+#: `features.tier.FEATURE_ROW_SCHEMA`'s sixteen (07-02-PLAN.md Task 1,
+#: re-derived from the five functions below rather than guessed):
+#:
+#: - `etime`     -- every entry slice (`_derive_admission_counts`), every
+#:                  purge/embargo filter and its `.to_list()` loop
+#:                  (`_derive_purge_embargo_fields`), and
+#:                  `harness.kfold.training_rows_for_block` ->
+#:                  `harness.purge_embargo.filter_train_rows`, which filters on
+#:                  `etime` and returns `.height`.
+#: - `decision_source_rank` -- `harness.row_admission.stale_book_age_ns`'s
+#:                  "0 means quote" test, the only non-`etime` column any
+#:                  derivation reads. `apply_admission_policy` then reads the
+#:                  `stale_book_age_ns` column that produced, plus `.height`.
+#:
+#: Everything else the derivations do is `etime` filtering and row counting,
+#: and `.height` is column-independent -- which is why this projection leaves
+#: every derived value BIT-IDENTICAL (asserted, on fixture data, by
+#: `tests/harness/test_segments.py::test_a_projected_upstream_load_derives_
+#: every_field_identically_to_a_full_column_load`, including the resulting
+#: `manifest_id`) while cutting 101.28 bytes/row to 9.
+#:
+#: ANYONE ADDING A DERIVATION THAT READS A THIRD COLUMN MUST WIDEN THIS TUPLE.
+#: It is not a hint: `_load_upstream_frame` asserts the loaded frame's schema is
+#: EXACTLY this projection, so a new derivation reaching for `mid` or a label
+#: gets a polars ColumnNotFound, never a silently absent column. Widen it here,
+#: and re-run the bit-identity test -- it compares against a full-width load,
+#: so it catches a union that is too narrow the moment the derivation uses it.
+UPSTREAM_DERIVATION_COLUMNS: tuple[str, ...] = ("etime", "decision_source_rank")
+
+
 def _load_upstream_frame(
     upstream_feature_manifest_ids: list[str],
     *,
     symbol: str,
     registry_root: Path,
     lake_root: Path,
+    columns: Sequence[str] | None,
 ) -> pl.DataFrame:
     """The single concatenated upstream frame every derivation below reads
     (05-07-PLAN.md Task 2: loaded ONCE per `issue_segment_manifest` call
     and threaded through `_derive_purge_embargo_fields`,
     `_derive_oof_training_row_counts` and `_derive_admission_counts` --
-    was three separate loads of the same ~22M rows before this revision)."""
+    was three separate loads of the same ~22M rows before this revision).
+
+    `columns` IS REQUIRED, never defaulted: issuance passes
+    `UPSTREAM_DERIVATION_COLUMNS` (see that constant for which derivation needs
+    each of the two, and for the rule about adding a third). `None` means the
+    whole `FEATURE_ROW_SCHEMA`, which is what the bit-identity test loads to
+    prove the projection changes no derived value. Naming it at every call site
+    is the point -- a default would let a future caller inherit a projection it
+    never reasoned about.
+
+    Asserts the loaded schema is EXACTLY what was requested, in order and dtype:
+    a projection that silently came back wider (or narrower, or reordered) would
+    make every memory claim here unfalsifiable."""
     dataset = f"{symbol}.{FEATURES_TIER}"
     frames = [
         load_features(
-            manifest_id, dataset, registry_root=registry_root, lake_root=lake_root
+            manifest_id,
+            dataset,
+            registry_root=registry_root,
+            lake_root=lake_root,
+            columns=columns,
         )
         for manifest_id in upstream_feature_manifest_ids
     ]
-    return pl.concat(frames, how="vertical")
+    df = pl.concat(frames, how="vertical")
+    expected = (
+        dict(FEATURE_ROW_SCHEMA)
+        if columns is None
+        else {name: FEATURE_ROW_SCHEMA[name] for name in columns}
+    )
+    if dict(df.schema) != expected:
+        raise AssertionError(
+            "_load_upstream_frame: the upstream frame's schema is not the "
+            f"projection that was requested: got {dict(df.schema)}, expected "
+            f"{expected}"
+        )
+    return df
 
 
 def _derive_oof_training_row_counts(
@@ -528,6 +590,15 @@ def _derive_purge_embargo_fields(segments: list[dict], df: pl.DataFrame) -> dict
             if other["name"] != entry["name"]
             and other["role"] in _PURGE_EMBARGO_OTHER_ROLES
         ]
+        # `.to_list()` materializes ~1.7 GB of Python ints for a 44.5M-row
+        # train entry, and the `any()` loop below is the dominant runtime cost
+        # (121 s measured). DELIBERATELY LEFT ALONE (07-02-PLAN.md Task 1): it
+        # is a TRANSIENT that peaks here, before `df_with_age` exists, so it
+        # never stacks with the wide frames that made the full-width load 19.35
+        # GiB -- and with the upstream load projected to two columns the total
+        # lands far enough under the bar that vectorising this would be a
+        # rewrite of working, purge-precedence-correct code for no measured
+        # gain. Revisit only if a pool several times this one moves the peak.
         entry_etimes = df.filter(
             (pl.col("etime") >= entry["start_ns"]) & (pl.col("etime") < entry["end_ns"])
         )["etime"].to_list()
@@ -670,12 +741,20 @@ def issue_segment_manifest(
 
     # Loaded ONCE (05-07-PLAN.md Task 2: was three separate loads of the
     # same ~22M rows across the purge/embargo, oof-training-count and
-    # admission-count derivations below) and shared across all three.
+    # admission-count derivations below) and shared across all three -- and
+    # PROJECTED to the two columns those three actually read (07-02-PLAN.md
+    # Task 1; see `UPSTREAM_DERIVATION_COLUMNS`). The projection is why a
+    # 60.9M-row pool fits on a machine somebody is working on: the full-width
+    # load measured 19.35 GiB peak, and every term that amplified it -- the
+    # seven parsed frames, `df_with_age` alongside `df`, and the nine slices of
+    # `df_with_age` below, of which `train` alone is 44.5M of 60.9M rows -- is
+    # proportional to the row WIDTH, not to the algorithm.
     df = _load_upstream_frame(
         upstream_feature_manifest_ids,
         symbol=symbol,
         registry_root=registry_root,
         lake_root=lake_root,
+        columns=UPSTREAM_DERIVATION_COLUMNS,
     )
 
     derived = _derive_purge_embargo_fields(segments, df)

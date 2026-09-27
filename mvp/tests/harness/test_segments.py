@@ -13,6 +13,7 @@ import json
 
 import pytest
 from data.time_ns import NS_PER_SECOND
+from features.tier import FEATURE_ROW_SCHEMA
 from harness import segments as segments_module
 from harness.budget import BudgetError, record_look
 from harness.purge_embargo import (
@@ -695,3 +696,187 @@ def test_read_segment_manifest_refuses_a_body_whose_manifest_id_field_disagrees(
 
     with pytest.raises(ValueError, match="hash mismatch"):
         read_segment_manifest(registry_root, manifest_id)
+
+
+# --------------------------------------------------------------------------
+# 07-02-PLAN.md Task 1: the upstream load is PROJECTED to the two columns the
+# derivations read, and every derived value -- including the manifest_id, which
+# is a hash over the whole canonicalised body -- is bit-identical to the
+# full-width load it replaces
+# --------------------------------------------------------------------------
+
+#: The compressed_3seg geometry `test_a_projected_upstream_load_...` issues,
+#: copied from `tests/harness/test_kfold.py`'s own compressed_3seg fixture
+#: (3000s train / 5 blocks == 600s each == PURGE_HORIZON_NS) rather than this
+#: file's 5seg widths, because `oof_training_row_counts` -- one of the derived
+#: fields being compared -- only exists on compressed_3seg.
+C3_TRAIN_WIDTH_NS = 3_000 * S
+C3_VAL_WIDTH_NS = 600 * S
+C3_HELD_OUT_WIDTH_NS = 600 * S
+C3_BLOCK_COUNT = 5
+C3_ROWS = 4_500
+
+#: A quote every 10th row after 5 leading trade rows, so the projected column
+#: `decision_source_rank` genuinely drives something: the 5 leading rows have no
+#: prior quote (undefined age) and, at 1 row/second, the 4 trades 6-9s after
+#: each quote are stale under a 5s `max_age_ns`. An all-quote span (this
+#: fixture's default) would make every admission count 0 and the comparison
+#: below vacuous in the one dimension the second projected column controls.
+C3_LEADING_TRADE_ROWS = 5
+C3_QUOTE_EVERY = 10
+C3_MAX_AGE_NS = 5 * S
+
+
+def _c3_decision_source_ranks(rows: int) -> list[int]:
+    ranks = [1] * rows
+    for i in range(C3_LEADING_TRADE_ROWS, rows, C3_QUOTE_EVERY):
+        ranks[i] = 0
+    return ranks
+
+
+def _c3_segments() -> list[dict]:
+    val_start = C3_TRAIN_WIDTH_NS
+    held_out_start = val_start + C3_VAL_WIDTH_NS
+    return [
+        {"name": "train", "role": "train", "start_ns": 0, "end_ns": C3_TRAIN_WIDTH_NS},
+        {
+            "name": "val",
+            "role": "val",
+            "start_ns": val_start,
+            "end_ns": held_out_start,
+        },
+        {
+            "name": "held_out",
+            "role": "held_out",
+            "start_ns": held_out_start,
+            "end_ns": held_out_start + C3_HELD_OUT_WIDTH_NS,
+        },
+    ]
+
+
+#: Every field `issue_segment_manifest` DERIVES from the upstream frame -- the
+#: exact set a projection could break. `segments` carries the per-entry
+#: `admission.counts`' sibling geometry but is caller-declared, so it is
+#: compared too (cheaply) via the whole-body equality at the end.
+C3_DERIVED_FIELDS = (
+    "effective_intervals",
+    "purge_ns",
+    "embargo_ns",
+    "purged_row_count",
+    "embargoed_row_count",
+    "oof_training_row_counts",
+)
+
+
+def test_a_projected_upstream_load_derives_every_field_identically_to_a_full_column_load(
+    lake_root, registry_root, tracking_root, monkeypatch
+):
+    """The acceptance criterion for 07-02's memory fix: issuance now reads 2 of
+    `FEATURE_ROW_SCHEMA`'s 16 columns, and that must change NOTHING it produces.
+
+    Issues the SAME compressed_3seg layout over the SAME fixture partition
+    twice -- once as shipped (projected to `UPSTREAM_DERIVATION_COLUMNS`), once
+    with `_load_upstream_frame` forced to `columns=None` (the full width it used
+    before) -- and compares every derived field, then the whole body, then the
+    `manifest_id`. Equal ids are the strongest single assertion available: the
+    id is a sha256 over the canonicalised body, so it cannot agree while any
+    byte of any derived value disagrees.
+
+    ANTI-VACUITY, and it is the part that matters. A spy records the WIDTH of
+    the frame each issuance actually loaded; the two must be 2 and 16. Without
+    that, this test would happily pass while comparing a thing to itself -- a
+    projection that silently did nothing, or a monkeypatch that silently failed
+    to take, both look like agreement.
+    """
+    span = build_span_partition(
+        lake_root,
+        registry_root,
+        date="2026-09-13",
+        start_ns=0,
+        step_ns=S,
+        rows=C3_ROWS,
+        decision_source_ranks=_c3_decision_source_ranks(C3_ROWS),
+    )
+
+    original_load = segments_module._load_upstream_frame
+    force_full_width = {"on": False}
+    widths: list[int] = []
+
+    def spy(ids, *, symbol, registry_root, lake_root, columns):
+        frame = original_load(
+            ids,
+            symbol=symbol,
+            registry_root=registry_root,
+            lake_root=lake_root,
+            columns=None if force_full_width["on"] else columns,
+        )
+        widths.append(frame.width)
+        return frame
+
+    monkeypatch.setattr(segments_module, "_load_upstream_frame", spy)
+
+    def issue():
+        return issue_segment_manifest(
+            layout="compressed_3seg",
+            segments=_c3_segments(),
+            upstream_feature_manifest_ids=[span["manifest_id"]],
+            admission={
+                "policy": "stale_book",
+                "max_age_ns": C3_MAX_AGE_NS,
+                "exclude_undefined_age": True,
+            },
+            errata_id=None,
+            budget_allowance=1,
+            fold_config_reason=(
+                "test fixture: compressed_3seg, issued twice to compare a "
+                "projected upstream load against a full-column one"
+            ),
+            symbol="BTCUSDT",
+            version=1,
+            code_hash="deadbeef",
+            registry_root=registry_root,
+            lake_root=lake_root,
+            tracking_root=str(tracking_root),
+            k=C3_BLOCK_COUNT,
+        )
+
+    projected = issue()
+    force_full_width["on"] = True
+    full_width = issue()
+
+    # --- anti-vacuity: the two loads really were different widths ---
+    assert widths == [2, 16], (
+        "the two issuances did not load different column counts -- expected "
+        f"[2, 16] (projected, then full FEATURE_ROW_SCHEMA), got {widths}; "
+        "every comparison below would be a thing against itself"
+    )
+    assert tuple(segments_module.UPSTREAM_DERIVATION_COLUMNS) == (
+        "etime",
+        "decision_source_rank",
+    )
+    assert len(FEATURE_ROW_SCHEMA) == 16
+
+    # --- anti-vacuity: the admission counts being compared are not all zero ---
+    projected_counts = projected["admission"]["counts"]
+    assert projected_counts["train"]["excluded_undefined"] == C3_LEADING_TRADE_ROWS
+    assert projected_counts["train"]["excluded_stale"] > 0
+    assert projected_counts["train"]["admitted"] > 0
+    assert projected["purged_row_count"]["train"] > 0
+
+    # --- every derived field, one at a time (a readable failure) ---
+    full_counts = full_width["admission"]["counts"]
+    assert sorted(projected_counts) == sorted(full_counts)
+    for name in projected_counts:
+        assert projected_counts[name] == full_counts[name], (
+            f"admission.counts[{name!r}] differs between a projected and a "
+            f"full-column load: {projected_counts[name]} vs {full_counts[name]}"
+        )
+    for field in C3_DERIVED_FIELDS:
+        assert projected[field] == full_width[field], (
+            f"derived field {field!r} differs between a projected and a "
+            f"full-column load: {projected[field]!r} vs {full_width[field]!r}"
+        )
+
+    # --- and the whole body, and the id that hashes it ---
+    assert projected == full_width
+    assert projected["manifest_id"] == full_width["manifest_id"]
