@@ -97,7 +97,24 @@ fi
 export VIRTUAL_ENV="$ROOT/.venv"
 
 echo "== install timesfm[torch] =="
-uv pip install --python "$ROOT/.venv/bin/python" "timesfm[torch]" huggingface_hub 2>&1 | tail -20
+# A failure here naming a missing file under ~/.cache/uv is a CORRUPT CACHE ENTRY,
+# not a broken dependency -- measured once on this machine: one entry of 274 had
+# lost its METADATA while its siblings were intact. The error uv prints
+# ("failed to open file .../<pkg>.dist-info/METADATA") gives no hint of that, so
+# say it here rather than leaving the operator to guess.
+if ! uv pip install --python "$ROOT/.venv/bin/python" "timesfm[torch]" huggingface_hub 2>&1 | tail -20; then
+  cat >&2 <<'HINT'
+
+error: the package install failed.
+If the message above names a file that does not exist under ~/.cache/uv, one
+cached package is corrupt. Evict just that one and re-run -- do not clear the
+whole cache:
+  uv cache clean <package-name>        # e.g. uv cache clean setuptools
+Re-running this script is safe: it reuses the venv and any weights already
+fetched, so nothing is downloaded twice.
+HINT
+  exit 4
+fi
 
 echo "== versions =="
 "$ROOT/.venv/bin/python" - <<'PY'
