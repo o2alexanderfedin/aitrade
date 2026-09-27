@@ -16,9 +16,11 @@ the one that was missing:
 
 1. THE PRE-FLIGHT SPENDS NOTHING. `materialize_once` is wrapped in a counter
    and must be called ZERO times when the pre-flight refuses.
-2. THE PRE-FLIGHT REFUSES AT ALL. `test_preflight_refuses_a_failed_day_*`
-   fails against the pre-07-09-GAP code for the interesting reason: the old
-   collector returned `[]` and the CLI printed `OK`.
+2. THE PRE-FLIGHT REFUSES AT ALL. `test_preflight_reads_the_last_upstream_
+   manifest_not_only_the_first` and
+   `test_an_uncommitted_acknowledgement_does_not_satisfy_the_preflight` both go
+   red against the pre-07-09-GAP code for the interesting reason: the old
+   collector returned `[]` rather than raising, so the CLI printed `OK`.
 
 THE LAST UPSTREAM MANIFEST IS THE ONE MADE BAD in the multi-day test, which is
 what discriminates "iterates every upstream feature manifest" from "iterates
@@ -297,7 +299,7 @@ def _rig(tmp_path: Path, lake_root: Path, registry_root: Path, tracking_root) ->
     }
 
 
-@pytest.mark.parametrize("flag", ["--select", "--spend-val-look"])
+@pytest.mark.parametrize("flag", ["--select", "--spend-val-look", "--respend-val-look"])
 def test_the_cli_refuses_a_paused_day_before_any_materialize(
     tmp_path: Path, lake_root: Path, registry_root: Path, tracking_root, capsys, flag
 ):
@@ -306,12 +308,17 @@ def test_the_cli_refuses_a_paused_day_before_any_materialize(
     is reachable only through `harness.accessor.materialize`, which is
     reachable from the slice only through `materialize_once`.
 
-    `--select` and `--spend-val-look` are asserted together because they are
-    the two flags whose FIRST action is a materialize. `--spend-val-look`
-    refuses here on the DQ pause rather than on its own missing frozen body
-    only if the pre-flight runs after that refusal -- which it does, and
-    which is why this test reads the printed cause rather than the exit
-    code."""
+    ALL THREE FLAGS THAT CAN REACH A MATERIALIZE, because the CLI's
+    `args.select or args.spend_val_look or args.respend_val_look` has three
+    disjuncts and a test of two of them leaves one deletable without a red.
+
+    EACH OF THE THREE WOULD REFUSE FOR ITS OWN REASON IF THE PRE-FLIGHT RAN
+    LATER, which is what makes this test about ORDERING rather than about the
+    exit code: `--spend-val-look` has no frozen winner here, and
+    `--respend-val-look` has no `--reason`. The pre-flight is stated at the
+    HEAD of the refusal block, before the per-flag chain, so the DQ cause is
+    the one the operator is told about -- hence the assertion on the printed
+    message and not on the return code."""
     rig = _rig(tmp_path, lake_root, registry_root, tracking_root)
     upstream = rig["manifest"]["upstream_feature_manifest_ids"]
     assert len(upstream) == 1, "the model_span rig is one day; see the two-day tests"
@@ -364,4 +371,8 @@ def test_the_cli_prints_none_for_dq_ack_ids_when_every_day_is_ok(
     assert code == 1
     assert "dq_ack_ids      none" in out
     assert "DQ-paused" not in out
-    assert "no frozen predictor" in out or "selection.json" in out
+    # THE EXACT NEXT REFUSAL, not a disjunction. `--spend-val-look` with no
+    # `--select` behind it refuses on the missing `selection.json`; asserting
+    # `"no frozen predictor" in out or ...` would have passed on whichever
+    # branch happened to fire and told a later reader nothing.
+    assert "no selection.json at" in out

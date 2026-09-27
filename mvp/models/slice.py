@@ -811,10 +811,11 @@ def dq_preflight(
     `harness.accessor.materialize`, `harness.budget.record_look` or MLflow,
     so it cannot spend, and cannot count, an irreversible look.
 
-    Called TWICE per invocation on purpose -- once by
+    Called TWICE per `val` invocation on purpose -- once by
     `scripts.run_stage1_slice` before any materialize, once by `run_slice` at
     step 9 -- and it is the SAME function both times, so a green pre-flight
-    implies a green step 9 by construction rather than by argument.
+    implies a green step 9 by construction rather than by argument. `--select`
+    reaches only the first of the two: `mode="select"` stops at step 4.
     """
     registry_root, lake_root = Path(registry_root), Path(lake_root)
     dataset = f"{segment_manifest['symbol']}.features"
