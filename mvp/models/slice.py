@@ -66,7 +66,6 @@ makes `--resume-from-cache` a no-op at those steps rather than a refusal.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 from collections.abc import Mapping, Sequence
@@ -78,9 +77,8 @@ import mlflow
 import numpy as np
 import polars as pl
 
+from data import store
 from data.store import (
-    dq_acknowledgement_ids,
-    dq_acknowledgement_path,
     manifest_path,
     manifests_for_dataset,
 )
@@ -152,6 +150,7 @@ __all__ = [
     "VAL_SEGMENT_NAME",
     "SliceError",
     "SliceResult",
+    "dq_preflight",
     "find_frozen_body",
     "run_slice",
     "select_train_day_manifests",
@@ -782,39 +781,74 @@ def _look_tags(
     return tags
 
 
-def _dq_acknowledgements(
-    bodies: Sequence[Mapping[str, Any]], *, registry_root: Path, lake_root: Path
+def dq_preflight(
+    segment_manifest: Mapping[str, Any], *, registry_root: Path, lake_root: Path
 ) -> tuple[list[str], list[str]]:
-    """`(ack_ids, ack_sha256)` across the feature manifests this run's
-    numbers rest on -- the DQ findings that were waived to let that data be
-    built (03-CONTEXT DATA-07).
+    """`(ack_ids, ack_sha256)` across EVERY upstream feature manifest this
+    run's numbers rest on -- the DQ findings that were waived to let that data
+    be built (03-CONTEXT DATA-07) -- and a `SliceError` when any day is non-ok
+    with no valid, committed acknowledgement covering its findings.
 
-    The sha256 is of the acknowledgement FILE's bytes, reconstructed from the
-    id (`<symbol>__<stream>__<date>`), which is exactly what
-    `data.store._dq_pause_findings` hashes. Reconstructed rather than
-    imported because that function is private and returns pairs only to its
-    own caller.
+    IT REFUSES, WHERE ITS PREDECESSOR ONLY COLLECTED. This used to call
+    `data.store.dq_acknowledgement_ids`, which is `_dq_pause_findings` with
+    the `unacknowledged` half DISCARDED: a `failed` day with no ack made it
+    return an empty list rather than raise. The pause verdict was therefore
+    reached, at step 9, by nothing -- the only thing that refused on DQ state
+    was `features.tier.load_features`' gate 3, inside `materialize`. So this
+    calls `store._enforce_dq_pause` itself, which is that same gate's own
+    function, and gets the refusal and the `(ack id, sha256)` pairs from one
+    call.
+
+    THE SHA COMES BACK FROM THE GATE RATHER THAN A SECOND READ (WR-19). The
+    reconstruct-the-path-from-the-id hack this replaces hashed whatever was on
+    disk when step 9 ran, which is not necessarily the bytes the pause gate
+    honoured. `_enforce_dq_pause` returns the sha of exactly the bytes it
+    validated and proved committed, so provenance records what was honoured.
+
+    LOOK-FREE BY CONSTRUCTION, which is why the CLI can call it as a
+    pre-flight: it reads committed manifest JSON, `lake_root/dq/date=*/
+    report.parquet`, acknowledgement files and `git`. It never touches
+    `harness.accessor.materialize`, `harness.budget.record_look` or MLflow,
+    so it cannot spend, and cannot count, an irreversible look.
+
+    Called TWICE per invocation on purpose -- once by
+    `scripts.run_stage1_slice` before any materialize, once by `run_slice` at
+    step 9 -- and it is the SAME function both times, so a green pre-flight
+    implies a green step 9 by construction rather than by argument.
     """
-    ids: list[str] = []
-    for body in bodies:
-        ids.extend(
-            dq_acknowledgement_ids(
-                dict(body), registry_root=Path(registry_root), lake_root=Path(lake_root)
-            )
+    registry_root, lake_root = Path(registry_root), Path(lake_root)
+    dataset = f"{segment_manifest['symbol']}.features"
+    honoured: dict[str, str] = {}
+    for manifest_id in segment_manifest["upstream_feature_manifest_ids"]:
+        body = json.loads(
+            manifest_path(registry_root, dataset, str(manifest_id)).read_text()
         )
-    unique = sorted(set(ids))
-    shas: list[str] = []
-    for ack_id in unique:
-        parts = ack_id.split("__")
-        if len(parts) != 3:
-            raise SliceError(
-                f"run_slice: DQ acknowledgement id {ack_id!r} is not "
-                "'<symbol>__<stream>__<date>' -- its file cannot be located "
-                "and its sha256 would be invented"
+        dates = ", ".join(
+            sorted({str(part["date"]) for part in body["partitions"] if "date" in part})
+        )
+        try:
+            acks = store._enforce_dq_pause(
+                body, registry_root=registry_root, lake_root=lake_root
             )
-        path = dq_acknowledgement_path(Path(registry_root), *parts)
-        shas.append(hashlib.sha256(path.read_bytes()).hexdigest())
-    return unique, shas
+        except store.DQPauseError as error:
+            raise SliceError(
+                f"dq_preflight: upstream feature manifest {manifest_id} of "
+                f"{dataset} (date(s) {dates or 'none declared'}) is DQ-paused "
+                f"-- {error} Until that is committed this slice cannot read "
+                "the day, so no look is worth spending on it."
+            ) from error
+        for ack_id, sha in acks:
+            previous = honoured.get(ack_id)
+            if previous is not None and previous != sha:
+                raise SliceError(
+                    f"dq_preflight: acknowledgement {ack_id} hashed to "
+                    f"{previous[:12]} for one upstream manifest and "
+                    f"{sha[:12]} for another -- the file changed mid-run, so "
+                    "neither sha is the provenance of both reads"
+                )
+            honoured[ack_id] = sha
+    ids = sorted(honoured)
+    return ids, [honoured[ack_id] for ack_id in ids]
 
 
 # --------------------------------------------------------------------------
@@ -1258,17 +1292,11 @@ def run_slice(
             )
     flat = sorted({run_id for ids in observed.values() for run_id in ids})
 
-    dq_ack_ids, dq_ack_sha256 = _dq_acknowledgements(
-        [
-            json.loads(
-                manifest_path(
-                    registry_root, f"{symbol}.features", manifest_id
-                ).read_text()
-            )
-            for manifest_id in manifest["upstream_feature_manifest_ids"]
-        ],
-        registry_root=registry_root,
-        lake_root=lake_root,
+    # The SAME call `scripts.run_stage1_slice` makes before any materialize.
+    # Reaching it here is expected to be a formality; it is kept because a
+    # caller that is not that CLI has no pre-flight at all.
+    dq_ack_ids, dq_ack_sha256 = dq_preflight(
+        manifest, registry_root=registry_root, lake_root=lake_root
     )
     tags = {
         "code_hash": code_hash,

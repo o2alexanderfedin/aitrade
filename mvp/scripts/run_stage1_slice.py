@@ -30,8 +30,9 @@ THE FIVE FLAGS, AND WHICH OF THEM COSTS SOMETHING.
 - `--select` spends the FIVE OOF looks and writes no registry body.
 - `--freeze` costs NO look: it refits the winner from the already-cached
   train frame and writes the frozen body.
-- `--spend-val-look` spends THE ONE HONEST LOOK, behind four independent
-  refusals.
+- `--spend-val-look` spends THE ONE HONEST LOOK, behind five independent
+  refusals -- the fifth being the DQ pause pre-flight (07-09-GAP.md), which
+  is evaluated for `--select` too.
 - `--resume-from-cache` spends NOTHING and is structurally incapable of
   spending anything: it calls `run_slice(mode="val")` against a val cache
   that already exists, so `models.cache.materialize_once` takes its cache-hit
@@ -108,6 +109,7 @@ from models.slice import (  # noqa: E402
     MODE_SELECT,
     MODE_VAL,
     VAL_SEGMENT_NAME,
+    dq_preflight,
     find_frozen_body,
     run_slice,
 )
@@ -218,7 +220,7 @@ def _build_parser() -> argparse.ArgumentParser:
     mode.add_argument(
         "--spend-val-look",
         action="store_true",
-        help="steps 6-9: THE ONE HONEST LOOK, behind four refusals",
+        help="steps 6-9: THE ONE HONEST LOOK, behind five refusals",
     )
     mode.add_argument(
         "--resume-from-cache",
@@ -369,6 +371,26 @@ def main(argv: list[str], *, git_runner=subprocess.run) -> int:
     mode = MODE_SELECT
     respend_reason: str | None = None
     try:
+        # ---- THE DQ PAUSE, BEFORE THE FIRST MATERIALIZE --------------------
+        # `models.slice.run_slice` reaches this very call at STEP 9, after
+        # every look. Reaching it there for the first time would mean
+        # learning, from data that was committed before the invocation began,
+        # that the run could never have been valid. So it is evaluated here,
+        # for the three flags that can reach `harness.accessor.materialize`,
+        # and by the SAME function -- a green pre-flight implies a green step
+        # 9 by construction, not by argument.
+        #
+        # NOT `--freeze` AND NOT `--resume-from-cache`. Neither can reach
+        # `materialize` (both read caches), so neither can spend a look on
+        # this, and a refusal here would block the two recovery paths whose
+        # whole job is to salvage a look that was already paid for. See
+        # 07-09-GAP.md for what that leaves open.
+        if args.select or args.spend_val_look or args.respend_val_look:
+            ack_ids, _ack_sha256 = dq_preflight(
+                manifest, registry_root=registry_root, lake_root=lake_root
+            )
+            print(f"dq_ack_ids      {','.join(ack_ids) if ack_ids else 'none'}")
+
         if args.select:
             mode = MODE_SELECT
         elif args.freeze:
@@ -521,7 +543,7 @@ def _require_frozen_winner_readable(
     segment_manifest_id: str,
     seed: int,
 ) -> None:
-    """The first of `--spend-val-look`'s four refusals: the frozen winner's
+    """One of `--spend-val-look`'s five refusals: the frozen winner's
     registry body must exist at the committed path and read back cleanly
     through `models.frozen.read_frozen_predictor` -- both hashes verified,
     `predictor_id` re-derived, the design cross-checked.
