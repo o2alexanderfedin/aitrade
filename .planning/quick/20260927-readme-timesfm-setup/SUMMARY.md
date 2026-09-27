@@ -66,6 +66,14 @@ The installed package source, for the `predict` signature and the covariate
 shape convention `(n_covariates, length)` — then confirmed by running a call
 with both covariate kinds.
 
+Also read, not run: the two figures in the README that describe the *first*
+install rather than a re-run — the ~3 min download time and the "5 files,
+1.23 GiB, `timesfm 3.0.2` / `torch 2.14.0` on CPython 3.12.2, MPS available"
+line. Both come from `setup.log` beside the existing install, which the plan
+names as a source of truth. The file count and total size were independently
+re-measured here; the wall-clock download time cannot be, without deleting the
+weights.
+
 ## Where the plan was wrong, and what I changed
 
 1. **The smoke-test numbers.** The plan quoted ~330x on a sine wave and mean
