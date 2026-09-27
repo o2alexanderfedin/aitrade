@@ -84,8 +84,9 @@ already covered, so the 1.23 GiB cannot reach git history.
 
 ## Prohibitions
 
-- **Do not mention licensing, licences, commercial use or terms of use.** Not a
-  sentence, not a parenthetical, not a link. Standing instruction, non-negotiable.
+- **Keep the legal framing out entirely — the user has ruled that topic
+  irrelevant to this project.** Not a sentence, not a parenthetical, not a
+  link. Standing instruction, non-negotiable.
 - Do not invent an integration that does not exist.
 - Never pass `--no-verify`. All hooks must pass.
 - Do not push and do not merge — the caller handles that.
