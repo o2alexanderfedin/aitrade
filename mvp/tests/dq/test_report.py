@@ -1,0 +1,1037 @@
+"""Tests for data.dq.report -- the DQ report entrypoint. Hermetic:
+tmp_path-rooted fixture lake + registry, never touching the real lake or
+the real gap ledger (see tests/dq/test_pause_enforcement.py for the
+real-data RP-4 cases)."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import time
+from pathlib import Path
+
+import polars as pl
+import pytest
+
+from data.dq.checks import load_dq_thresholds
+from data.dq.feature_checks import feature_build_stats_path
+from data.dq.report import (
+    build_report_rows_for_date,
+    build_stats_path,
+    dq_report_markdown_path,
+    dq_report_path,
+    dq_resync_windows_path,
+    main as report_main,
+    normalize_row,
+    write_report,
+)
+from data.store import FEATURES_TIER, issue_manifest, manifest_source
+from features.tier import load_features
+from tools.check_spec_diff import check_drift
+from tools.git_env import scrubbed_git_env  # noqa: F401  (import-sanity; env used indirectly)
+
+GAP_LEDGER_SCHEMA = {
+    "stream": pl.Utf8,
+    "conn_id": pl.Utf8,
+    "gap_start_rtime": pl.Int64,
+    "gap_end_rtime": pl.Int64,
+    "cause": pl.Utf8,
+    "detected_at": pl.Int64,
+    "ledger_version": pl.Int32,
+}
+
+THRESHOLDS = load_dq_thresholds()
+DATE = "2026-09-12"
+SYMBOL = "BTCUSDT"
+
+
+def _write_curated_partition(
+    lake_root: Path, symbol: str, stream: str, date: str, df: pl.DataFrame
+) -> dict:
+    rel_path = f"curated/symbol={symbol}/stream={stream}/date={date}/part-1.parquet"
+    final_path = lake_root / rel_path
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    df.write_parquet(final_path, compression="zstd")
+    st = final_path.stat()
+    return {
+        "date": date,
+        "path": rel_path,
+        "sha256": hashlib.sha256(final_path.read_bytes()).hexdigest(),
+        "rows": df.height,
+        "size_bytes": st.st_size,
+        "mtime_ns": st.st_mtime_ns,
+        "etime_min": int(df["etime"].min()),
+        "etime_max": int(df["etime"].max()),
+    }
+
+
+def _issue_and_write_build_stats(
+    lake_root: Path,
+    registry_root: Path,
+    symbol: str,
+    stream: str,
+    date: str,
+    df: pl.DataFrame,
+    build_stats: dict | None,
+) -> dict:
+    part = _write_curated_partition(lake_root, symbol, stream, date, df)
+    manifest = issue_manifest(
+        dataset=f"{symbol}.{stream}",
+        symbol=symbol,
+        stream=stream,
+        tier="curated",
+        schema_version=1,
+        inputs=[],
+        partitions=[part],
+        code_hash="deadbeef",
+        registry_root=registry_root,
+    )
+    if build_stats is not None:
+        stats_path = build_stats_path(lake_root, symbol, stream, date)
+        stats_path.parent.mkdir(parents=True, exist_ok=True)
+        # Bound to this build unless the test deliberately supplies another id.
+        body = {"manifest_id": manifest["manifest_id"], **build_stats}
+        stats_path.write_text(json.dumps(body))
+    return manifest
+
+
+def _empty_ledger() -> pl.DataFrame:
+    return pl.DataFrame(schema=GAP_LEDGER_SCHEMA)
+
+
+def test_build_report_rows_for_date_covers_all_six_checks(tmp_path: Path):
+    lake_root = tmp_path / "lake"
+    registry_root = tmp_path / "registry"
+
+    trade_df = pl.DataFrame(
+        {
+            "trade_id": [1, 2, 3],
+            "etime": [1_000, 2_000, 3_000],
+            "price": [1.0, 2.0, 3.0],
+        }
+    )
+    _issue_and_write_build_stats(
+        lake_root,
+        registry_root,
+        SYMBOL,
+        "trade",
+        DATE,
+        trade_df,
+        build_stats={
+            "reconciliation_missing_from_capture": 1,
+            "reconciliation_missing_from_archive": 2,
+            "reconciliation_overlap_rows": 1000,
+            "na_placeholder_dropped": 0,
+            "na_placeholder_rate": 0.0,
+        },
+    )
+
+    bt_df = pl.DataFrame(
+        {
+            "etime": [1_000, 2_000, 3_000],
+            "bid_price": [100.0, 100.1, 100.2],
+            "ask_price": [100.2, 100.0, 100.4],  # row 2 (idx1) crossed
+        }
+    )
+    _issue_and_write_build_stats(
+        lake_root, registry_root, SYMBOL, "bookTicker", DATE, bt_df, build_stats=None
+    )
+
+    rows = build_report_rows_for_date(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_empty_ledger(),
+    )
+    checks_seen = {(r["stream"], r["check"]) for r in rows}
+    assert checks_seen == {
+        ("trade", "gap_coverage"),
+        ("trade", "etime_plausibility"),
+        ("trade", "event_time_plausibility"),  # IN-20 (n/a: no column here)
+        ("trade", "rtime_plausibility"),  # item 4 (n/a: no column here)
+        ("trade", "reconciliation"),
+        ("trade", "na_placeholder"),
+        ("bookTicker", "gap_coverage"),
+        ("bookTicker", "etime_plausibility"),
+        ("bookTicker", "event_time_plausibility"),
+        ("bookTicker", "rtime_plausibility"),
+        ("bookTicker", "crossed_locked_book"),
+        ("bookTicker", "l1_sparsity"),
+    }
+    # All six numbered checks appear at least once across both streams.
+    six = {r["check"] for r in rows}
+    assert six == {
+        "gap_coverage",
+        "etime_plausibility",
+        "event_time_plausibility",
+        "rtime_plausibility",
+        "reconciliation",
+        "na_placeholder",
+        "crossed_locked_book",
+        "l1_sparsity",
+    }
+
+
+def test_build_report_rows_skips_stream_with_no_manifest(tmp_path: Path):
+    lake_root = tmp_path / "lake"
+    registry_root = tmp_path / "registry"
+    trade_df = pl.DataFrame({"trade_id": [1], "etime": [1_000], "price": [1.0]})
+    _issue_and_write_build_stats(
+        lake_root,
+        registry_root,
+        SYMBOL,
+        "trade",
+        DATE,
+        trade_df,
+        build_stats={
+            "reconciliation_missing_from_capture": None,
+            "reconciliation_missing_from_archive": None,
+            "reconciliation_overlap_rows": None,
+            "na_placeholder_dropped": 0,
+            "na_placeholder_rate": 0.0,
+        },
+    )
+    # No bookTicker manifest at all for this date (June-Aug case).
+    rows = build_report_rows_for_date(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_empty_ledger(),
+    )
+    streams_seen = {r["stream"] for r in rows}
+    assert streams_seen == {"trade"}
+
+
+def test_normalize_row_maps_heterogeneous_fields_onto_fixed_schema():
+    row = {
+        "date": DATE,
+        "symbol": SYMBOL,
+        "stream": "trade",
+        "manifest_id": "m" * 64,
+        "check": "reconciliation",
+        "dq_status": "degraded",
+        "value_pct": 3.2,
+        "missing_from_capture_pct": 1.1,
+        "missing_from_archive_pct": 3.2,
+    }
+    normalized = normalize_row(row)
+    assert normalized["value"] == pytest.approx(3.2)
+    assert normalized["count"] is None
+    assert "missing_from_capture_pct=1.1000" in normalized["detail"]
+
+
+def test_write_report_writes_parquet_sidecar_and_markdown(tmp_path: Path):
+    lake_root = tmp_path / "lake"
+    registry_root = tmp_path / "registry"
+    trade_df = pl.DataFrame({"trade_id": [1], "etime": [1_000], "price": [1.0]})
+    _issue_and_write_build_stats(
+        lake_root,
+        registry_root,
+        SYMBOL,
+        "trade",
+        DATE,
+        trade_df,
+        build_stats={
+            "reconciliation_missing_from_capture": None,
+            "reconciliation_missing_from_archive": None,
+            "reconciliation_overlap_rows": None,
+            "na_placeholder_dropped": 0,
+            "na_placeholder_rate": 0.0,
+        },
+    )
+
+    report_path = write_report(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_empty_ledger(),
+    )
+    assert report_path == dq_report_path(lake_root, DATE)
+    assert report_path.exists()
+    report_df = pl.read_parquet(report_path)
+    assert set(report_df.columns) == {
+        "date",
+        "symbol",
+        "stream",
+        "manifest_id",
+        "check",
+        "dq_status",
+        "value",
+        "count",
+        "detail",
+    }
+    assert report_df.height > 0
+
+    resync_path = dq_resync_windows_path(lake_root, DATE)
+    assert resync_path.exists()
+    resync_df = pl.read_parquet(resync_path)
+    assert resync_df.height == 0  # empty ledger -- no outages
+
+    md_path = dq_report_markdown_path(lake_root, DATE)
+    assert md_path.exists()
+    assert DATE in md_path.read_text()
+
+
+def test_main_range_mode_writes_one_report_per_date(tmp_path: Path):
+    lake_root = tmp_path / "lake"
+    registry_root = tmp_path / "registry"
+    capture_root = tmp_path / "capture"
+    (capture_root / "gap_ledger").mkdir(parents=True)
+    _empty_ledger().write_parquet(capture_root / "gap_ledger" / "ledger.parquet")
+
+    for date in ("2026-09-12", "2026-09-13"):
+        trade_df = pl.DataFrame({"trade_id": [1], "etime": [1_000], "price": [1.0]})
+        _issue_and_write_build_stats(
+            lake_root,
+            registry_root,
+            SYMBOL,
+            "trade",
+            date,
+            trade_df,
+            build_stats={
+                "reconciliation_missing_from_capture": None,
+                "reconciliation_missing_from_archive": None,
+                "reconciliation_overlap_rows": None,
+                "na_placeholder_dropped": 0,
+                "na_placeholder_rate": 0.0,
+            },
+        )
+
+    exit_code = report_main(
+        [
+            "--symbol",
+            SYMBOL,
+            "--range",
+            "2026-09-12",
+            "2026-09-13",
+            "--lake-root",
+            str(lake_root),
+            "--registry-root",
+            str(registry_root),
+            "--capture-data-root",
+            str(capture_root),
+        ]
+    )
+    assert exit_code == 0
+    assert dq_report_path(lake_root, "2026-09-12").exists()
+    assert dq_report_path(lake_root, "2026-09-13").exists()
+
+
+def test_spec_md_dq_block_round_trips_through_check_spec_diff():
+    """Done criterion: spec.md's new marker block round-trips through
+    spec.render's existing diff-checking machinery -- check_spec_diff
+    still passes against the current, committed tree once the table is
+    rendered and committed."""
+    from spec.catalogue import load_features, load_labels
+    from spec.render import SPEC_MD, load_dq_thresholds_raw
+
+    features = load_features()
+    labels = load_labels()
+    dq_thresholds = load_dq_thresholds_raw()
+    drift = check_drift(SPEC_MD, features, labels, dq_thresholds)
+    assert drift is None, drift
+
+
+# --- WR-02 (03-REVIEW.md): missing or stale build_stats fails closed -------
+
+
+def _statuses(rows: list[dict], stream: str) -> dict[str, str]:
+    return {r["check"]: r["dq_status"] for r in rows if r["stream"] == stream}
+
+
+def test_trade_day_with_missing_build_stats_is_failed_not_ok(tmp_path: Path):
+    """03-REVIEW.md WR-02 reproduction: a manifest issued but build_stats.json
+    never written (crash window) used to yield only gap_coverage and
+    etime_plausibility rows, both ok -- so the day scored ok with the
+    reconciliation and NA checks silently absent."""
+    lake_root = tmp_path / "lake"
+    registry_root = tmp_path / "registry"
+    trade_df = pl.DataFrame(
+        {"trade_id": [1, 2], "etime": [1_000, 2_000], "price": [1.0, 2.0]}
+    )
+    _issue_and_write_build_stats(
+        lake_root, registry_root, SYMBOL, "trade", DATE, trade_df, build_stats=None
+    )
+    rows = build_report_rows_for_date(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_empty_ledger(),
+    )
+    assert _statuses(rows, "trade").get("build_stats") == "failed"
+
+
+def test_trade_day_with_build_stats_for_a_different_manifest_is_failed(tmp_path: Path):
+    lake_root = tmp_path / "lake"
+    registry_root = tmp_path / "registry"
+    trade_df = pl.DataFrame(
+        {"trade_id": [1, 2], "etime": [1_000, 2_000], "price": [1.0, 2.0]}
+    )
+    _issue_and_write_build_stats(
+        lake_root,
+        registry_root,
+        SYMBOL,
+        "trade",
+        DATE,
+        trade_df,
+        build_stats={
+            "chosen_source": "archive",
+            "capture_available": False,
+            "manifest_id": "0" * 64,  # stale: some earlier build's manifest
+            "reconciliation_missing_from_capture": None,
+            "reconciliation_missing_from_archive": None,
+            "reconciliation_overlap_rows": None,
+            "na_placeholder_dropped": 0,
+            "na_placeholder_rate": 0.0,
+        },
+    )
+    rows = build_report_rows_for_date(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_empty_ledger(),
+    )
+    assert _statuses(rows, "trade").get("build_stats") == "failed"
+
+
+def test_build_curated_day_writes_build_stats_before_issuing_the_manifest(
+    tmp_path: Path, monkeypatch
+):
+    """A crash between issuing the manifest and writing build_stats.json must
+    be impossible: the stats (bound to the partition's sha256) exist first."""
+    import data.ingest.curated_build as cb
+
+    lake_root = tmp_path / "lake"
+    archive_dir = (
+        lake_root / "raw/symbol=BTCUSDT/stream=trade/source=archive/date=2026-09-12"
+    )
+    archive_dir.mkdir(parents=True)
+    pl.DataFrame(
+        {
+            "trade_id": [1, 2],
+            "etime": [1_000, 2_000],
+            "event_time": [1_000, 2_000],
+            "price": [1.0, 2.0],
+            "qty": [1.0, 1.0],
+            "is_buyer_maker": [True, False],
+            "seq": [-1, -1],
+            "rtime": [0, 0],
+            "source": ["archive", "archive"],
+            "schema_version": [1, 1],
+        }
+    ).write_parquet(archive_dir / "part-1.parquet")
+
+    def crash(*_a, **_k):
+        raise RuntimeError("simulated crash inside issue_manifest")
+
+    monkeypatch.setattr(cb, "issue_manifest", crash)
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        cb.build_curated_day(
+            "BTCUSDT",
+            "trade",
+            "2026-09-12",
+            lake_root,
+            tmp_path / "capture",
+            registry_root=tmp_path / "registry",
+            code_hash="deadbeef",
+        )
+    stats = json.loads(
+        build_stats_path(lake_root, SYMBOL, "trade", "2026-09-12").read_text()
+    )
+    part = next(
+        (lake_root / "curated/symbol=BTCUSDT/stream=trade/date=2026-09-12").glob(
+            "part-*.parquet"
+        )
+    )
+    assert stats["partition_sha256"] == hashlib.sha256(part.read_bytes()).hexdigest()
+
+
+# --- WR-04 (03-REVIEW.md): each check measures the source it is about ------
+
+
+def _archive_day(
+    lake_root, registry_root, trade_ids, *, capture_available, etimes=None
+):
+    trade_df = pl.DataFrame(
+        {
+            "trade_id": trade_ids,
+            "etime": etimes
+            or [1_789_171_200_000_000_000 + i for i in range(len(trade_ids))],
+            "price": [1.0] * len(trade_ids),
+        }
+    )
+    return _issue_and_write_build_stats(
+        lake_root,
+        registry_root,
+        SYMBOL,
+        "trade",
+        DATE,
+        trade_df,
+        build_stats={
+            "chosen_source": "archive",
+            "archive_available": True,
+            "capture_available": capture_available,
+            "reconciliation_missing_from_capture": 0 if capture_available else None,
+            "reconciliation_missing_from_archive": 0 if capture_available else None,
+            "reconciliation_overlap_rows": len(trade_ids)
+            if capture_available
+            else None,
+            "na_placeholder_dropped": 0,
+            "na_placeholder_rate": 0.0,
+        },
+    )
+
+
+def _failed_outage_ledger() -> pl.DataFrame:
+    start = 1_789_171_200_000_000_000 + 3600 * 1_000_000_000
+    return pl.DataFrame(
+        [
+            {
+                "stream": "__connection__",
+                "conn_id": "merged",
+                "gap_start_rtime": start,
+                "gap_end_rtime": start + 3000 * 1_000_000_000,
+                "cause": "merged-silent: no message for 3000.0s",
+                "detected_at": start,
+                "ledger_version": 2,
+            }
+        ],
+        schema=GAP_LEDGER_SCHEMA,
+    )
+
+
+def test_capture_outage_does_not_fail_an_archive_sourced_trade_day(tmp_path: Path):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    _archive_day(lake_root, registry_root, [1, 2, 3], capture_available=True)
+    rows = build_report_rows_for_date(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_failed_outage_ledger(),
+    )
+    assert _statuses(rows, "trade")["gap_coverage"] == "n/a"
+
+
+def _pre_capture_day_with_skip(lake_root, registry_root, run_ids, span_ns):
+    t0, ms = 1_789_171_200_000_000_000, 1_000_000
+    ids = list(range(1, 11)) + [10 + run_ids + 1 + i for i in range(10)]
+    etimes = [t0 + i * ms for i in range(10)] + [
+        t0 + 9 * ms + span_ns + i * ms for i in range(10)
+    ]
+    return _archive_day(
+        lake_root, registry_root, ids, capture_available=False, etimes=etimes
+    )
+
+
+def _probable_loss_row_and_load(lake_root, registry_root, manifest):
+    """Write the real report, then go through the real pause path:
+    `load_curated` with no acknowledgement present."""
+    from data.store import _dq_status_for_date, load_curated
+
+    write_report(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_empty_ledger(),
+    )
+    report = pl.read_parquet(dq_report_path(lake_root, DATE))
+    row = report.filter(
+        (pl.col("stream") == "trade") & (pl.col("check") == "probable_loss")
+    ).row(0, named=True)
+    status, _detail = _dq_status_for_date(
+        lake_root,
+        SYMBOL,
+        "trade",
+        DATE,
+        manifest=manifest,
+        registry_root=registry_root,
+    )
+    assert not (registry_root / "dq_acknowledgements").exists()
+    df = load_curated(
+        manifest["manifest_id"],
+        f"{SYMBOL}.trade",
+        registry_root=registry_root,
+        lake_root=lake_root,
+    )
+    return row, status, df
+
+
+def test_na_shaped_skips_do_not_flag_or_pause_a_pre_capture_day(tmp_path: Path):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    manifest = _pre_capture_day_with_skip(lake_root, registry_root, 16, 5_000_000)
+    row, status, df = _probable_loss_row_and_load(lake_root, registry_root, manifest)
+    assert row["dq_status"] == "ok"
+    assert row["count"] == 0
+    assert status == "ok"
+    assert df.height == 20
+
+
+def test_genuine_loss_is_reported_but_never_pauses_the_day(tmp_path: Path):
+    """A 5,000-id skip across 30 s is flagged with its size and span, and the
+    day still loads with no acknowledgement: probable_loss is informational."""
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    manifest = _pre_capture_day_with_skip(
+        lake_root, registry_root, 5_000, 30 * 1_000_000_000
+    )
+    row, status, df = _probable_loss_row_and_load(lake_root, registry_root, manifest)
+    assert row["count"] == 1
+    assert "run_ids=5000 span_s=30.000" in row["detail"]
+    assert row["dq_status"] == "ok"
+    assert status == "ok"
+    assert df.height == 20
+
+
+def test_pre_capture_archive_day_reports_probable_loss(tmp_path: Path):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    _archive_day(lake_root, registry_root, [1, 2, 3, 40, 41], capture_available=False)
+    rows = build_report_rows_for_date(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_empty_ledger(),
+    )
+    assert _statuses(rows, "trade").get("probable_loss") == "ok"
+
+
+def test_every_report_row_names_the_manifest_it_scored(tmp_path: Path):
+    """03-REVIEW-ITER2.md WR-15: the pause check binds a verdict to a manifest."""
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    trade_df = pl.DataFrame({"trade_id": [1], "etime": [1_000], "price": [1.0]})
+    manifest = _issue_and_write_build_stats(
+        lake_root, registry_root, SYMBOL, "trade", DATE, trade_df, build_stats=None
+    )
+    write_report(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_empty_ledger(),
+    )
+    report = pl.read_parquet(dq_report_path(lake_root, DATE))
+    assert report.height > 0
+    assert set(report["manifest_id"].to_list()) == {manifest["manifest_id"]}
+
+
+# --- 03-REVIEW-ITER3.md IN-20: event_time gets the etime backstop ------------
+
+
+def _trade_day_with_event_time(lake_root, registry_root, event_times):
+    t0 = 1_789_171_200_000_000_000  # 2026-09-12T00:00:00Z in ns
+    trade_df = pl.DataFrame(
+        {
+            "trade_id": [1, 2],
+            "etime": [t0 + 1_000_000, t0 + 2_000_000],  # correctly scaled
+            "event_time": event_times,
+            "price": [1.0, 1.0],
+        },
+        schema_overrides={"event_time": pl.Int64},
+    )
+    return _issue_and_write_build_stats(
+        lake_root,
+        registry_root,
+        SYMBOL,
+        "trade",
+        DATE,
+        trade_df,
+        build_stats={
+            "chosen_source": "capture",
+            "reconciliation_missing_from_capture": 0,
+            "reconciliation_missing_from_archive": 0,
+            "reconciliation_overlap_rows": 2,
+            "na_placeholder_dropped": 0,
+            "na_placeholder_rate": 0.0,
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    ("event_times", "expected"),
+    [
+        ([1_789_171_200_001_000_000, 1_789_171_200_002_000_000], "ok"),
+        ([1_789_171_200_001, 1_789_171_200_002], "failed"),  # raw ms stored as ns
+        ([None, None], "n/a"),
+    ],
+)
+def test_report_scores_event_time_plausibility(
+    tmp_path: Path, event_times, expected: str
+):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    _trade_day_with_event_time(lake_root, registry_root, event_times)
+    rows = build_report_rows_for_date(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_empty_ledger(),
+    )
+    statuses = _statuses(rows, "trade")
+    assert statuses["etime_plausibility"] == "ok"
+    assert statuses["event_time_plausibility"] == expected
+
+
+def test_wrongly_scaled_event_time_pauses_the_loader(tmp_path: Path):
+    from data.store import DQPauseError, load_curated
+
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    manifest = _trade_day_with_event_time(
+        lake_root, registry_root, [1_789_171_200_001, 1_789_171_200_002]
+    )
+    write_report(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_empty_ledger(),
+    )
+    with pytest.raises(DQPauseError, match="event_time_plausibility=failed"):
+        load_curated(
+            manifest["manifest_id"],
+            f"{SYMBOL}.trade",
+            registry_root=registry_root,
+            lake_root=lake_root,
+        )
+
+
+# --- 03-FOLLOWUPS.md item 4: rtime plausibility, source-dependent -----------
+
+
+def _trade_day_with_rtime(lake_root, registry_root, rtimes, *, inputs=None):
+    t0 = 1_789_171_200_000_000_000  # 2026-09-12T00:00:00Z in ns
+    trade_df = pl.DataFrame(
+        {
+            "trade_id": [1, 2],
+            "etime": [t0 + 1_000_000, t0 + 2_000_000],
+            "rtime": rtimes,
+            "price": [1.0, 1.0],
+        },
+        schema_overrides={"rtime": pl.Int64},
+    )
+    part = _write_curated_partition(lake_root, SYMBOL, "trade", DATE, trade_df)
+    return issue_manifest(
+        dataset=f"{SYMBOL}.trade",
+        symbol=SYMBOL,
+        stream="trade",
+        tier="curated",
+        schema_version=1,
+        inputs=inputs if inputs is not None else _CAPTURE_INPUT,
+        partitions=[part],
+        code_hash="deadbeef",
+        registry_root=registry_root,
+    )
+
+
+#: A capture-sourced input, spelled the way `curated_build` records one: an
+#: absolute path into the capture daemon's own tree, with no `source=`
+#: component. These fixtures used to pass `inputs=[]` and rely on
+#: `manifest_source`'s "everything else is capture" fall-through, which is
+#: exactly what 03-REVIEW-FOLLOWUPS.md WR-03 removed -- an empty inputs list
+#: now scores `unknown`, so the capture days have to say they are capture.
+_CAPTURE_INPUT = [
+    {
+        "path": "/capture/parsed/symbol=BTCUSDT/stream=trade/date=2026-09-12/part-1.parquet",
+        "rows": 2,
+        "sha256": "1" * 64,
+    }
+]
+
+_ARCHIVE_INPUT = [
+    {
+        "path": "/lake/raw/symbol=BTCUSDT/stream=trade/source=archive/date=2026-09-12/p.parquet",
+        "rows": 2,
+        "sha256": "0" * 64,
+    }
+]
+
+
+def _rtime_status_of(lake_root, registry_root):
+    rows = build_report_rows_for_date(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_empty_ledger(),
+    )
+    return _statuses(rows, "trade")["rtime_plausibility"]
+
+
+def test_report_scores_rtime_plausibility_for_a_capture_day(tmp_path: Path):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    t0 = 1_789_171_200_000_000_000
+    _trade_day_with_rtime(lake_root, registry_root, [t0 + 1_100_000, t0 + 2_100_000])
+    assert _rtime_status_of(lake_root, registry_root) == "ok"
+
+
+def test_report_fails_a_capture_day_whose_rtime_was_never_scaled(tmp_path: Path):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    t0 = 1_789_171_200_000_000_000
+    raw_ms = t0 // 1_000_000
+    _trade_day_with_rtime(lake_root, registry_root, [raw_ms, raw_ms + 1])
+    assert _rtime_status_of(lake_root, registry_root) == "failed"
+
+
+def test_report_accepts_an_archive_day_downloaded_months_later(tmp_path: Path):
+    """The same rtime that fails as capture passes as archive: the check
+    reads the manifest's own inputs, not the day's calendar distance."""
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    # Just before now: after the day's last event, before the manifest's own
+    # built_at (which `issue_manifest` stamps with the wall clock).
+    downloaded = time.time_ns() - 10**9
+    manifest = _trade_day_with_rtime(
+        lake_root, registry_root, [downloaded, downloaded], inputs=_ARCHIVE_INPUT
+    )
+    assert manifest_source(manifest) == "archive"
+    assert _rtime_status_of(lake_root, registry_root) == "ok"
+
+
+def test_report_fails_an_archive_day_whose_download_predates_its_data(
+    tmp_path: Path,
+):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    t0 = 1_789_171_200_000_000_000
+    stale = t0 - 86_400 * 10**9
+    _trade_day_with_rtime(
+        lake_root, registry_root, [stale, stale], inputs=_ARCHIVE_INPUT
+    )
+    assert _rtime_status_of(lake_root, registry_root) == "failed"
+
+
+def test_report_rtime_is_na_when_the_partition_has_no_rtime(tmp_path: Path):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    trade_df = pl.DataFrame({"trade_id": [1], "etime": [1_000], "price": [1.0]})
+    _issue_and_write_build_stats(
+        lake_root, registry_root, SYMBOL, "trade", DATE, trade_df, build_stats=None
+    )
+    assert _rtime_status_of(lake_root, registry_root) == "n/a"
+
+
+def test_wrongly_scaled_rtime_pauses_the_loader(tmp_path: Path):
+    from data.store import DQPauseError, load_curated
+
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    t0 = 1_789_171_200_000_000_000
+    raw_ms = t0 // 1_000_000
+    manifest = _trade_day_with_rtime(lake_root, registry_root, [raw_ms, raw_ms + 1])
+    write_report(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_empty_ledger(),
+    )
+    with pytest.raises(DQPauseError, match="rtime_plausibility=failed"):
+        load_curated(
+            manifest["manifest_id"],
+            f"{SYMBOL}.trade",
+            registry_root=registry_root,
+            lake_root=lake_root,
+        )
+
+
+# --- 06-01-PLAN.md Task 3: every manifest a date has ever had, not only ---
+# --- the by-date pointer's current one ------------------------------------
+
+_ALL_OK_FEATURE_STATS: dict = {
+    "n_quote_rows": 100,
+    "n_trade_rows": 10,
+    "n_events": 110,
+    "n_decision_rows": 100,
+    "na_placeholder_excluded": 0,
+    "unknown_side_rows": 0,
+    "null_primary_label_rows": 0,
+    "ret_10s_mid_zero_fraction": 0.1,
+    "ret_1s_mid_zero_fraction": 0.1,
+    "warmup_rows": 1,
+    "post_gap_warmup_rows": 0,
+    "resync_sidecar_present": True,
+    "max_window_occupancy": 10,
+    "window_capacity": 1 << 16,
+    "window_overflow": False,
+    "empty_window_rows": 5,
+    "asof_convention_disagreement_rows": 0,
+}
+
+
+def _write_features_partition_and_manifest(
+    lake_root: Path,
+    registry_root: Path,
+    date: str,
+    *,
+    schema_version: int,
+    part_name: str,
+    symbol: str = SYMBOL,
+) -> dict:
+    """One features-tier manifest issued directly through
+    `data.store.issue_manifest` at an explicit `schema_version` --
+    `features.tier.issue_feature_manifest` always issues at the CURRENT
+    `FEATURE_SCHEMA_VERSION`, so a standing-in v1 manifest (simulating an
+    already-committed pre-migration partition) has to go through the
+    lower-level primitive directly."""
+    rel = f"{FEATURES_TIER}/symbol={symbol}/date={date}/{part_name}"
+    path = lake_root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df = pl.DataFrame({"etime": [1_000, 2_000], "decision_seq": [0, 1]})
+    df.write_parquet(path, compression="zstd")
+    st = path.stat()
+    part = {
+        "date": date,
+        "path": rel,
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "rows": df.height,
+        "size_bytes": st.st_size,
+        "mtime_ns": st.st_mtime_ns,
+        "etime_min": int(df["etime"].min()),
+        "etime_max": int(df["etime"].max()),
+    }
+    return issue_manifest(
+        dataset=f"{symbol}.{FEATURES_TIER}",
+        symbol=symbol,
+        stream=FEATURES_TIER,
+        tier=FEATURES_TIER,
+        schema_version=schema_version,
+        inputs=[],
+        partitions=[part],
+        code_hash="deadbeef",
+        registry_root=registry_root,
+        dates=[date],
+    )
+
+
+def _write_feature_stats(
+    lake_root: Path, symbol: str, date: str, manifest_id: str, *, schema_version: int
+) -> Path:
+    stats_path = feature_build_stats_path(
+        lake_root, symbol, date, schema_version=schema_version
+    )
+    stats_path.parent.mkdir(parents=True, exist_ok=True)
+    stats_path.write_text(
+        json.dumps({"manifest_id": manifest_id, **_ALL_OK_FEATURE_STATS})
+    )
+    return stats_path
+
+
+def _two_feature_manifests_for_one_date(lake_root: Path, registry_root: Path) -> dict:
+    """v1 (standing in for an already-committed pre-migration partition,
+    bare `part-1.parquet`), then v2 (`part-v2-1.parquet`) -- the by-date
+    pointer ends up naming v2, the second one issued."""
+    v1 = _write_features_partition_and_manifest(
+        lake_root, registry_root, DATE, schema_version=1, part_name="part-1.parquet"
+    )
+    _write_feature_stats(lake_root, SYMBOL, DATE, v1["manifest_id"], schema_version=1)
+    v2 = _write_features_partition_and_manifest(
+        lake_root, registry_root, DATE, schema_version=2, part_name="part-v2-1.parquet"
+    )
+    _write_feature_stats(lake_root, SYMBOL, DATE, v2["manifest_id"], schema_version=2)
+    return {"v1": v1, "v2": v2}
+
+
+def test_two_feature_manifests_for_one_date_each_keep_their_own_report_row(
+    tmp_path: Path,
+):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    manifests = _two_feature_manifests_for_one_date(lake_root, registry_root)
+
+    write_report(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_empty_ledger(),
+    )
+    report = pl.read_parquet(dq_report_path(lake_root, DATE))
+    feature_rows = report.filter(pl.col("stream") == FEATURES_TIER)
+
+    ids = set(feature_rows["manifest_id"].to_list())
+    assert ids == {manifests["v1"]["manifest_id"], manifests["v2"]["manifest_id"]}, (
+        "both the superseded (v1) and the current (v2) manifest must get "
+        "their own report rows -- not only the by-date pointer's current one"
+    )
+
+    for label in ("v1", "v2"):
+        manifest_id = manifests[label]["manifest_id"]
+        rows = feature_rows.filter(pl.col("manifest_id") == manifest_id)
+        assert rows.height > 0, f"{label} got no report rows at all"
+        wrong_build = rows.filter(
+            (pl.col("dq_status") == "failed")
+            & pl.col("detail").str.contains("different build", literal=True)
+        )
+        assert wrong_build.height == 0, (
+            f"{label} (manifest {manifest_id[:12]}) was scored against the "
+            f"wrong build_stats file: {wrong_build['detail'].to_list()}"
+        )
+
+
+def test_load_features_still_resolves_the_superseded_manifest_after_a_rebuild(
+    tmp_path: Path,
+):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    manifests = _two_feature_manifests_for_one_date(lake_root, registry_root)
+
+    write_report(
+        SYMBOL,
+        DATE,
+        lake_root=lake_root,
+        registry_root=registry_root,
+        thresholds=THRESHOLDS,
+        ledger_df=_empty_ledger(),
+    )
+
+    # The regression this task exists to prevent: end to end through the
+    # real loader, not only through store._dq_verdict_for_date.
+    df = load_features(
+        manifests["v1"]["manifest_id"],
+        f"{SYMBOL}.{FEATURES_TIER}",
+        registry_root=registry_root,
+        lake_root=lake_root,
+    )
+    assert df.height == 2
+
+
+def test_build_stats_path_is_version_scoped_like_the_part_file(
+    tmp_path: Path, monkeypatch
+):
+    lake_root = tmp_path / "lake"
+
+    # (a) THE EXPLICIT form -- always resolves by the given version,
+    # regardless of the current global.
+    assert (
+        feature_build_stats_path(lake_root, SYMBOL, DATE, schema_version=1).name
+        == "build_stats.json"
+    )
+    assert (
+        feature_build_stats_path(lake_root, SYMBOL, DATE, schema_version=2).name
+        == "build_stats-v2.json"
+    )
+
+    # (b) THE IMPLICIT form -- live, not merely true by coincidence of
+    # today's global being 2.
+    import features.tier as tier_module
+
+    monkeypatch.setattr(tier_module, "FEATURE_SCHEMA_VERSION", 1)
+    assert feature_build_stats_path(lake_root, SYMBOL, DATE).name == "build_stats.json"
+
+    monkeypatch.setattr(tier_module, "FEATURE_SCHEMA_VERSION", 2)
+    assert (
+        feature_build_stats_path(lake_root, SYMBOL, DATE).name == "build_stats-v2.json"
+    )

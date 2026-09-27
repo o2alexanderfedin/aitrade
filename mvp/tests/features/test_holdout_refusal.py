@@ -1,0 +1,442 @@
+"""RP-4: a held-out date is refused at BOTH ends of the features tier.
+
+Decision rows are a near-lossless transform of L1 (04-CONTEXT.md D-04-11),
+so a feature partition for a held-out date would hand back exactly what the
+holdout withholds. The refusal therefore has to exist before any date is
+declared held out -- which is today: measured 2026-09-17 and re-measured
+for this plan, no holdout range has been chosen yet.
+
+The one refusal these tests do NOT cover here is the quarantined TIER (a
+manifest of that tier offered to `load_features`); that test needs the
+tier's name as a string constant, so it lives in
+`tests/store/test_loader_tier_containment.py`, the file
+`tools/check_lockbox_containment.py` already sanctions for exactly that.
+"""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+
+import pytest
+
+from data import store
+from data.holdout import (
+    QuarantinedDateError,
+    assert_not_quarantined,
+    holdout_registry_path,
+    quarantined_dates,
+)
+from features.tier import (
+    assert_buildable,
+    feature_partition_path,
+    issue_feature_manifest,
+    load_features,
+    write_feature_partition,
+)
+from tests.fixtures.feature_tier import (
+    DATE,
+    NEXT_DATE,
+    SYMBOL,
+    feature_frame,
+    write_features_dq_report,
+    write_holdout_registry,
+)
+
+
+def _built_day(lake_root: Path, registry_root: Path, date: str = DATE) -> dict:
+    entry = write_feature_partition(
+        feature_frame(), lake_root=lake_root, symbol=SYMBOL, date=date
+    )
+    manifest = issue_feature_manifest(
+        symbol=SYMBOL,
+        date=date,
+        partition_entry=entry,
+        curated_manifests=[],
+        code_hash="deadbeef",
+        registry_root=registry_root,
+    )
+    write_features_dq_report(lake_root, date, manifest["manifest_id"])
+    return manifest
+
+
+# --------------------------------------------------------------------------
+# The registry itself
+# --------------------------------------------------------------------------
+
+
+def test_holdout_registry_absent_is_explicit_not_silent(tmp_path: Path, caplog):
+    registry_root = tmp_path / "registry"
+    assert not holdout_registry_path(registry_root).exists()
+    with caplog.at_level(logging.INFO, logger="data.holdout"):
+        dates = quarantined_dates(registry_root=registry_root, symbol=SYMBOL)
+    assert dates == frozenset()
+    assert dates.declared is False, (
+        "'no holdout range has been declared yet' must be distinguishable "
+        "from 'a declared holdout range that is currently empty'"
+    )
+    assert any("no holdout registry" in r.getMessage() for r in caplog.records)
+
+
+def test_a_declared_but_empty_registry_is_not_the_same_as_an_absent_one(
+    tmp_path: Path,
+):
+    registry_root = tmp_path / "registry"
+    write_holdout_registry(registry_root, [])
+    dates = quarantined_dates(registry_root=registry_root, symbol=SYMBOL)
+    assert dates == frozenset()
+    assert dates.declared is True
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "{not json at all",
+        {"version": 1, "symbol": SYMBOL, "locked_at": 1, "reason": "r"},  # no dates
+        {
+            "version": 1,
+            "symbol": SYMBOL,
+            "dates": ["2026-9-13"],
+            "locked_at": 1,
+            "reason": "r",
+        },
+        {
+            "version": 1,
+            "symbol": SYMBOL,
+            "dates": "2026-09-13",
+            "locked_at": 1,
+            "reason": "r",
+        },
+        {
+            "version": 1,
+            "symbol": SYMBOL,
+            "dates": [20260913],
+            "locked_at": 1,
+            "reason": "r",
+        },
+        ["2026-09-13"],  # not an object
+    ],
+)
+def test_holdout_registry_malformed_fails_closed(tmp_path: Path, body):
+    registry_root = tmp_path / "registry"
+    write_holdout_registry(registry_root, [], body=body)
+    with pytest.raises(ValueError):
+        quarantined_dates(registry_root=registry_root, symbol=SYMBOL)
+
+
+def test_holdout_registry_for_another_symbol_raises(tmp_path: Path):
+    registry_root = tmp_path / "registry"
+    write_holdout_registry(registry_root, [DATE], symbol="ETHUSDT")
+    with pytest.raises(ValueError, match="ETHUSDT"):
+        quarantined_dates(registry_root=registry_root, symbol=SYMBOL)
+
+
+def test_assert_not_quarantined_names_every_offender_and_the_context(
+    tmp_path: Path,
+):
+    registry_root = tmp_path / "registry"
+    write_holdout_registry(registry_root, [DATE, NEXT_DATE])
+    with pytest.raises(QuarantinedDateError) as exc:
+        assert_not_quarantined(
+            [DATE, NEXT_DATE, "2026-09-16"],
+            symbol=SYMBOL,
+            registry_root=registry_root,
+            context="a context string the message must carry",
+        )
+    message = str(exc.value)
+    assert DATE in message and NEXT_DATE in message
+    assert "2026-09-16" not in message
+    assert "a context string the message must carry" in message
+
+
+# --------------------------------------------------------------------------
+# RP-4: the build refuses, and writes nothing
+# --------------------------------------------------------------------------
+
+
+def test_build_refuses_a_quarantined_date_and_writes_nothing(tmp_path: Path):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    write_holdout_registry(registry_root, [DATE])
+
+    with pytest.raises(QuarantinedDateError, match=DATE):
+        assert_buildable(SYMBOL, DATE, NEXT_DATE, registry_root=registry_root)
+
+    # ...and the writer refuses on its own, so a caller that skipped the
+    # gate still cannot materialize the day.
+    with pytest.raises(QuarantinedDateError, match=DATE):
+        write_feature_partition(
+            feature_frame(),
+            lake_root=lake_root,
+            symbol=SYMBOL,
+            date=DATE,
+            registry_root=registry_root,
+        )
+
+    date_dir = feature_partition_path(lake_root, SYMBOL, DATE).parent
+    assert not date_dir.exists(), (
+        "the refusal must happen BEFORE any write -- not as a cleanup"
+    )
+    assert not (lake_root / "features").exists()
+
+
+def test_build_refuses_when_only_the_NEXT_day_is_quarantined(tmp_path: Path):
+    registry_root = tmp_path / "registry"
+    write_holdout_registry(registry_root, [NEXT_DATE])
+
+    # D itself is perfectly loadable...
+    assert quarantined_dates(registry_root=registry_root, symbol=SYMBOL) == frozenset(
+        {NEXT_DATE}
+    )
+    # ...and the build of D still refuses, because D's long-horizon label
+    # tail is computed from D+1's prevailing mids.
+    with pytest.raises(QuarantinedDateError) as exc:
+        assert_buildable(SYMBOL, DATE, NEXT_DATE, registry_root=registry_root)
+    message = str(exc.value)
+    assert NEXT_DATE in message, "the message must say WHICH day triggered it"
+    assert DATE in message, "...and which day's build it was refusing"
+
+
+# --------------------------------------------------------------------------
+# ...and the read end
+# --------------------------------------------------------------------------
+
+
+def test_load_features_refuses_a_quarantined_date_already_on_disk(tmp_path: Path):
+    """The registry is the authority at read time, not the build history: a
+    partition built BEFORE its date was held out is still refused."""
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    manifest = _built_day(lake_root, registry_root)
+
+    # Built while nothing was quarantined -- it loads.
+    df = load_features(
+        manifest["manifest_id"],
+        f"{SYMBOL}.features",
+        registry_root=registry_root,
+        lake_root=lake_root,
+    )
+    assert df.height == 3
+
+    write_holdout_registry(registry_root, [DATE])
+    with pytest.raises(QuarantinedDateError, match=DATE):
+        load_features(
+            manifest["manifest_id"],
+            f"{SYMBOL}.features",
+            registry_root=registry_root,
+            lake_root=lake_root,
+        )
+
+
+def test_the_quarantine_refusal_precedes_the_dq_gate_and_the_read(
+    tmp_path: Path, monkeypatch
+):
+    """Ordering, asserted rather than assumed: nothing past the refusal
+    runs. `resolve_manifest`'s own hash verification DOES run first, by
+    design -- a manifest that fails its own integrity check must never
+    reach a quarantine conversation -- so what this pins is that no rows
+    are read, no DQ verdict is formed, and no provenance is logged."""
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    manifest = _built_day(lake_root, registry_root)
+    write_holdout_registry(registry_root, [DATE])
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("reached past the quarantine refusal")
+
+    monkeypatch.setattr(store, "read_verified_partitions", refuse)
+    monkeypatch.setattr(store, "_enforce_dq_pause", refuse)
+    monkeypatch.setattr(store, "_log_provenance", refuse)
+
+    with pytest.raises(QuarantinedDateError):
+        load_features(
+            manifest["manifest_id"],
+            f"{SYMBOL}.features",
+            registry_root=registry_root,
+            lake_root=lake_root,
+        )
+
+
+def test_load_features_pauses_on_an_unacknowledged_feature_day(tmp_path: Path):
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    entry = write_feature_partition(
+        feature_frame(), lake_root=lake_root, symbol=SYMBOL, date=DATE
+    )
+    manifest = issue_feature_manifest(
+        symbol=SYMBOL,
+        date=DATE,
+        partition_entry=entry,
+        curated_manifests=[],
+        code_hash="deadbeef",
+        registry_root=registry_root,
+    )
+    write_features_dq_report(
+        lake_root,
+        DATE,
+        manifest["manifest_id"],
+        dq_status="failed",
+        check="feature_window",
+    )
+    with pytest.raises(store.DQPauseError, match="features"):
+        load_features(
+            manifest["manifest_id"],
+            f"{SYMBOL}.features",
+            registry_root=registry_root,
+            lake_root=lake_root,
+        )
+
+
+def test_load_features_refuses_a_curated_manifest(tmp_path: Path, monkeypatch):
+    """A manifest of another tier is refused by `resolve_manifest` before a
+    partition byte is read -- `load_features` names its one tier, exactly
+    as `load_curated` names its own."""
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    from tests.fixtures.feature_tier import issue_curated_day
+
+    curated = issue_curated_day(lake_root, registry_root, "trade", DATE)
+
+    reads: list = []
+    real_read = store.pl.read_parquet
+
+    def spy(path, *args, **kwargs):
+        reads.append(path)
+        return real_read(path, *args, **kwargs)
+
+    monkeypatch.setattr(store.pl, "read_parquet", spy)
+    with pytest.raises(store.ManifestTierError):
+        load_features(
+            curated["manifest_id"],
+            f"{SYMBOL}.trade",
+            registry_root=registry_root,
+            lake_root=lake_root,
+        )
+    assert reads == []
+
+
+# --------------------------------------------------------------------------
+# CR-01: the label tail, at the READ end
+# --------------------------------------------------------------------------
+
+
+def test_load_features_refuses_when_only_the_LABEL_TAIL_day_is_quarantined(
+    tmp_path: Path,
+):
+    """Day D's partition stores day D+1's price path.
+
+    `mid_t` is stored raw and every long-horizon label is a ratio, so
+    `mid_t * (1 + ret_10min_mid)` reconstructs D+1's prevailing mid
+    exactly. A read-time gate that only refuses the partition's OWN date
+    therefore hands the lockbox back through the neighbouring day's label
+    tail -- the build-side rule `assert_buildable` already enforces
+    (D-04-11), mirrored here.
+    """
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    manifest = _built_day(lake_root, registry_root, DATE)
+
+    write_holdout_registry(registry_root, [NEXT_DATE])
+    with pytest.raises(QuarantinedDateError) as exc:
+        load_features(
+            manifest["manifest_id"],
+            f"{SYMBOL}.features",
+            registry_root=registry_root,
+            lake_root=lake_root,
+        )
+    message = str(exc.value)
+    assert NEXT_DATE in message, "the message must name the day that was refused"
+    assert "label tail" in message, "...and say why a D-dated partition reads it"
+
+
+def test_load_features_refuses_only_the_tail_day_not_the_whole_lake(tmp_path: Path):
+    """The discriminating half: D+2 held out leaves D readable.
+
+    A gate that refused every date would pass the test above while being
+    useless. D's tail reaches exactly one day forward, so exactly one
+    extra day may refuse it.
+    """
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    manifest = _built_day(lake_root, registry_root, DATE)
+
+    write_holdout_registry(registry_root, ["2026-09-15"])
+    df = load_features(
+        manifest["manifest_id"],
+        f"{SYMBOL}.features",
+        registry_root=registry_root,
+        lake_root=lake_root,
+    )
+    assert df.height == 3
+
+
+def test_the_recorded_label_tail_dates_are_refused_too(tmp_path: Path):
+    """Belt and braces: the refusal is the UNION of the derived D+1 and
+    whatever the manifest's own `inputs[]` recorded.
+
+    Deriving D+1 is what covers the three partitions already on the lake,
+    whose committed bodies cannot be backfilled. Reading the recorded
+    dates is what keeps the gate honest if a future build ever reaches
+    further than one day forward.
+    """
+    from features.tier import LABEL_TAIL_ROLE
+
+    lake_root, registry_root = tmp_path / "lake", tmp_path / "registry"
+    manifest = _built_day(lake_root, registry_root, DATE)
+    body_path = store.manifest_path(
+        registry_root, f"{SYMBOL}.features", manifest["manifest_id"]
+    )
+    assert body_path.exists()
+
+    # A manifest whose recorded tail reaches two days forward -- NOT the
+    # shape today's build produces, which is exactly the point.
+    far = "2026-09-20"
+    forged = dict(manifest)
+    forged["inputs"] = [{"role": LABEL_TAIL_ROLE, "dates": [far]}]
+
+    from features.tier import refused_dates_for
+
+    assert far in refused_dates_for(forged)
+    assert NEXT_DATE in refused_dates_for(manifest)
+
+
+# --------------------------------------------------------------------------
+# WR-07: the declared version is checked
+# --------------------------------------------------------------------------
+
+
+def test_a_registry_of_an_unknown_version_fails_closed(tmp_path: Path):
+    """`HOLDOUT_REGISTRY_VERSION` used to be declared and never read.
+
+    A v2 document with a different shape -- per-symbol maps, ranges
+    instead of dates, an `exclusions` key -- would have been parsed by the
+    v1 parser, and any date it failed to interpret would have silently
+    un-held. "Fail-closed is the only safe direction" is this module's
+    whole thesis; a version nobody checks is a version that cannot fail
+    closed.
+    """
+    from data.holdout import HOLDOUT_REGISTRY_VERSION
+
+    registry_root = tmp_path / "registry"
+    write_holdout_registry(
+        registry_root,
+        [],
+        body={
+            "version": 99,
+            "symbol": SYMBOL,
+            "dates": [DATE],
+            "locked_at": 1,
+            "reason": "a document this parser was not written for",
+        },
+    )
+    with pytest.raises(ValueError, match="99"):
+        quarantined_dates(registry_root=registry_root, symbol=SYMBOL)
+
+    # ...and a MISSING version is refused too: absence is not v1.
+    write_holdout_registry(
+        registry_root,
+        [],
+        body={"symbol": SYMBOL, "dates": [DATE], "locked_at": 1, "reason": "r"},
+    )
+    with pytest.raises(ValueError):
+        quarantined_dates(registry_root=registry_root, symbol=SYMBOL)
+
+    # Anti-vacuity: the version this parser WAS written for still reads.
+    write_holdout_registry(registry_root, [DATE])
+    assert quarantined_dates(registry_root=registry_root, symbol=SYMBOL) == frozenset(
+        {DATE}
+    )
+    assert HOLDOUT_REGISTRY_VERSION == 1

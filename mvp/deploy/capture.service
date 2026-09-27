@@ -1,0 +1,67 @@
+# AiHedgeFund BTCUSDT capture daemon -- systemd unit, always-on-VPS deploy
+# target per 01-CONTEXT.md ("Deploy artifacts (Dockerfile + systemd unit)
+# are produced anyway so relocating to an always-on VPS later is a config
+# change, not a rewrite"). Produced now but NOT installed/enabled on this
+# local Mac, which uses the caffeinate-wrapped foreground process from
+# Plan 02 instead (see daemon.py's module docstring, 01-02/03/04-SUMMARY.md).
+#
+# Deploy-time setup this unit assumes (not performed here):
+#   1. Code checked out to /opt/aihedgefund, `uv sync --frozen` run once
+#      inside /opt/aihedgefund/mvp to create its .venv.
+#   2. Create the unprivileged `capture` system user/group this unit runs
+#      as (WR-03, 01-REVIEW.md), e.g.:
+#        useradd --system --no-create-home --shell /usr/sbin/nologin capture
+#   3. /data/aihedgefund/capture exists, is writable by the `capture` user
+#      (`chown -R capture:capture /data/aihedgefund/capture`), and is on a
+#      filesystem with enough free space (config.py's DEFAULT_MIN_FREE_GB /
+#      --min-free-gb).
+#   4. /opt/aihedgefund is readable by the `capture` user (code + venv are
+#      read-only at runtime, so world-readable or capture-group-readable is
+#      sufficient -- it does not need to be owned by `capture`).
+#   5. Install: copy this file to /etc/systemd/system/capture.service,
+#      then `systemctl daemon-reload && systemctl enable --now capture`.
+
+[Unit]
+Description=AiHedgeFund BTCUSDT capture daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# WR-03 (01-REVIEW.md): without an explicit User=/Group=, systemd runs
+# ExecStart as root. ReadWritePaths/ProtectSystem only limit WHERE root can
+# write -- the process still has every other root capability. Run as the
+# unprivileged `capture` system user/group created in the deploy-time setup
+# above, matching the Dockerfile's existing non-root `capture` user.
+User=capture
+Group=capture
+WorkingDirectory=/opt/aihedgefund/mvp
+Environment=CAPTURE_DATA_ROOT=/data/aihedgefund/capture
+# Placeholder -- operator overrides at deploy time (e.g. via a systemd
+# drop-in or by editing this Environment= line directly) to match the
+# actual target volume.
+
+# Invoke the venv's interpreter directly, NOT `uv run` -- found empirically
+# in Plan 02: `uv run` holds the global ~/.cache/uv/.lock for the daemon's
+# entire lifetime, hanging every other `uv run` invocation on the host
+# for as long as the daemon runs. The venv is created once at deploy time
+# (`uv sync --frozen`); this unit invokes its interpreter directly.
+ExecStart=/opt/aihedgefund/mvp/.venv/bin/python3 -m data.capture.daemon --symbol BTCUSDT
+
+# Anti-crash-loop rationale: if a bad data_root or a StartupLivenessError
+# (wrong-class subscription, silently-no-data stream) causes an immediate
+# exit, a short RestartSec would hammer restarts into Binance's
+# connection-attempt rate limit. 30s gives an operator room to notice and
+# intervene before that happens.
+Restart=always
+RestartSec=30
+
+# Least-privilege hardening (T-1-16 in this plan's threat model): no
+# privilege escalation, the whole filesystem read-only except the one path
+# the daemon is allowed to write.
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/data/aihedgefund/capture
+
+[Install]
+WantedBy=multi-user.target

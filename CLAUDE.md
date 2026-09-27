@@ -7,7 +7,7 @@ A general two-stage prediction + monetization platform: Stage 1 forecasts a targ
 
 **Current milestone (this roadmap)**: the Binance perpetual-futures MVP — Stage 1 forecasts the 10-second midprice return from L1 + trade data; Stage 2 fits a TOB-cross threshold policy. Built under heavy, explicitly-listed simplifications (zero latency, zero fees, $100 max position) with a documented queue for removing them toward a real-life tradeable model. Equally important deliverable: validation of the **agentic-iteration workflow** — Claude + ML models iterating on the system, with at least one metric-moving improvement produced by the agentic loop. Binance crypto is the beachhead because its data is free, continuous (24/7), and operationally simplest — not because the platform is about crypto.
 
-Source documents: `mvp.md` (MVP definition) and `spec.md` (living spec — wins on conflict).
+Source documents: `mvp/mvp.md` (MVP definition) and `mvp/spec.md` (living spec — wins on conflict).
 
 **Core Value:** A reproducible, leakage-proof two-stage pipeline that achieves Net P&L > 0 and annualized Sharpe > 5 on a locked held-out walk-forward window under stated simplifications — produced by a workflow where agentic iteration verifiably improves the model.
 
@@ -159,3 +159,21 @@ Do not make direct repo edits outside a GSD workflow unless the user explicitly 
 > Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
 > This section is managed by `generate-claude-profile` -- do not edit manually.
 <!-- GSD:profile-end -->
+
+## Lockbox
+
+`mvp/data/lockbox_POLICY.md` is the canonical policy document for the
+held-out data lockbox (`lake/lockbox/`) -- read it before touching anything
+lockbox-related.
+
+**No agent-run script may reference `lake/lockbox/`, or import any
+underscore-prefixed (private) name from `data/lockbox.py`, outside a
+deliberate, human-invoked gate evaluation.** This is mechanically enforced
+by `tools/check_lockbox_containment.py` in both pre-commit and CI -- it is
+not merely a convention. The only sanctioned public entry point is
+`data.lockbox.open_lockbox()`, and only a human-invoked gate-evaluation
+script should ever call it. The mechanism is accident-proofing plus an
+audit trail against a same-uid, non-adversarial actor -- it is explicitly
+NOT proof against a determined same-uid agent (that same uid can always
+`chmod` the physical barrier back). Do not describe it otherwise in any
+code, test, or report you write.

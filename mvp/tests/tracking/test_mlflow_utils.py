@@ -1,0 +1,452 @@
+"""Tests for tracking.mlflow_utils.
+
+Hermetic: every MLflow-touching test uses a `tmp_path`-backed SQLite file,
+never the real `/Volumes/ProjectsSSD/aihedgefund/mlflow/` root (that is
+`tracking/smoke_run.py`'s job, run once by hand, never by pytest). Every test
+that starts (or attempts to start) a run calls `mlflow.end_run()` in a
+`finally` block -- `mlflow.start_run()` leaves a global active-run context,
+and a second `start_run()` in a later test without an intervening
+`end_run()` raises "Run already active".
+"""
+
+from __future__ import annotations
+
+import hashlib
+
+import mlflow
+import pytest
+from mlflow.tracking import MlflowClient
+
+from data.capture.config import DataRootError
+from tracking.mlflow_utils import (
+    MANDATORY_TAG_KEYS,
+    MissingTagError,
+    build_tracking_uri,
+    compute_code_hash,
+    compute_env_hash,
+    start_tracked_run,
+)
+
+
+@pytest.fixture(autouse=True)
+def _end_any_active_run():
+    """Belt-and-braces: end any run left active by a failing test, so a
+    later test's `start_run()` never raises "Run already active"."""
+    yield
+    if mlflow.active_run() is not None:
+        mlflow.end_run()
+
+
+class _FakeCompletedProcess:
+    def __init__(self, stdout: str, returncode: int = 0, stderr: str = ""):
+        self.stdout = stdout
+        self.returncode = returncode
+        self.stderr = stderr
+
+
+def _fake_git_runner(*, clean: bool, sha: str):
+    def _runner(cmd, **kwargs):
+        if "rev-parse" in cmd:
+            return _FakeCompletedProcess(stdout=f"{sha}\n")
+        if "status" in cmd:
+            return _FakeCompletedProcess(stdout="" if clean else " M mvp/foo.py\n")
+        raise AssertionError(f"unexpected git command in test: {cmd}")
+
+    return _runner
+
+
+def _fake_failing_git_runner(*, fail_on: str, returncode: int = 128):
+    """A fake git_runner whose `fail_on` command ("rev-parse" or "status")
+    returns a non-zero returncode, simulating git being present but the
+    command itself failing (not a git repo, corrupted .git, permissions)."""
+
+    def _runner(cmd, **kwargs):
+        if fail_on in cmd:
+            return _FakeCompletedProcess(
+                stdout="", returncode=returncode, stderr=f"fatal: {fail_on} failed"
+            )
+        if "rev-parse" in cmd:
+            return _FakeCompletedProcess(stdout=f"{'0' * 40}\n")
+        if "status" in cmd:
+            return _FakeCompletedProcess(stdout="")
+        raise AssertionError(f"unexpected git command in test: {cmd}")
+
+    return _runner
+
+
+VALID_TAGS = {
+    "code_hash": "a" * 40,
+    "data_hash": "none",
+    "seed": "0",
+    "env_hash": "b" * 64,
+    "segment_manifest_id": "n/a",
+    "model_class": "n/a",
+    "fold_config": "n/a",
+    "stage": "n/a",
+}
+
+
+# --- build_tracking_uri -----------------------------------------------------
+
+
+def test_build_tracking_uri_absolute_root_four_slashes(tmp_path):
+    uri = build_tracking_uri(str(tmp_path))
+    assert uri == f"sqlite:///{tmp_path.resolve()}/mlflow.db"
+    # four slashes after "sqlite:" for an absolute path
+    assert uri.startswith("sqlite:////")
+
+
+# --- compute_code_hash -------------------------------------------------------
+
+
+def test_compute_code_hash_clean_tree_no_suffix():
+    sha = "0" * 40
+    result = compute_code_hash(git_runner=_fake_git_runner(clean=True, sha=sha))
+    assert result == sha
+
+
+def test_compute_code_hash_dirty_tree_has_suffix():
+    sha = "1" * 40
+    result = compute_code_hash(git_runner=_fake_git_runner(clean=False, sha=sha))
+    assert result == f"{sha}-dirty"
+
+
+def test_compute_code_hash_raises_on_nonzero_rev_parse_returncode():
+    with pytest.raises(RuntimeError, match="rev-parse"):
+        compute_code_hash(git_runner=_fake_failing_git_runner(fail_on="rev-parse"))
+
+
+def test_compute_code_hash_raises_on_nonzero_status_returncode():
+    with pytest.raises(RuntimeError, match="status"):
+        compute_code_hash(git_runner=_fake_failing_git_runner(fail_on="status"))
+
+
+def test_compute_code_hash_passes_cwd_to_git_runner():
+    seen_cwds = []
+
+    def _runner(cmd, **kwargs):
+        seen_cwds.append(kwargs.get("cwd"))
+        if "rev-parse" in cmd:
+            return _FakeCompletedProcess(stdout=f"{'0' * 40}\n")
+        return _FakeCompletedProcess(stdout="")
+
+    compute_code_hash(git_runner=_runner)
+    assert all(cwd is not None for cwd in seen_cwds)
+
+
+# --- compute_env_hash ---------------------------------------------------------
+
+
+def test_compute_env_hash_matches_sha256(tmp_path):
+    lock = tmp_path / "uv.lock"
+    lock.write_bytes(b"some lockfile bytes")
+    expected = hashlib.sha256(b"some lockfile bytes").hexdigest()
+    assert compute_env_hash(lock) == expected
+    assert len(expected) == 64
+
+
+def test_compute_env_hash_deterministic_same_file(tmp_path):
+    lock = tmp_path / "uv.lock"
+    lock.write_bytes(b"identical bytes")
+    assert compute_env_hash(lock) == compute_env_hash(lock)
+
+
+def test_compute_env_hash_differs_for_different_bytes(tmp_path):
+    lock_a = tmp_path / "a.lock"
+    lock_b = tmp_path / "b.lock"
+    lock_a.write_bytes(b"content A")
+    lock_b.write_bytes(b"content B")
+    assert compute_env_hash(lock_a) != compute_env_hash(lock_b)
+
+
+# --- start_tracked_run: mandatory tag enforcement -----------------------------
+
+
+def test_missing_mandatory_tag_raises_before_start_run(tmp_path):
+    incomplete_tags = dict(VALID_TAGS)
+    del incomplete_tags["stage"]
+
+    with pytest.raises(MissingTagError, match="stage"):
+        start_tracked_run(
+            str(tmp_path), incomplete_tags, "test-experiment", min_free_gb=0.0
+        )
+
+    tracking_uri = build_tracking_uri(str(tmp_path))
+    if not (tmp_path / "mlflow.db").exists():
+        # No run (and no store) was ever created -- nothing to search.
+        return
+    client = MlflowClient(tracking_uri)
+    exp = client.get_experiment_by_name("test-experiment")
+    assert exp is None or client.search_runs([exp.experiment_id]) == []
+
+
+def test_missing_tag_error_names_missing_keys(tmp_path):
+    incomplete_tags = dict(VALID_TAGS)
+    del incomplete_tags["stage"]
+    del incomplete_tags["seed"]
+
+    with pytest.raises(MissingTagError) as excinfo:
+        start_tracked_run(
+            str(tmp_path), incomplete_tags, "test-experiment", min_free_gb=0.0
+        )
+    assert "seed" in str(excinfo.value)
+    assert "stage" in str(excinfo.value)
+
+
+# --- start_tracked_run: root guard reuse --------------------------------------
+
+
+def test_bad_root_reraises_data_root_error_unmodified(tmp_path):
+    with pytest.raises(DataRootError, match="GiB free"):
+        start_tracked_run(
+            str(tmp_path), dict(VALID_TAGS), "test-experiment", min_free_gb=10**9
+        )
+
+
+def test_nonexistent_root_reraises_data_root_error(tmp_path):
+    missing = tmp_path / "does-not-exist"
+    with pytest.raises(DataRootError, match="does not exist"):
+        start_tracked_run(
+            str(missing), dict(VALID_TAGS), "test-experiment", min_free_gb=0.0
+        )
+
+
+# --- start_tracked_run: full success round-trip -------------------------------
+
+
+def test_valid_tags_round_trip_through_sqlite(tmp_path):
+    tracking_uri = build_tracking_uri(str(tmp_path))
+    try:
+        run = start_tracked_run(
+            str(tmp_path), dict(VALID_TAGS), "test-experiment", min_free_gb=0.0
+        )
+        assert run.info.run_id
+
+        client = MlflowClient(tracking_uri)
+        fetched = client.get_run(run.info.run_id)
+        for key, value in VALID_TAGS.items():
+            assert fetched.data.tags[key] == value
+    finally:
+        mlflow.end_run()
+
+
+def test_experiment_created_if_absent(tmp_path):
+    tracking_uri = build_tracking_uri(str(tmp_path))
+    try:
+        start_tracked_run(
+            str(tmp_path), dict(VALID_TAGS), "brand-new-experiment", min_free_gb=0.0
+        )
+        client = MlflowClient(tracking_uri)
+        exp = client.get_experiment_by_name("brand-new-experiment")
+        assert exp is not None
+    finally:
+        mlflow.end_run()
+
+
+# --- spec-contract: MANDATORY_TAG_KEYS matches mvp/spec.md's tag schema ------
+
+
+def _extract_mandatory_tag_keys(section: str) -> set[str]:
+    import re
+
+    match = re.search(
+        r"exactly these eight mandatory tags:\s*\n\s*(.+?)\.\s*\n", section
+    )
+    assert match, "'exactly these eight mandatory tags:' sentence not found"
+    return set(re.findall(r"`([A-Za-z0-9_]+)`", match.group(1)))
+
+
+def test_extract_mandatory_tag_keys_rejects_a_ninth_key_spec_md_would_have_missed():
+    """Regression guard for the bug WR-07 fixed: a per-key substring
+    containment check only ever verifies code-tags-are-subset-of-spec, so a
+    spec.md sentence listing a 9th, code-unknown tag would previously pass
+    silently. Set equality catches it."""
+    section = (
+        "## MLflow tag schema\n\n"
+        "- Every MLflow run carries exactly these eight mandatory tags:\n"
+        "  `code_hash`, `data_hash`, `seed`, `env_hash`, `segment_manifest_id`, "
+        "`model_class`, `fold_config`, `stage`, `extra_ninth_tag`.\n"
+    )
+    keys = _extract_mandatory_tag_keys(section)
+    assert keys != set(MANDATORY_TAG_KEYS)
+
+
+def test_mandatory_tag_keys_match_spec_md():
+    """Set equality (not just code-tags-is-subset-of-spec) against the exact
+    "exactly these eight mandatory tags:" sentence in spec.md's MLflow tag
+    schema section -- a per-key substring-containment check only catches a
+    key present in code but missing from spec.md; it would miss spec.md
+    gaining a 9th tag (or a stray backticked mention of a dropped key
+    elsewhere in the section) that MANDATORY_TAG_KEYS doesn't know about.
+    """
+    from pathlib import Path
+
+    spec_path = Path(__file__).resolve().parents[2] / "spec.md"
+    text = spec_path.read_text()
+    heading = "## MLflow tag schema"
+    assert heading in text, "spec.md must contain the 'MLflow tag schema' heading"
+    section = text[text.index(heading) :]
+    # Stop at the next level-2 heading so we only scan this section's text.
+    next_heading_idx = section.find("\n## ", len(heading))
+    if next_heading_idx != -1:
+        section = section[:next_heading_idx]
+
+    spec_keys = _extract_mandatory_tag_keys(section)
+    assert spec_keys == set(MANDATORY_TAG_KEYS), (
+        f"spec.md's mandatory-tags sentence {spec_keys} != "
+        f"MANDATORY_TAG_KEYS {set(MANDATORY_TAG_KEYS)} -- the spec is the "
+        "contract, keep both in lockstep"
+    )
+
+
+# --- WR-01 (03-REVIEW.md): DQ acknowledgement ids ride on start_tracked_run ---
+
+
+def test_dq_ack_ids_are_logged_as_a_run_tag_at_creation(tmp_path):
+    tracking_uri = build_tracking_uri(str(tmp_path))
+    try:
+        run = start_tracked_run(
+            str(tmp_path),
+            dict(VALID_TAGS),
+            "test-experiment",
+            min_free_gb=0.0,
+            dq_ack_ids=[
+                "BTCUSDT__trade__2026-09-14",
+                "BTCUSDT__bookTicker__2026-09-14",
+            ],
+        )
+        fetched = MlflowClient(tracking_uri).get_run(run.info.run_id)
+        assert (
+            fetched.data.tags["dq_ack_ids"]
+            == "BTCUSDT__bookTicker__2026-09-14,BTCUSDT__trade__2026-09-14"
+        )
+    finally:
+        mlflow.end_run()
+
+
+# --- 03-FOLLOWUPS.md item 3 (WR-16 remainder): the loader logs provenance ---
+
+
+def test_log_data_provenance_writes_all_three_tags_on_the_active_run(tmp_path):
+    from tracking.mlflow_utils import log_data_provenance
+
+    tracking_uri = build_tracking_uri(str(tmp_path))
+    try:
+        run = start_tracked_run(
+            str(tmp_path), dict(VALID_TAGS), "test-experiment", min_free_gb=0.0
+        )
+        assert (
+            log_data_provenance(
+                manifest_ids=["m1"],
+                dq_ack_ids=["BTCUSDT__trade__2026-09-14"],
+                dq_ack_sha256=["a" * 64],
+            )
+            is True
+        )
+        tags = MlflowClient(tracking_uri).get_run(run.info.run_id).data.tags
+        assert tags["data_manifest_ids"] == "m1"
+        assert tags["dq_ack_ids"] == "BTCUSDT__trade__2026-09-14"
+        assert tags["dq_ack_sha256"] == "a" * 64
+    finally:
+        mlflow.end_run()
+
+
+def test_log_data_provenance_accumulates_across_reads(tmp_path):
+    """A run may read several manifests; the second read must not erase the
+    first one's provenance."""
+    from tracking.mlflow_utils import log_data_provenance
+
+    tracking_uri = build_tracking_uri(str(tmp_path))
+    try:
+        run = start_tracked_run(
+            str(tmp_path), dict(VALID_TAGS), "test-experiment", min_free_gb=0.0
+        )
+        log_data_provenance(
+            manifest_ids=["m1"], dq_ack_ids=["ack1"], dq_ack_sha256=["a" * 64]
+        )
+        log_data_provenance(manifest_ids=["m2"], dq_ack_ids=[], dq_ack_sha256=[])
+        tags = MlflowClient(tracking_uri).get_run(run.info.run_id).data.tags
+        assert tags["data_manifest_ids"] == "m1,m2"
+        assert tags["dq_ack_ids"] == "ack1"
+    finally:
+        mlflow.end_run()
+
+
+def test_log_data_provenance_is_a_no_op_without_an_active_run(tmp_path):
+    """Reading curated data outside a tracked run is legitimate and must not
+    raise."""
+    from tracking.mlflow_utils import log_data_provenance
+
+    mlflow.set_tracking_uri(build_tracking_uri(str(tmp_path)))
+    assert mlflow.active_run() is None
+    assert (
+        log_data_provenance(manifest_ids=["m1"], dq_ack_ids=["a"], dq_ack_sha256=["b"])
+        is False
+    )
+
+
+# --- 03-REVIEW-FOLLOWUPS.md WR-01: provenance must not stop at 123 ids ------
+
+
+def test_provenance_survives_more_ids_than_one_tag_can_hold(tmp_path):
+    """MLflow caps a tag value at 8000 characters and does not raise -- it
+    TRUNCATES and logs a WARNING. A manifest id is 64 hex plus a separator, so
+    the ceiling was 123 ids: a walk-forward run over the current 111-day lake
+    was already at 90% of it, and the 124th id was written as the fragment
+    `8bcbb`, which the next call's merge then re-committed forever. The record
+    was written, complete-looking, and wrong."""
+    from tracking.mlflow_utils import log_data_provenance, read_provenance_tag
+
+    tracking_uri = build_tracking_uri(str(tmp_path))
+    expected = [f"{i:064x}" for i in range(200)]
+    try:
+        run = start_tracked_run(
+            str(tmp_path), dict(VALID_TAGS), "test-experiment", min_free_gb=0.0
+        )
+        for manifest_id in expected:
+            log_data_provenance(
+                manifest_ids=[manifest_id], dq_ack_ids=[], dq_ack_sha256=[]
+            )
+        tags = MlflowClient(tracking_uri).get_run(run.info.run_id).data.tags
+    finally:
+        mlflow.end_run()
+
+    recovered = read_provenance_tag(tags, "data_manifest_ids")
+    assert recovered == sorted(expected), (
+        f"{len(expected) - len(set(recovered) & set(expected))} id(s) lost"
+    )
+    malformed = [v for v in recovered if len(v) != 64]
+    assert malformed == [], f"truncated fragments written as real ids: {malformed}"
+    assert all(len(v) <= 8000 for v in tags.values() if isinstance(v, str))
+
+
+def test_a_single_value_too_long_for_a_tag_fails_loudly(tmp_path):
+    """The one thing that must never happen quietly is a truncated id that
+    looks real. A value no shard can hold is refused, not trimmed."""
+    from tracking.mlflow_utils import ProvenanceValueTooLong, log_data_provenance
+
+    try:
+        start_tracked_run(
+            str(tmp_path), dict(VALID_TAGS), "test-experiment", min_free_gb=0.0
+        )
+        with pytest.raises(ProvenanceValueTooLong):
+            log_data_provenance(
+                manifest_ids=["x" * 9000], dq_ack_ids=[], dq_ack_sha256=[]
+            )
+    finally:
+        mlflow.end_run()
+
+
+def test_read_provenance_tag_merges_shards_and_ignores_none(tmp_path):
+    from tracking.mlflow_utils import read_provenance_tag
+
+    tags = {
+        "data_manifest_ids": "a,b",
+        "data_manifest_ids_0002": "c",
+        "data_manifest_ids_0003": "d,e",
+        "dq_ack_ids": "none",
+        "data_manifest_ids_extra": "not-a-shard",
+    }
+    assert read_provenance_tag(tags, "data_manifest_ids") == ["a", "b", "c", "d", "e"]
+    assert read_provenance_tag(tags, "dq_ack_ids") == []
+    assert read_provenance_tag(tags, "absent") == []

@@ -9,36 +9,36 @@ Requirements for MVP exit. Each maps to roadmap phases. Source of truth: `mvp.md
 
 ### Stage 0 — Living Spec & Conventions
 
-- [ ] **SPEC-01**: spec.md exists in seed form with feature and label catalogues in machine-readable format (structured entries CI can parse, not prose tables)
-- [ ] **SPEC-02**: CI validates that every feature/label used in training has a catalogue entry, and rejects `import pandas` and `latest` data references
-- [ ] **SPEC-03**: mvp.md decision-rule pseudocode dimensional bug fixed (`mid * (1 + pred)` vs price level) and spec.md amended same-day with: spot-L1 clock exception, trades-backfill side-exactness
-- [ ] **SPEC-04**: Sharpe annualization convention, MLflow tag schema, and numba no-globals lint rule pre-declared in spec.md before any run
+- [x] **SPEC-01**: spec.md exists in seed form with feature and label catalogues in machine-readable format (structured entries CI can parse, not prose tables)
+- [x] **SPEC-02**: CI validates that every feature/label used in training has a catalogue entry, and rejects `import pandas` and `latest` data references
+- [x] **SPEC-03**: mvp.md decision-rule pseudocode dimensional bug fixed (`mid * (1 + pred)` vs price level) and spec.md amended same-day with: spot-L1 clock exception, trades-backfill side-exactness
+- [x] **SPEC-04**: Sharpe annualization convention, MLflow tag schema, and numba no-globals lint rule pre-declared in spec.md before any run
 
 ### Data — Capture, Backfill, Quality
 
-- [ ] **DATA-01**: Redundant capture daemon records Binance Swap (and Spot if feasible) L1 + trades to Parquet with a gap ledger, running from Phase 1 onward (L1 history is not backfillable — verified)
-- [ ] **DATA-02**: Trades backfilled from data.binance.vision with per-dataset unit registry handling format heterogeneity (spot ms→µs switch at 2025-01-01, futures ms, header differences)
-- [ ] **DATA-03**: Trade-side backfill preprocessing classifies legacy `tradeSide = 0` rows by nearest L1 quote; corrected side stored alongside raw (`tradeSide_raw`, `tradeSide_corrected`)
-- [ ] **DATA-04**: All timestamps stored as int64 nanoseconds since epoch; `etime` is the only clock (documented local-clock exception for spot L1 if that route is chosen)
-- [ ] **DATA-05**: Ingest materializes an `(etime, seq)` arrival-order column so "last row of each etime" is deterministic
-- [ ] **DATA-06**: Parquet data lake partitioned by symbol/date with versioned schema; immutable, manifest-addressed artifacts
-- [ ] **DATA-07**: Daily data-quality report (dropped-event counts per filter, sparsity, resync warm-up tagging); degradation pauses training until acknowledged
-- [ ] **DATA-08**: Held-out lockbox mechanically enforced at the data-loader level (quarantined segments unreadable without an explicit one-look MLflow annotation)
+- [x] **DATA-01**: Redundant capture daemon records Binance Swap (and Spot if feasible) L1 + trades to Parquet with a gap ledger, running from Phase 1 onward (L1 history is not backfillable — verified)
+- [x] **DATA-02**: Trades backfilled from data.binance.vision with per-dataset unit registry handling format heterogeneity (spot ms→µs switch at 2025-01-01, futures ms, header differences)
+- [x] **DATA-03**: Trade-side backfill preprocessing classifies legacy `tradeSide = 0` rows by nearest L1 quote; corrected side stored alongside raw (`tradeSide_raw`, `tradeSide_corrected`)
+- [x] **DATA-04**: All timestamps stored as int64 nanoseconds since epoch; `etime` is the only clock (documented local-clock exception for spot L1 if that route is chosen)
+- [x] **DATA-05**: Ingest materializes an `(etime, seq)` arrival-order column so "last row of each etime" is deterministic
+- [x] **DATA-06**: Parquet data lake partitioned by symbol/date with versioned schema; immutable, manifest-addressed artifacts
+- [x] **DATA-07**: Daily data-quality report (dropped-event counts per filter, sparsity, resync warm-up tagging); degradation pauses training until acknowledged
+- [x] **DATA-08**: Held-out lockbox mechanically enforced at the data-loader level (quarantined segments unreadable without an explicit one-look MLflow annotation)
 
 ### Features & Labels
 
-- [ ] **FEAT-01**: Single feature-pipeline code path (numba streaming kernel) shared byte-identically by training, inference, and simulator; state accumulates over every row, decisions emit on last row of each `etime`
-- [ ] **FEAT-02**: Initial L1 microstructure feature set implemented per catalogue (mid, top-of-book imbalance, OFI, trade-flow features), each with information-set entry
-- [ ] **FEAT-03**: CI leakage test proves per-feature information sets (shuffle-future-data invariance)
-- [ ] **FEAT-04**: Label generation for 10s midprice return (primary) + diagnostic horizons {1s, 1min, 10min}, embargo ≥ horizon
-- [ ] **FEAT-05**: Rolling/expanding normalization computed on training data only
+- [x] **FEAT-01**: Single feature-pipeline code path (numba streaming kernel) shared byte-identically by training, inference, and simulator; state accumulates over every row, decisions emit on last row of each `etime`
+- [x] **FEAT-02**: Initial L1 microstructure feature set implemented per catalogue (mid, top-of-book imbalance, OFI, trade-flow features), each with information-set entry
+- [x] **FEAT-03**: CI leakage test proves per-feature information sets (shuffle-future-data invariance)
+- [x] **FEAT-04**: Label generation for 10s midprice return (primary) + diagnostic horizons {1s, 1min, 10min}, embargo ≥ horizon
+- [x] **FEAT-05**: Rolling/expanding normalization computed on training data only
 
 ### Evaluation Harness
 
-- [ ] **EVAL-01**: Walk-forward fold harness with 5-segment split (Train_S1 | Val_S1 | Train_S2 | Val_S2 | Held-out) and embargo gaps; segment manifests stored as data
-- [ ] **EVAL-02**: Compressed 3-segment fallback (Train shared via purged+embargoed inner k-fold OOF | Val | Held-out) selectable per run with reason recorded in MLflow
-- [ ] **EVAL-03**: Selection-bias budget tracked in MLflow; every validation look counted; budget exhaustion forces a fresh window
-- [ ] **EVAL-04**: Negative-result log records failed configs
+- [x] **EVAL-01**: Walk-forward fold harness with 5-segment split (Train_S1 | Val_S1 | Train_S2 | Val_S2 | Held-out) and embargo gaps; segment manifests stored as data
+- [x] **EVAL-02**: Compressed 3-segment fallback (Train shared via purged+embargoed inner k-fold OOF | Val | Held-out) selectable per run with reason recorded in MLflow
+- [x] **EVAL-03**: Selection-bias budget tracked in MLflow; every validation look counted; budget exhaustion forces a fresh window
+- [x] **EVAL-04**: Negative-result log records failed configs
 - [ ] **EVAL-05**: Reporting suite: per-fold metrics ± std, regime-split (high/low vol), effective sample size (HAC/block bootstrap), Deflated Sharpe Ratio, equity curves, trade logs, alpha-decay curve
 - [ ] **EVAL-06**: Held-out window locked at v0; one look per gate enforced via EVAL/DATA-08 quarantine
 
@@ -53,9 +53,9 @@ Requirements for MVP exit. Each maps to roadmap phases. Source of truth: `mvp.md
 
 ### Simulator
 
-- [ ] **SIM-01**: Event-driven numba simulator: taker-only, zero fees, zero latency, $100 max notional, flip-only position logic, sequential scan (no vectorization — policy is path-dependent)
-- [ ] **SIM-02**: Oracle tests validate simulator policy math against hand-computed scenarios (catches decision-rule dimensional bugs)
-- [ ] **SIM-03**: Integer-tick price accounting in the hot path to avoid float-drift P&L errors
+- [x] **SIM-01**: Event-driven numba simulator: taker-only, zero fees, zero latency, $100 max notional, flip-only position logic, sequential scan (no vectorization — policy is path-dependent). Proof: `mvp/tests/sim/test_path_dependence.py::test_hypothesis_random_adjacent_swap_that_straddles_a_trigger_changes_the_result` (sequential/non-vectorized, proven by permutation-sensitivity) + `mvp/tests/sim/test_flip_invariant.py::test_flip_only_property` (flip-only, no risk-increasing order).
+- [x] **SIM-02**: Oracle tests validate simulator policy math against hand-computed scenarios (catches decision-rule dimensional bugs). Proof: `mvp/tests/sim/test_oracles.py::test_hand_computed_scenario_oracle` and `test_path_dependence.py::test_q7_adjacent_swap_changes_trade_count_and_pnl` (06-RESEARCH.md Q7 fixture, hand-derived in the test docstring, independently re-verified against the running kernel before transcription).
+- [x] **SIM-03**: Integer-tick price accounting in the hot path to avoid float-drift P&L errors. Proof: `mvp/tests/sim/test_determinism.py::test_two_same_process_runs_hash_identical` + `test_subprocess_run_hashes_identical_to_the_parent_process` (bit-identical same-process and cross-process sha256), plus `mvp/tests/sim/test_kernel.py::test_symmetric_quantisation_at_exact_half_tick` (the 2026-09-24 symmetric floor/ceil quantisation fix, integer throughout).
 
 ### Stage 2 — Monetization
 
@@ -65,8 +65,8 @@ Requirements for MVP exit. Each maps to roadmap phases. Source of truth: `mvp.md
 
 ### Tracking & Reproducibility
 
-- [ ] **TRACK-01**: MLflow with SQL (SQLite) backend; run manifest records code hash + data hash + seed + env hash for every run
-- [ ] **TRACK-02**: Environment pinned (numba/numpy/llvmlite compatibility matrix, Python 3.13, uv-managed); CI enforces pins
+- [x] **TRACK-01**: MLflow with SQL (SQLite) backend; run manifest records code hash + data hash + seed + env hash for every run
+- [x] **TRACK-02**: Environment pinned (numba/numpy/llvmlite compatibility matrix, Python 3.13, uv-managed); CI enforces pins
 
 ### Version Gates
 
@@ -126,27 +126,27 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SPEC-01 | Phase 2 | Pending |
-| SPEC-02 | Phase 2 | Pending |
-| SPEC-03 | Phase 2 | Pending |
-| SPEC-04 | Phase 2 | Pending |
-| DATA-01 | Phase 1 | Pending |
-| DATA-02 | Phase 3 | Pending |
-| DATA-03 | Phase 3 | Pending |
-| DATA-04 | Phase 1 | Pending |
-| DATA-05 | Phase 3 | Pending |
-| DATA-06 | Phase 3 | Pending |
-| DATA-07 | Phase 3 | Pending |
-| DATA-08 | Phase 3 | Pending |
-| FEAT-01 | Phase 4 | Pending |
-| FEAT-02 | Phase 4 | Pending |
-| FEAT-03 | Phase 4 | Pending |
-| FEAT-04 | Phase 4 | Pending |
-| FEAT-05 | Phase 4 | Pending |
-| EVAL-01 | Phase 5 | Pending |
-| EVAL-02 | Phase 5 | Pending |
-| EVAL-03 | Phase 5 | Pending |
-| EVAL-04 | Phase 5 | Pending |
+| SPEC-01 | Phase 2 | Complete |
+| SPEC-02 | Phase 2 | Complete |
+| SPEC-03 | Phase 2 | Complete |
+| SPEC-04 | Phase 2 | Complete |
+| DATA-01 | Phase 1 | Complete |
+| DATA-02 | Phase 3 | Complete |
+| DATA-03 | Phase 3 | Complete |
+| DATA-04 | Phase 1 | Complete |
+| DATA-05 | Phase 3 | Complete |
+| DATA-06 | Phase 3 | Complete |
+| DATA-07 | Phase 3 | Complete |
+| DATA-08 | Phase 3 | Complete |
+| FEAT-01 | Phase 4 | Complete |
+| FEAT-02 | Phase 4 | Complete |
+| FEAT-03 | Phase 4 | Complete |
+| FEAT-04 | Phase 4 | Complete |
+| FEAT-05 | Phase 4 | Complete |
+| EVAL-01 | Phase 5 | Complete |
+| EVAL-02 | Phase 5 | Complete |
+| EVAL-03 | Phase 5 | Complete |
+| EVAL-04 | Phase 5 | Complete |
 | EVAL-05 | Phase 9 | Pending |
 | EVAL-06 | Phase 8 | Pending |
 | FCST-01 | Phase 7 | Pending |
@@ -155,14 +155,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FCST-04 | Phase 7 | Pending |
 | FCST-05 | Phase 8 | Pending |
 | FCST-06 | Phase 8 | Pending |
-| SIM-01 | Phase 6 | Pending |
-| SIM-02 | Phase 6 | Pending |
-| SIM-03 | Phase 6 | Pending |
+| SIM-01 | Phase 6 | Complete |
+| SIM-02 | Phase 6 | Complete |
+| SIM-03 | Phase 6 | Complete |
 | MON-01 | Phase 9 | Pending |
 | MON-02 | Phase 9 | Pending |
 | MON-03 | Phase 9 | Pending |
-| TRACK-01 | Phase 2 | Pending |
-| TRACK-02 | Phase 2 | Pending |
+| TRACK-01 | Phase 2 | Complete |
+| TRACK-02 | Phase 2 | Complete |
 | GATE-01 | Phase 8 | Pending |
 | GATE-02 | Phase 9 | Pending |
 | GATE-03 | Phase 11 | Pending |

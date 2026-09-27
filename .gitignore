@@ -1,0 +1,6 @@
+timesfm/
+hf-cache/
+*.safetensors
+*.ckpt
+*.pt
+*.pth

@@ -1,0 +1,28 @@
+{
+  "built_at": 1789607542782503000,
+  "code_hash": "ci-fixture-0001",
+  "dataset": "BTCUSDT.trade",
+  "etime_range": [
+    1735689600000000000,
+    1735689602000000000
+  ],
+  "inputs": [],
+  "manifest_id": "ac5e923e3d562528d8ba584525efd7f71bc0f503b382c66c366b98fa3c895766",
+  "partitions": [
+    {
+      "date": "2026-01-01",
+      "etime_max": 1735689602000000000,
+      "etime_min": 1735689600000000000,
+      "mtime_ns": 1789607542781940165,
+      "path": "curated/symbol=BTCUSDT/stream=trade/date=2026-01-01/part-1.parquet",
+      "rows": 3,
+      "sha256": "9cb68f21125412c0f9c3cd99bc77e0bfac8013c99e3db2d4dcd1c5e4dc4f765e",
+      "size_bytes": 1534
+    }
+  ],
+  "row_count": 3,
+  "schema_version": 1,
+  "stream": "trade",
+  "symbol": "BTCUSDT",
+  "tier": "curated"
+}

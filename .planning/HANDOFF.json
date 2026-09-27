@@ -1,0 +1,61 @@
+{
+  "status": "paused_at_checkpoint",
+  "created": "2026-09-27T07:12:00Z",
+  "phase": "07-regression-track-vertical-slice",
+  "plan": "07-10 (wave 8) not started",
+  "task": 0,
+  "total_tasks": 2,
+  "branch": "feature/phase-07-regression-track-vertical-slice",
+  "head": "42305ce",
+  "pushed": true,
+  "uncommitted_files": [],
+  "next_action": "Present the wave-8 checkpoint to the user and WAIT. 07-10 spends 5 of the 6 irreversible looks on the approved segment manifest 807125015b252014ad8ee5282a21b2eccbfe01a287122cce5512ec9885aa3548 (budget_allowance 3 for val, five OOF blocks). It must not be launched autonomously.",
+  "why_paused": "Nine of eleven plans are done and all of it is reversible. Waves 8 and 9 are not: they spend looks that cannot be un-spent. The prior session stopped here on purpose rather than begin look-spending work on an exhausted context.",
+  "verified_by_running_not_reading": {
+    "suite": "1372 passed in 247.80s (own run, 2026-09-27)",
+    "look_counters": "all 16 (2 committed segment manifests x 8 names, 12 look-bearing) read 0, queried twice against the real store at /Volumes/ProjectsSSD/aihedgefund/mlflow",
+    "dq_preflight_on_real_manifests": "([], []) -- all seven days 2026-09-12..18 read ok; zero materialize calls, proven with a spy on every BOUND name plus a positive control",
+    "hooks": "18 at pre-commit stage + check_no_manifest_rewrite --full at pre-push, all passed; --no-verify never used"
+  },
+  "wave_8_scope": [
+    "Build the REAL normalization artifact at the derived train_end (2026-09-16 for the approved manifest; derived by select_train_day_manifests over the ns clock, never typed as a literal).",
+    "Spend the five OOF looks via --select (oof_block_0..4). This is the irreversible part.",
+    "Freeze the winner and commit the frozen body TOGETHER WITH the lake_registry/predictors/ guardrail extension in ONE commit -- 07-09 deliberately created no body outside tmp_path so that these land together."
+  ],
+  "wave_9_scope": [
+    "The ONE honest val look (--spend-val-look).",
+    "The stored prediction table, ~190 MiB (12.167 B/row x 16,294,059 admitted val rows -- the rate was right and the row count wrong in the first two estimates; this is the third and measured one).",
+    "The simulator run and the disclosure block."
+  ],
+  "blockers": [],
+  "known_residue": [
+    "--freeze and --resume-from-cache do NOT get the DQ pre-flight, as scoped. Neither can spend a look (record_look appears in models/ and scripts/ only as docstring prose; materialize_once returns on the cache hit before reaching materialize), so the price is a LATE refusal at step 9, not a spent budget. The user has not been asked to decide this yet.",
+    "_dq_verdict_for_date has never run against a real non-ok day -- no such day exists. Every refusal is proven on synthetic tmp_path reports only.",
+    "data/dq/report.py and data/dq/feature_checks.py were not read; a producer/consumer shape mismatch would go unnoticed.",
+    "The ack-sha-conflict refusal inside dq_preflight is covered by no test.",
+    "tests/lockbox/conftest.py still POPS AIHF_MLFLOW_TRACKING_ROOT instead of setting it (deferred at 07-01 D1; its docstring is honest and no look flows through it).",
+    "STATE.md's Performance Metrics table has no row for 07-02.",
+    "FCST-01 and FCST-04 stay Pending on purpose: a slice that runs on a synthetic fixture is the mechanism, not the requirement."
+  ],
+  "human_actions_pending": [
+    "Approve (or decline) a capture-daemon relaunch. It has been stopped since the 2026-09-19 reboot and the user declined a relaunch once.",
+    "Remove /Library/LaunchDaemons/com.aihedgefund.disablebatterysleep.plist (must NOT be reinstalled).",
+    "Decide whether --freeze/--resume-from-cache should also get the DQ pre-flight."
+  ],
+  "safety_constraints_still_in_force": [
+    "Work ONLY from /Volumes/ProjectsSSD/aihedgefund/repo and cd there in EVERY Bash call. The OneDrive path is a stale dehydrated copy that HANGS on read.",
+    "/Volumes/ProjectsSSD/aihedgefund/capture/ is READ-ONLY. Never start, signal or restart the capture daemon.",
+    "Never install LaunchDaemons/LaunchAgents or change pmset without the user's explicit per-change approval.",
+    "Write-once: curated/raw partitions, committed manifest bodies, v1 and v2 feature partitions, the normalization artifact, and the three committed registry bodies. A wrong build is corrected by a NEW manifest, never by rewriting bytes.",
+    "Never launch long-lived processes with `uv run` (holds ~/.cache/uv/.lock); use ./.venv/bin/python3 and ./.venv/bin/pytest from mvp/.",
+    "Never pass --no-verify. Guardrail commands must be byte-identical between .pre-commit-config.yaml entry: and .github/workflows/ci.yml run:.",
+    "Export NUMBA_CACHE_DIR=/tmp/nbc for any bare python3 that imports the numba kernel.",
+    "NEVER call harness.accessor.materialize against the real lake or the real mlflow store outside a deliberate, user-approved look.",
+    "torch must never enter mvp/.venv. TimesFM lives at /Volumes/ProjectsSSD/aihedgefund/timesfm/ with its own .venv, gitignored.",
+    "A DQ acknowledgement is a human decision -- agents never write one.",
+    "Commit messages end with EXACTLY: Co-Authored-By: AI Hive(R) <sales@hupyy.com> / Claude-Session: https://claude.ai/code/session_01RCuyRej4LNRLXQnszUC9Ho",
+    "Executors must commit each task as they finish it -- two were killed by a stall watchdog while accumulating uncommitted work.",
+    "gsd-sdk query state.add-blocker silently OVERWRITES STATE.md's stopped_at. Read it first and restore, or hand-edit."
+  ],
+  "context_notes": "The most consequential finding of the phase was a BOOKKEEPING TAG THAT SPENT THE BUDGET: harness.budget.look_count matches (segment_manifest_id, segment_name) across EVERY experiment, and segment_manifest_id is a mandatory tag, so a run tagged segment_name=\"val\" IS a counted look. Measured: look_count(val) read 2 after one honest look and 3 after a cache-only re-invocation. The key is now scored_segment_name. Any new tracked run must not carry segment_name unless it IS a look. Second: a frozen predictor body is located by the recipe MINUS code_hash, because the freeze runs at a later commit than the select by design. Third: etime is globally unique and strictly sorted across all 60,926,503 decision rows, so the join key is etime alone -- decision_seq is NOT unique. Fourth: never pin a coefficient or prediction digest as a committed constant -- numpy links Apple Accelerate here and OpenBLAS in CI."
+}

@@ -1,0 +1,56 @@
+# Feature catalogue source of truth (SPEC-01, SPEC-02).
+#
+# Every feature must have an entry here before being used in training/inference code
+# (mvp/spec/catalogue.py's registry is the only way training code reaches a feature by
+# name). A definition change gets a NEW name (see mvp/spec.md Feature catalogue Rules);
+# mvp/tools/check_spec_diff.py CI-rejects a changed `definition` under an existing name.
+#
+# Rendered into mvp/spec.md between the `<!-- catalogue:features:begin -->` /
+# `:end` markers by `mvp/spec/render.py` -- keep table-declaration order meaningful:
+# rows render in this file's declaration order, not sorted.
+#
+# `information_set` and `notes` were pinned to what the code computes by Phase 4
+# Plan 03 (D-04-03, D-04-04, D-04-16). Every `definition` string is byte-unchanged
+# from the day it was declared: check_spec_diff compares `definition` only, and a
+# redefinition is supposed to get a new name, so the window lengths, endpoints, units
+# and edge cases below live in `information_set`/`notes` deliberately.
+
+[mid]
+definition = "(best_bid + best_ask) / 2"
+information_set = "t"
+lag = 0
+normalization = "none"
+source_datasets = ["swap L1 BBO"]
+notes = "Units: quote currency (USDT). The value at a decision row is the PREVAILING top of book, i.e. the most recent L1 update at or before t, so on a decision row that is a trade the quote it comes from is older than t. NULL before the partition's first L1 update, never 0. A crossed or locked book (bid >= ask) is arithmetically well-defined here and is COUNTED, not refused: Phase 3's check_crossed_locked_book already treats it as an informational per-day count, and hard-failing the feature build on it would make this tier stricter than the curated tier it reads. Measured 2026-09-13: 97.5% of quotes sit at a 1-tick spread, so mid lands on a half-tick 98.8% of the time and the labels are heavily quantized (see the label catalogue). A sub-tick stickiness flag is NOT part of this catalogue and would be a NEW entry, proposed in Phase 8 if the quantization actually bites."
+version = 1
+introduced = "2026-09-13"
+
+[imb_top]
+definition = "(bid_size - ask_size) / (bid_size + ask_size)"
+information_set = "t"
+lag = 0
+normalization = "none"
+source_datasets = ["swap L1 BBO"]
+notes = "Dimensionless, in [-1, 1]. Same prevailing-quote rule as mid: the most recent L1 update at or before t, NULL before the partition's first one. 'Undefined when both sizes are 0' is enforced as an ASSERTION, not a branch -- measured 0 occurrences in 17.2M real rows on 2026-09-13, so a null-propagation path for it would be untested code; if it ever fires it signals feed corruption and the build stops with the offending row index."
+version = 1
+introduced = "2026-09-13"
+
+[ofi]
+definition = "Order-flow imbalance: top-of-book quote-and-size delta between consecutive updates (Cont-Kukanov-Stoikov convention)"
+information_set = "[prev_l1_update, t]"
+lag = 0
+normalization = "none"
+source_datasets = ["swap L1 BBO"]
+notes = "Cont-Kukanov-Stoikov per-update e_n (arXiv:1011.6402 Section 2.1, which is itself a Level-I measure -- no adaptation was needed for a BBO-only feed). Units: BASE ASSET (BTC), not notional. Positive = net buying pressure, matching data/ingest/trade_side.py's SIGN_MAKER_IS_SELLER = +1; note that a FALLING ask is NEGATIVE, because CKS classes a_n < a_n-1 as an increase in supply. 'Consecutive' means consecutive in (etime, seq) among L1 rows, not in etime -- 17.17M updates share only 6.86M distinct etimes. The first L1 update of a partition is NULL, not zero, and no value is seeded from the previous day. A repeated identical quote yields exactly 0.0 by construction: four independent indicators, never an elif chain. Between L1 updates the value is carried forward unchanged, which is why the information set opens at the previous L1 update rather than at t. The interval-summed OFI_k that the paper regresses on is a DIFFERENT feature and would need a new name (ofi_1s)."
+version = 1
+introduced = "2026-09-13"
+
+[trade_flow]
+definition = "Signed trade volume over a trailing window using tradeSide_corrected"
+information_set = "[t-1s, t]"
+lag = 0
+normalization = "none"
+source_datasets = ["swap trades"]
+notes = "Trailing window length 1 s; endpoints half-open (t-1s, t], so a trade at exactly t is inside and a trade at exactly t-1s is not. Units: BASE ASSET (BTC), not notional. Accumulated in int64 fixed point at 1e-8 and divided only at emission, so the value is bit-identical under either etime tie order -- with a float64 running sum it moved on 95% of decision rows (max abs diff 1.17e-13), which would have made reproducibility depend on the merge convention. Trades whose side_method is 'unknown' contribute 0, and exec_type 'NA' placeholder rows are excluded upstream; both counts go into the feature-tier DQ report. An empty window emits 0.0, not null -- 'no signed volume traded in the last second' is a measurement, not a gap (measured 4.2% of event rows on 2026-09-13) -- and the empty-window count is reported at day level because the column alone cannot distinguish no trades from flow exactly cancelled. A different window length gets a NEW name (trade_flow_5s), never an edit."
+version = 1
+introduced = "2026-09-13"

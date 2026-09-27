@@ -1,0 +1,332 @@
+# Data-quality check thresholds -- TOML source of truth mirroring
+# mvp/spec/catalogue.py's registry pattern (mvp/data/dq/checks.py's
+# _load_toml/frozen-dataclass loader parses this exactly the same way
+# spec/catalogue.py parses features.toml/labels.toml).
+#
+# Rendered into mvp/spec.md's "Data quality" pitfall subsection between the
+# <!-- catalogue:dq_thresholds:begin --> / :end markers by
+# mvp/spec/render.py's render_dq_thresholds_table(). mvp/tools/check_spec_diff.py
+# CI-rejects a drift between this file and spec.md's rendered table.
+#
+# Six checks, numbered per 03-CONTEXT.md/03-RESEARCH.md:
+#   (1) gap_coverage        -- capture-outage seconds/day (ledger-derived)
+#   (2) reconciliation      -- capture<->archive trade_id mismatch, curated/precomputed
+#   (3) na_placeholder      -- X="NA" placeholder trade drop rate, curated/precomputed
+#   (3b) probable_loss      -- trade-id skip runs on pre-capture archive days (informational)
+#   (4) crossed_locked_book -- bid_price >= ask_price count (informational)
+#   (5) l1_sparsity         -- max inter-arrival gap in bookTicker etime
+#   (6) etime_plausibility  -- manifest etime_range within [date-1d, date+1d]
+#   (6b) event_time_plausibility -- partition event_time range, same window
+#   (6c) rtime_plausibility -- receive clock, judged per manifest SOURCE
+#        (capture: skew from etime; archive: download-ordering)
+# plus resync_warmup, the post-gap warm-up window duration feeding the
+# resync_windows sidecar (not itself one of the six numbered checks).
+
+[gap_coverage]
+degraded_seconds = 60
+failed_seconds = 900
+notes = """
+Measured against STATE.md's real, root-caused battery-sleep outages
+(6053s, 2894s, 3276s, 3016s, 304s and smaller -- host sleeps on battery
+because caffeinate's PreventSystemSleep assertion is honored on AC power
+only; see mvp/data/capture/power.py). failed_seconds=900 is ALREADY
+exceeded by 2026-09-14 and 2026-09-15 in the live gap ledger -- the
+acknowledgement mechanism is exercised from day one, not as a rare edge
+case (03-RESEARCH.md). Never raise this threshold to make those days pass;
+acknowledge them instead.
+"""
+
+[reconciliation]
+degraded_pct = 0.5
+notes = """
+Reads curated_meta/.../build_stats.json's PRECOMPUTED
+reconciliation_missing_from_capture/reconciliation_missing_from_archive
+fields (computed over the archive/capture trade_id overlap range BEFORE the
+non-chosen source is discarded) -- never recomputed from curated Parquet,
+which structurally contains only one source per day. X="NA" placeholder
+rows are EXCLUDED from both id sets before diffing (03-REVIEW.md WR-04):
+they consume ids the archive omits by design, so counting them as
+"missing from archive" was a structural false positive (2026-09-12's
+0.753% was exactly its 4,270 placeholders). Real values after the fix
+(regenerated 2026-09-17): missing_from_archive=0 on 09-12..09-15;
+missing_from_capture 0.17% (09-12), 0% (09-13), 4.78% (09-14), 6.36%
+(09-15) -- the last two are capture losing ids during that day's
+battery-sleep outages. Acknowledged per-day, not threshold-widened.
+"""
+
+[na_placeholder]
+degraded_pct = 2.0
+notes = """
+Reads build_stats.json's PRECOMPUTED na_placeholder_rate. The rate is a
+property of the LIVE stream, so it is taken from the capture side whenever
+capture exists for the day (na_placeholder_rate_source="capture"),
+regardless of which source curated chose (03-REVIEW.md WR-04: the archive
+has no placeholder rows and is chosen on every published day, so a
+chosen-source rate was 0.0 everywhere). Recomputing it from curated
+Parquet would be tautologically zero (already filtered). Measured real
+capture-side rates: 0.75% (09-12), 0.48% (09-13), 0.44% (09-14),
+0.32% (09-15).
+"""
+
+[probable_loss]
+flag_run_ids_over = 100
+flag_span_seconds_over = 1
+notes = """
+03-CONTEXT.md (locked): on pre-capture archive days (chosen source archive,
+no capture partition for the day) trade-id skip runs are flagged
+probable-loss and never hard-fail. INFORMATIONAL: dq_status is always "ok"
+(like crossed_locked_book) -- it never pauses the loader. On archive data an
+X="NA" placeholder burst and a genuine loss are indistinguishable by trade
+ids alone, so a pausing version made a human acknowledge noise on volatile
+days. The report still carries the flagged-run count, the largest run, the
+largest span and the largest flagged run, so a real loss is visible.
+A skip run is diff(trade_id) - 1 > 0 over the day sorted by trade_id; its
+span is the etime step across the skip. A run is flagged only when BOTH
+run_ids > flag_run_ids_over AND span > flag_span_seconds_over.
+MEASURED 2026-09-17, read-only over all 107 curated archive trade days
+(2026-06-01..2026-09-15, 857,144 skip runs): run sizes 1: 837,907;
+2-5: 19,137; 6-20: 100; >20: 0 -- max 16 ids (2026-08-19). The 100 runs of
+6-20 ids span at most 0.021 s (single-second NA bursts in fast markets).
+Neither axis alone is a discriminator: 87,733 runs span > 1 s, all of 1-5
+ids, up to 10.886 s (a lone placeholder in a quiet market; consecutive
+trades with no skip are up to 15.378 s apart), and a >100-id placeholder
+storm inside a few ms cannot be ruled out from three months of data.
+Margins: 100 ids is 6x the 16-id ceiling; 1 s is ~48x the 0.021 s span
+ceiling of runs above 5 ids. Runs satisfying both: 0 of 857,144. The first
+version (max_na_run_ids=5, measured over 6 capture days, degraded) paused
+2026-06-07, 07-06, 07-10, 08-19, 08-22, 08-25 -- all false positives (runs
+of 6-16 ids within 0.00-0.02 s). Days with a capture overlap report n/a
+here: reconciliation against capture is the loss detector there.
+"""
+
+[crossed_locked_book]
+notes = """
+Informational per-filter drop count (bid_price >= ask_price rows in
+curated bookTicker), always dq_status="ok" -- no numeric threshold per
+03-CONTEXT.md's check (4) description. Reported alongside the count so a
+future plan can decide whether a nonzero count warrants a threshold.
+"""
+
+[l1_sparsity]
+degraded_seconds = 30
+regime_start_utc = "2026-09-12T06:37:10.882Z"
+notes = """
+Longest stretch (seconds) of the UTC day with no bookTicker update: the
+max of the interior inter-arrival gaps AND both day edges -- start of day
+to the first row, last row to the next UTC midnight (03-REVIEW.md WR-05:
+interior gaps alone let a capture that died mid-day, whose restart outage
+is not self-ledgered, score ok while hours of L1 were missing). On the
+regime-start date the leading gap is measured from regime_start_utc (L1's
+own first captured etime, per the two-regime boundary decision), not from
+midnight; the trailing edge of a day still in progress is not measured.
+A day before regime_start_utc has no bookTicker curated partition at all
+and emits no row -- a day with no L1 by design is not a degraded day. A
+partition with zero rows is "n/a"; a single row is measured by its edges
+(it used to be "n/a", T-03-07).
+"""
+
+[etime_plausibility]
+notes = """
+Any violation is unconditionally dq_status="failed" -- no degraded tier.
+Reads manifest["etime_range"] (already computed at manifest-issuance time
+by data/store.py:issue_manifest, no re-scan needed) and checks both bounds
+fall within [date - 1 day, date + 2 days) -- i.e. the whole of date-1,
+date, and date+1 (a closed three-calendar-day window around `date`,
+generous enough to absorb ordinary rtime/etime skew around midnight
+without ever accepting a manifest that is off by a whole extra day).
+"""
+
+[event_time_plausibility]
+notes = """
+The etime_plausibility window applied to the partition's event_time column
+(03-REVIEW-ITER3.md IN-20): the exchange's event time `E` is converted by
+its own ms_to_ns call at parse time, so a wrong scale there was invisible
+to the etime gate. Manifests do not record an event_time range, so the DQ
+report builder computes [min, max] of the non-null values from the
+partition. Outside [date - 1 day, date + 2 days) is unconditionally
+dq_status="failed" (pauses the loader); n/a when the partition has no
+non-null event_time. rtime is NOT gated: archive-sourced rows carry the
+staged archive file's local mtime (data/ingest/normalize.py), measured
+outside the window on 106 of 111 real days.
+"""
+
+[rtime_plausibility]
+capture_skew_min_seconds = -60.0
+capture_skew_max_seconds = 3600.0
+notes = """
+The local receive clock, judged against the one thing it means for the
+manifest's own source -- there is no single window that fits both
+(03-FOLLOWUPS.md item 4). Source is read from the manifest's `inputs`
+(data.store.manifest_source), not from the mutable build_stats.json.
+
+CAPTURE-sourced: rtime is a real per-message arrival time, so it must sit
+close to etime. Measured (rtime - etime) over all 4 real capture days
+(BTCUSDT bookTicker 2026-09-12..15, 104.9M rows): min -0.192s, max
++307.069s, p50 between -0.019s and +0.022s, p99.9 between 0.669s and
+4.555s. Negative skew is the local clock running slightly ahead of
+Binance's; the 307s tail is a backlog of frames buffered during the host's
+own battery sleep flushing on wake (see data/capture/power.py), not a slow
+network. Bounds are -60s / +3600s: 312x and 11.7x headroom over the worst
+real day, chosen so a longer host sleep cannot manufacture a false pause,
+while still catching the defect this gate exists for -- a wrongly scaled
+rtime is off by DECADES (raw ms read as ns lands in 1970; seconds read as
+ns lands in 1970 too; an over-multiplied value lands centuries ahead).
+
+ARCHIVE-sourced: rtime is the DOWNLOAD time. normalize_archive_frame
+stamps every row of the day with the staged file's own mtime -- a single
+literal (verified: rtime_min == rtime_max on all 107 real archive days),
+legitimately far from etime (measured 21.5h to 107.9 days). A skew window
+is meaningless there, so the ORDERING is what is checked instead:
+etime_max <= rtime_min (the file cannot predate the data it contains).
+
+BOTH sources also require rtime_max <= manifest.built_at: data cannot have
+arrived after the manifest describing it was written. True on all 111 real
+manifests.
+
+dq_status is "ok" or "failed" only -- no degraded tier (a receive clock
+outside these bounds is a unit/ordering defect, not a matter of degree) --
+and "n/a" when the partitions carry no non-null rtime. "failed" pauses
+load_curated. Measured result on the real lake: ok on all 111 manifests.
+"""
+
+[resync_warmup]
+seconds = 60
+notes = """
+Post-gap warm-up window duration: curated rows within `seconds` after a
+collapsed (deduped) merged-silent outage's gap_end are tagged
+post_gap_warmup=true by Phase 4's feature pipeline, joining against this
+plan's resync_windows.parquet sidecar (curated partitions themselves are
+write-once and are never rewritten to add this column -- 03-CONTEXT.md
+"resync-tagged" pitfall mitigation, delivered as a sidecar, not a rebuild).
+60s is a placeholder pending Phase 4's own measurement of how long
+feature state actually takes to re-stabilize after a real reconnect; not
+itself one of the six numbered DQ checks or a pause-triggering signal.
+
+NAMED, BOUNDED EXCEPTION to "etime is the only clock, rtime joins nothing"
+(03-VERIFICATION.md gap-closure finding 3): an outage boundary has no real
+etime by definition (no message arrived during it), so
+resync_windows_for_date's join columns (gap_end_etime_approx,
+warmup_end_etime_approx -- explicitly suffixed, never a bare _rtime name
+used silently as etime) are the outage's own rtime values, approximated as
+etime. A real per-message rtime->etime lookup was investigated and
+rejected: (1) archive-sourced curated trade rows (all 107 real trade days)
+carry a single per-day ingest-time rtime LITERAL, not a real per-message
+receive time (data/ingest/normalize.py:normalize_archive_frame) --
+measured 16-40 HOUR "errors" against real 09-14/09-15 outage boundaries,
+not a bounded approximation at all; (2) even capture-sourced bookTicker
+rows can be a STALE BACKLOG FLUSH, not a fresh reading, at the exact
+boundary -- measured 2 of 8 real 09-14/09-15 boundaries off by ~the
+outage's own duration (303.7s of a 303.8s outage; 5.9s of a 5.8s outage):
+the row at gap_end_rtime carries an etime near the outage's START,
+followed by a dense burst of more stale rows (5,412 within 2s for one
+outage), consistent with frames buffered during the machine's own
+battery-sleep (data/capture/power.py) flushing on wake. The other 6 of 8
+resolved within 0.11s. Measured whole-partition rtime-etime skew (BTCUSDT
+bookTicker 2026-09-14, 38.6M rows): p50=-7.2ms, p90=110.9ms, p99=472.3ms,
+p99.9=2.047s, max=307.07s.
+Read seconds=60 as "60 curated-etime seconds after an APPROXIMATELY
+located boundary", not etime-exact. Full transcript:
+03-07-GAPS-SUMMARY.md.
+"""
+
+# --------------------------------------------------------------------------
+# Phase 4 (feature/label engine) -- the feature TIER's own checks. These
+# judge lake/features/ partitions, never curated ones, and are computed
+# from the build's own build_stats.json rather than re-scanned from the
+# written artifact (same reason as reconciliation/na_placeholder above: the
+# artifact structurally cannot answer questions about rows that were
+# filtered out before it was written).
+# --------------------------------------------------------------------------
+
+[label_gap]
+max_quote_gap_seconds = 30
+notes = """
+A label whose [t, t+h] window contains an L1 inter-quote gap longer than
+this is NULL, never a carried-forward price (04-CONTEXT.md D-04-05). The
+value matches l1_sparsity.degraded_seconds today, but it is a SEPARATE key
+on purpose: this one decides a per-ROW label's validity, l1_sparsity
+decides a per-DAY verdict, and the two will diverge the moment either is
+retuned. Measured context: the clean 2026-09-13 day has 27 inter-quote
+gaps over 1 s and NONE over 30 s, so the rule never fires there, while
+2026-09-14 carries four gaps over 30 s -- 2894.1 s, 302.4 s, 160.8 s and
+71.5 s -- of battery-sleep outage (root cause: data/capture/power.py --
+caffeinate's PreventSystemSleep assertion is honored on AC power only).
+Those four null 38,565 of that day's 11,323,694 primary labels (0.34%)
+and 221,904 of its ret_10min_mid (1.96%). A per-row rule is what keeps
+those outages from silently producing labels that span them.
+
+THIS THRESHOLD IS NOT THE STALENESS BOUND, AND DELIBERATELY HAS NO
+PER-HORIZON TABLE (04-REVIEW.md WR-02, resolved 2026-09-19). It decides
+one thing: whether an L1 OUTAGE overlapping [t, t+h] is long enough to
+call the window unknown. It used to decide a second thing by accident --
+whether the label existed at all -- and at one absolute 30 s it decided
+that badly for every horizon under 30 s: a silence shorter than the
+threshold that entirely contained [t, t+h] left the prevailing quote at
+t+h equal to the one that produced mid_t, so the label was exactly 0.0,
+finite, with no null reason. The bound on THAT question is now the
+horizon itself (features/labels.py's null_stale: no quote arrived in
+(t, t+h] at all). It is not a tunable and there is nothing here to set:
+any value looser than the horizon re-admits a carried-forward price, and
+any value tighter nulls rows that had a real quote in their window -- a
+5 s silence ending half a second inside a 1 s window is the case a
+per-horizon threshold gets wrong. Measured over all three built days
+(22.29M decision rows), null_stale nulls 69 primary labels and 180
+ret_1s_mid, all of them previously exactly 0.0, and nothing at 1 min or
+10 min.
+"""
+
+[feature_label_coverage]
+degraded_missing_pct = 2.0
+notes = """
+Fraction of decision rows whose PRIMARY label (ret_10s_mid) is null. Read
+from build_stats.json's n_decision_rows/null_primary_label_rows. With the
+D+1 label tail present, end-of-partition loss is ZERO by construction
+(the tail is what removes it); without a tail it would be 0.0074% at 10 s
+and 0.66% at 10 min on 2026-09-13's decision rows, so anything above 2%
+means a real gap rather than the day's own tail. MEASURED on the outage
+day 2026-09-14: 38,565 of 11,323,694 decision rows (0.34%) lose the
+primary label to the null-on-gap rule -- under this threshold, and
+correctly so: the day is degraded, not unusable. A day whose outages did
+push it over would be acknowledged, never threshold-widened (same rule as
+gap_coverage). A features manifest is
+acknowledged under stream="features" -- verified 2026-09-19 that
+store.validate_dq_acknowledgement has no stream allowlist.
+"""
+
+[feature_row_filters]
+notes = """
+Informational per-filter drop count on the feature tier, always
+dq_status="ok" when the counts are present -- no numeric threshold, mirroring
+crossed_locked_book. This is what DATA-07's "dropped-event counts per
+filter" asks for on this tier (04-CONTEXT.md D-04-12): X="NA" placeholder
+trades (price 0, qty 0) are excluded from trade_flow, and trades whose
+side_method is "unknown" contribute 0 to signed flow. Both counts AND both
+rates are reported so the two are distinguishable. FAIL-CLOSED on a
+missing key (the WR-02 pattern): a stats dict that cannot answer the
+question reports "failed", never "ok". Measured on 2026-09-13:
+na_placeholder_excluded=0 and unknown_side_rows=0 of 1,409,705 trade rows
+-- Phase 3's curated build already filtered the placeholders, so the
+filter is the uniform no-op its docstring predicts on an already-clean day.
+"""
+
+[feature_quantization]
+notes = """
+The labels' exact-zero fractions, recorded rather than smoothed
+(04-CONTEXT.md D-04-17). Always dq_status="ok": 97.5% of quotes sit at a
+1-tick spread, so mid lands on a half-tick 98.8% of the time and the
+returns are heavily quantized -- a property of the venue, not a defect.
+Measured on 2026-09-13 over the 6,864,853 DECISION ROWS -- the row set
+these fractions are computed on, because it is the row set the partition
+writes: ret_10s_mid is exactly zero on 43.9% of rows and ret_1s_mid on
+80.8%. 04-RESEARCH-NOTES.md's 29.7%/62.5% are the same day measured per
+L1 UPDATE (17,167,290 rows), which oversamples busy milliseconds at 2.5
+quotes per distinct etime and therefore shows fewer zeros; both are kept
+so a reader who arrives from the research note is not silently 14 points
+out. Recorded because it constrains Phase 5/8: the loss function and
+every IC/Sharpe statistic must be chosen knowing the target has a ~44%
+point mass at zero. Also carries the per-update ring-buffer
+window occupancy and the prevailing-vs-next-quote as-of disagreement
+fraction (0.206% of decision rows at h=10 s; 0.263% per L1 update) -- the latter is recorded as a DQ
+number rather than as a partition column, because an uncatalogued label
+column would be a catalogue-rule violation.
+"""

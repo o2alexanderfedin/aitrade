@@ -1,0 +1,139 @@
+{
+  "admission": {
+    "counts": {
+      "held_out": {
+        "admitted": 0,
+        "excluded_stale": 0,
+        "excluded_undefined": 0
+      },
+      "oof_block_0": {
+        "admitted": 4137073,
+        "excluded_stale": 221,
+        "excluded_undefined": 55843
+      },
+      "oof_block_1": {
+        "admitted": 6864853,
+        "excluded_stale": 0,
+        "excluded_undefined": 0
+      },
+      "oof_block_2": {
+        "admitted": 11291365,
+        "excluded_stale": 32330,
+        "excluded_undefined": 0
+      },
+      "oof_block_3": {
+        "admitted": 12142146,
+        "excluded_stale": 61148,
+        "excluded_undefined": 0
+      },
+      "oof_block_4": {
+        "admitted": 9814111,
+        "excluded_stale": 58508,
+        "excluded_undefined": 0
+      },
+      "train": {
+        "admitted": 44249548,
+        "excluded_stale": 152207,
+        "excluded_undefined": 55843
+      },
+      "val": {
+        "admitted": 16294059,
+        "excluded_stale": 174845,
+        "excluded_undefined": 0
+      }
+    },
+    "exclude_undefined_age": true,
+    "max_age_ns": 5000000000,
+    "policy": "stale_book"
+  },
+  "budget_allowance": 3,
+  "code_hash": "912afeff6d06b2557a14478a9d7be2adf61f6444",
+  "effective_intervals": {
+    "train": [
+      [
+        1789171200002000000,
+        1789602600000000000
+      ]
+    ]
+  },
+  "embargo_ns": 1000000000,
+  "embargoed_row_count": {
+    "train": 0
+  },
+  "errata_id": "22190ad925929001855c4cec56c7ddbd00043d4717ec02ac96fc9b71e3e31b58",
+  "fold_config_reason": "compressed_3seg selected over 5seg although the 7-day pool would support five segments: a 5seg manifest declares a REAL held_out segment, and declaring + locking held-out is Phase 8 success criterion 4 (D-07-02). held_out here is the zero-width sentinel at covered_end_ns (D-07-06). The inner k=5 purged+embargoed OOF blocks are also what Phase 7's model selection runs on, never val (D-07-04).",
+  "layout": "compressed_3seg",
+  "manifest_id": "807125015b252014ad8ee5282a21b2eccbfe01a287122cce5512ec9885aa3548",
+  "oof_training_row_counts": {
+    "oof_block_0": 40242038,
+    "oof_block_1": 37488354,
+    "oof_block_2": 32997430,
+    "oof_block_3": 32094158,
+    "oof_block_4": 34530706
+  },
+  "purge_ns": 600000000000,
+  "purged_row_count": {
+    "train": 3115
+  },
+  "segments": [
+    {
+      "end_ns": 1789603200000000000,
+      "name": "train",
+      "role": "train",
+      "start_ns": 1789171200002000000
+    },
+    {
+      "end_ns": 1789775999957000000,
+      "name": "val",
+      "role": "val",
+      "start_ns": 1789603200000000000
+    },
+    {
+      "end_ns": 1789775999957000000,
+      "name": "held_out",
+      "role": "held_out",
+      "start_ns": 1789775999957000000
+    },
+    {
+      "end_ns": 1789257600001600000,
+      "name": "oof_block_0",
+      "role": "oof_block",
+      "start_ns": 1789171200002000000
+    },
+    {
+      "end_ns": 1789344000001200000,
+      "name": "oof_block_1",
+      "role": "oof_block",
+      "start_ns": 1789257600001600000
+    },
+    {
+      "end_ns": 1789430400000800000,
+      "name": "oof_block_2",
+      "role": "oof_block",
+      "start_ns": 1789344000001200000
+    },
+    {
+      "end_ns": 1789516800000400000,
+      "name": "oof_block_3",
+      "role": "oof_block",
+      "start_ns": 1789430400000800000
+    },
+    {
+      "end_ns": 1789603200000000000,
+      "name": "oof_block_4",
+      "role": "oof_block",
+      "start_ns": 1789516800000400000
+    }
+  ],
+  "symbol": "BTCUSDT",
+  "upstream_feature_manifest_ids": [
+    "91154024ba400fb2d183828f4b6b745d73862b08313cbef33cf5c957503df005",
+    "5e4ce973b196b60fbdec22bf771ff2c9d517c739d7150cd218a535842eb55f6a",
+    "1863b8d255d17312e3c6135af19f75e85cd9250d307ed43b8f6a604f95adcbc0",
+    "2da1b5b97f97b28b1df1500ed91596304d78ba6888900390795721c7bcd2e1a1",
+    "0bfa8d286d90280251ddabbad340e07f3fd193545de294a3feefb73ec5a63924",
+    "dcf3b39dad199f1814b3e0b27a506368b50bfabda191bc476a0549da25859fa3",
+    "d21771bda03691c6c492e6c3fefd6603d09d223e0f5876dc7e2d66a07359948e"
+  ],
+  "version": 1
+}

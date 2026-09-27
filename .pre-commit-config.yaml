@@ -1,0 +1,181 @@
+# Sanctioned exception to the mvp/ containment rule (Phase 2 Plan 04): this
+# file must live at the repo root for pre-commit to discover it.
+#
+# Every hook below is `repo: local`, `language: system`, and runs a command
+# that already carries its own `--directory mvp` targeting -- run FROM THE
+# REPO ROOT, never `cd mvp && ...`. This makes every command string here
+# byte-identical to the corresponding `run:` step in
+# `.github/workflows/ci.yml`, satisfying this plan's "identical check set in
+# both callers" requirement mechanically, not by convention.
+#
+# Deliberately does NOT use the official astral ruff pre-commit integration
+# hook: a second, independently-pinned ruff version is an entire class of
+# version drift this project doesn't need (02-RESEARCH.md Pitfall 2, option
+# (a)). `uv run --directory mvp ruff ...` always runs the exact `ruff==0.15.*`
+# resolved in `mvp/uv.lock`, identically to CI.
+#
+# `default_stages: [pre-commit]` (Phase 3 Plan 02): introduced alongside this
+# phase's first `stages: [pre-push]`-scoped hook (check-no-manifest-rewrite-full,
+# below). Without this, a hook with no explicit `stages:` key defaults to EVERY
+# installed stage -- once `pre-commit install --hook-type pre-push` registers a
+# pre-push git hook, every pre-existing hook here (ruff, pytest, the other
+# guardrails) would silently start re-running on every push too. Pinning the
+# default keeps every hook's execution scope exactly what it was before this
+# plan, except the two manifest-rewrite hooks, which declare their own stage
+# explicitly.
+default_stages: [pre-commit]
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run --locked --directory mvp ruff check .
+        language: system
+        pass_filenames: false
+
+      - id: ruff-format
+        name: ruff format --check
+        entry: uv run --locked --directory mvp ruff format --check .
+        language: system
+        pass_filenames: false
+
+      - id: lockfile-check
+        name: uv lock --check
+        entry: uv --directory mvp lock --check
+        language: system
+        pass_filenames: false
+
+      - id: pin-assertion
+        name: check_pin_versions
+        entry: uv run --locked --directory mvp python -m tools.check_pin_versions
+        language: system
+        pass_filenames: false
+
+      - id: ms-to-ns-site
+        name: check_ms_to_ns_site
+        entry: uv run --locked --directory mvp python -m tools.check_ms_to_ns_site
+        language: system
+        pass_filenames: false
+
+      - id: catalogue-completeness
+        name: check_catalogue_completeness
+        entry: uv run --locked --directory mvp python -m tools.check_catalogue_completeness
+        language: system
+        pass_filenames: false
+
+      - id: latest-ban
+        name: check_latest_ban
+        entry: uv run --locked --directory mvp python -m tools.check_latest_ban
+        language: system
+        pass_filenames: false
+
+      - id: lockbox-containment
+        name: check_lockbox_containment
+        entry: uv run --locked --directory mvp python -m tools.check_lockbox_containment
+        language: system
+        pass_filenames: false
+
+      - id: single-feature-path
+        name: check_single_feature_path
+        entry: uv run --locked --directory mvp python -m tools.check_single_feature_path
+        language: system
+        pass_filenames: false
+
+      - id: numba-globals
+        name: check_numba_globals
+        entry: uv run --locked --directory mvp python -m tools.check_numba_globals
+        language: system
+        pass_filenames: false
+
+      - id: spec-diff
+        name: check_spec_diff
+        entry: uv run --locked --directory mvp python -m tools.check_spec_diff
+        language: system
+        pass_filenames: false
+
+      - id: check-no-manifest-rewrite
+        name: check_no_manifest_rewrite
+        entry: uv run --locked --directory mvp python -m tools.check_no_manifest_rewrite
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: check-no-manifest-rewrite-full
+        name: check_no_manifest_rewrite --full
+        entry: uv run --locked --directory mvp python -m tools.check_no_manifest_rewrite --full
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+      # 03-VERIFICATION.md gap-closure finding 1: the real-lake --full leg
+      # above unconditionally SKIPs on any machine without /Volumes/ProjectsSSD
+      # mounted (every GitHub Actions runner, forever, by construction) --
+      # structurally unable to ever exercise verify_manifest's real scan
+      # code in CI. This leg points the SAME --full scan at a small,
+      # committed fixture lake instead, so the real code path executes on
+      # every push regardless of what's mounted. Default `pre-commit` stage
+      # (fast -- a few KB, not the real multi-GB lake).
+      - id: check-no-manifest-rewrite-fixture
+        name: check_no_manifest_rewrite --full (CI fixture lake)
+        entry: uv run --locked --directory mvp python -m tools.check_no_manifest_rewrite --full --lake-root tests/fixtures/lake --registry-root tests/fixtures/lake_registry
+        language: system
+        pass_filenames: false
+
+      # 03-VERIFICATION.md gap-closure finding 1: needs no mounted lake at
+      # all (manifest JSON is git-committed) -- recomputes manifest_id from
+      # each committed manifest's own body and compares against both the
+      # manifest_id field and the filename, catching a hand-edited or
+      # corrupted manifest on every push, on every machine.
+      - id: check-manifest-id-integrity
+        name: check_manifest_id_integrity
+        entry: uv run --locked --directory mvp python -m tools.check_manifest_id_integrity
+        language: system
+        pass_filenames: false
+
+      # 03-REVIEW.md CR-02: the two manifest checks above only compare the
+      # working tree with itself, so an in-place partition rewrite plus a
+      # reissued manifest (old one deleted) passed both. This one anchors
+      # immutability to git history: no committed manifest may ever be
+      # deleted/modified, and no two manifests may name one partition path
+      # with different sha256. A shallow clone FAILS (never SKIPs).
+      - id: check-manifest-append-only
+        name: check_manifest_append_only
+        entry: uv run --locked --directory mvp python -m tools.check_manifest_append_only
+        language: system
+        pass_filenames: false
+
+      # D-05-15's static tripwire: only harness/ and its four named test
+      # callers may reach features.tier.load_features directly -- everyone
+      # else must go through harness.accessor.materialize so a validation
+      # look is counted. Same-uid accident-proofing, not a security
+      # boundary -- see the checker's own docstring.
+      - id: check-harness-accessor-only
+        name: check_harness_accessor_only
+        entry: uv run --locked --directory mvp python -m tools.check_harness_accessor_only
+        language: system
+        pass_filenames: false
+
+      # FEAT-03's gate, DELIBERATELY REDUNDANT with the full-suite hook
+      # below -- do not "clean this up". `tests/leakage` is collected by
+      # `pytest tests` too, so this re-runs ~2 s of work. What it buys is a
+      # line in the pre-commit/CI output that says the words: a leakage
+      # proof nobody can point at, inside a 900-test summary line, is a
+      # claim rather than a gate. It also fails FIRST and on its own, so
+      # "the leakage suite broke" is distinguishable at a glance from "some
+      # test broke".
+      #
+      # The `uv run` here is Phase 2's convention for these two callers and
+      # is what makes this string byte-identical to the `run:` step in
+      # `.github/workflows/ci.yml`. The project's ban on `uv run` is about
+      # LONG-RUNNING processes; this one takes seconds.
+      - id: leakage-suite
+        name: pytest (leakage suite)
+        entry: uv run --locked --directory mvp pytest tests/leakage -x -q
+        language: system
+        pass_filenames: false
+
+      - id: pytest
+        name: pytest (tests, via testpaths)
+        entry: uv run --locked --directory mvp pytest tests -x -q
+        language: system
+        pass_filenames: false

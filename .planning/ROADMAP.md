@@ -12,12 +12,12 @@ The roadmap is shaped by one verified fact and two methodology constraints. The 
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Capture Daemon & Repo Foundation** - Schedule-critical redundant L1+trades capture running day 1, repo skeleton under mvp/
-- [ ] **Phase 2: Stage 0 — Living Spec, CI Guardrails & Tracking** - spec.md seeded with corrected policy math, catalogues wired into CI, MLflow foundation
-- [ ] **Phase 3: Data Layer — Backfill, Ingest & Lockbox** - Trades backfill, side correction, manifest-addressed store, DQ reports, mechanical lockbox quarantine
-- [ ] **Phase 4: Feature & Label Engine** - Single numba streaming code path, catalogued L1 features, leakage-proven labels
-- [ ] **Phase 5: Fold Harness & Overfitting Controls** - 5-segment walk-forward with embargo, OOF fallback, selection-bias budget, negative-result log
-- [ ] **Phase 6: Event-Driven Simulator** - Numba flip-only sim with integer-tick accounting and oracle tests
+- [x] **Phase 1: Capture Daemon & Repo Foundation** - Schedule-critical redundant L1+trades capture running day 1, repo skeleton under mvp/ (completed 2026-09-12)
+- [x] **Phase 2: Stage 0 — Living Spec, CI Guardrails & Tracking** - spec.md seeded with corrected policy math, catalogues wired into CI, MLflow foundation
+- [x] **Phase 3: Data Layer — Backfill, Ingest & Lockbox** - Trades backfill, side correction, manifest-addressed store, DQ reports, mechanical lockbox quarantine (completed 2026-09-17)
+- [x] **Phase 4: Feature & Label Engine** - Single numba streaming code path, catalogued L1 features, leakage-proven labels (completed 2026-09-19)
+- [x] **Phase 5: Fold Harness & Overfitting Controls** - 5-segment walk-forward with embargo, OOF fallback, selection-bias budget, negative-result log
+- [x] **Phase 6: Event-Driven Simulator** - Numba flip-only sim with integer-tick accounting and oracle tests
 - [ ] **Phase 7: Regression Track & Vertical Slice** - Cheapest model class wires Trainer protocol, frozen predictors, prediction tables end-to-end
 - [ ] **Phase 8: Trees, Transformer & v0 Gate** - All three classes on same folds, cross-class protocol, held-out locked, v0 smoke gate
 - [ ] **Phase 9: Stage 2 Monetization & v1 Gate** - Optuna X sweep on out-of-train predictions, knife-edge rejection, full report suite, v1 gate
@@ -37,7 +37,13 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. All captured timestamps are int64 nanoseconds since epoch with `etime` as the clock and a monotonic per-stream `seq` column written at capture time
   4. Repo skeleton exists under `mvp/` with uv lockfile honoring the numba/numpy/llvmlite pin; nothing MVP-related lives outside `mvp/`
   5. The Tardis.dev buy-vs-wait-vs-two-regime decision is forced, made, and recorded
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+- [x] 01-01-PLAN.md — Walking Skeleton: repo scaffold, canonical schema, live one-shot proof against the real exchange
+- [x] 01-02-PLAN.md — Continuous single-connection daemon: atomic Parquet rotation, restart-safe seq, startup liveness assertion, graceful shutdown
+- [x] 01-03-PLAN.md — Redundancy: staggered second connection, bounded dedup, reactive gap ledger
+- [x] 01-04-PLAN.md — Proactive watchdog, atomic-write hardening test, deploy artifacts (Dockerfile, systemd)
 
 ### Phase 2: Stage 0 — Living Spec, CI Guardrails & Tracking
 **Goal**: The living spec, CI enforcement, and experiment-tracking foundation exist so that no untracked or uncatalogued training can ever happen
@@ -50,7 +56,13 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. spec.md contains the corrected decision-rule pseudocode (dimensional bug fixed), the spot-L1 clock exception, and the trades-backfill side-exactness note
   4. Sharpe annualization convention, MLflow tag schema, and numba no-globals lint rule are pre-declared in spec.md before any run exists
   5. MLflow on SQLite backend records code hash + data hash + seed + env hash for a test run; environment pins are CI-enforced
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+- [x] 02-01-PLAN.md — Move spec.md/mvp.md under mvp/, land all spec corrections, TOML catalogues + registry + renderer
+- [x] 02-02-PLAN.md — CI guardrail scripts: catalogue completeness, latest-ban, numba-no-globals, pin assertion
+- [x] 02-03-PLAN.md — MLflow tracking wrapper (mlflow-skinny, mandatory tags, root guard reuse, smoke run)
+- [x] 02-04-PLAN.md — Wire pre-commit + GitHub Actions, prove every check red-then-green
 
 ### Phase 3: Data Layer — Backfill, Ingest & Lockbox
 **Goal**: A canonical, immutable, manifest-addressed data lake exists with quality gates and a mechanically enforced held-out quarantine
@@ -63,7 +75,15 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Data lake is partitioned by symbol/date with versioned schema; artifacts are immutable and manifest-addressed; `(etime, seq)` makes "last row of each etime" deterministic
   4. Daily data-quality report exists (dropped events, sparsity, resync warm-up tags); degradation pauses training until explicitly acknowledged
   5. Lockbox-quarantined segments are physically unreadable through the default loader; access requires an explicit unlock token that is logged to MLflow as a one-look annotation
-**Plans**: TBD
+**Plans**: 6 plans, 4 waves
+
+Plans:
+- [x] 03-01-PLAN.md — Acquire + normalize + raw tier (unit registry, backfill client, ms_to_ns rename, raw partition write; real 2026-09-12 slice)
+- [x] 03-02-PLAN.md — Curated build + manifest + store loader (trade-side resolution, (etime,seq) materialization, manifest issuance, check_no_manifest_rewrite; RP-1, RP-2)
+- [x] 03-03-PLAN.md — Widen: full backfill window, monthly extract-to-disk, bookTicker curated tier, trade-side cross-check
+- [x] 03-04-PLAN.md — DQ report (6 checks), pause enforcement, real battery-sleep acknowledgements; RP-4
+- [x] 03-05-PLAN.md — Lockbox quarantine: token API, chmod 0000 barrier, containment guardrail; RP-3
+- [x] 03-06-PLAN.md — Capture schema v2 (exec_type) + RawArchiveWriter fix + gated daemon restart
 
 ### Phase 4: Feature & Label Engine
 **Goal**: One leakage-proven feature code path produces the decision-row matrix that training, inference, and the simulator all share
@@ -76,7 +96,16 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. CI leakage suite passes: per-feature future-shuffle invariance and embargo ≥ label horizon
   4. Labels exist for 10s midprice return (primary) plus diagnostic horizons {1s, 1min, 10min}
   5. Rolling/expanding normalization is computed on training data only, verified by test
-**Plans**: TBD
+**Plans**: 7 plans, 5 waves
+
+Plans:
+- [x] 04-01-PLAN.md — One ns-constant module + merged event stream and the decision-row rule (merge_sorted, source_rank pin, strict-total-order runtime gate)
+- [x] 04-02-PLAN.md — Feature tier plumbing: schema, write-once partition, manifest + load_features, holdout/quarantine refusal (D and D+1), feature-tier DQ checks
+- [x] 04-03-PLAN.md — The numba kernel (mid, imb_top, ofi, trade_flow) + pure-Python reference + leakage properties red-first + feature catalogue pinned
+- [x] 04-04-PLAN.md — Labels: backward as-of, null-on-gap/past-end, build-D-only-after-D+1, label catalogue + measured quantization
+- [x] 04-05-PLAN.md — The real end-to-end build of 2026-09-12..14, warm-up tagging, build stats, feature DQ rows + acknowledgements, load_features round trip
+- [x] 04-06-PLAN.md — CI leakage suite (FEAT-03): per-feature/per-label invariance + anti-vacuity sensitivity, embargo assertion, catalogue cross-check, named CI gate
+- [x] 04-07-PLAN.md — Single code path: three call sites byte-identical (batch/chunked/per-row) + train-only normalization artifact (FEAT-05)
 
 ### Phase 5: Fold Harness & Overfitting Controls
 **Goal**: A fold harness that owns time — every split, look, and failure is a tracked artifact before any model trains
@@ -88,7 +117,24 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Compressed 3-segment fallback with purged+embargoed inner k-fold OOF is selectable per run, with the choice and reason recorded in MLflow
   3. Every validation look increments the selection-bias budget in MLflow; budget exhaustion forces a fresh window
   4. Negative-result log records failed configs in queryable form
-**Plans**: TBD
+**Plans:** 8/8 plans executed (COMPLETE 2026-09-22)
+
+Plans:
+**Wave 1**
+- [x] 05-00-PLAN.md — widen the built-day pool from 3 to 7 days (D-05-19), independent of every other plan
+- [x] 05-01-PLAN.md — thin vertical slice: harness package, purge/embargo constants, 5seg manifest schema, minimal accessor + budget, the walking-skeleton proof
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 05-02-PLAN.md — D-05-02 geometric refusals, purged+embargoed inner k-fold OOF (kfold.py), compressed_3seg issuance
+- [x] 05-04-PLAN.md — stale-book row admission (29,058 reproduction) and errata computation (249-cell reproduction), wired into the accessor
+- [x] 05-05-PLAN.md — held-out declaration tool (--dry-run), the new data.lockbox quarantine function, the holdout.json writer
+- [x] 05-06-PLAN.md — static tripwire (check_harness_accessor_only), the 19th guardrail hook
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 05-03-PLAN.md — budget exhaustion + issuance-time overlap refusal, negative-result log and CLI
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 05-07-PLAN.md — guardrail extension for segments/errata, the first real committed segment and errata manifests, fold_config reason wiring, spec.md Fold harness section
 
 ### Phase 6: Event-Driven Simulator
 **Goal**: A verified-correct simulator whose policy math is proven against oracles before any model output touches it
@@ -99,7 +145,23 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. Numba event-driven simulator runs taker-only, zero-fee, zero-latency, $100-max-notional, flip-only logic as a sequential scan over decision rows (no vectorization)
   2. Oracle tests reproduce hand-computed scenario P&L exactly, including a realized-future-returns oracle that bounds the achievable ceiling — the test class that catches decision-rule dimensional bugs
   3. Integer-tick price accounting in the hot path yields bit-identical P&L across double runs (CI-enforced), with no float-drift errors
-**Plans**: TBD
+**Plans**: 7 plans, 4 waves — COMPLETE 2026-09-24 (merged to develop as 607200e)
+
+Plans:
+**Wave 1**
+- [x] 06-01-PLAN.md — Schema v2 migration code: kernel/reference/api emit bid_price/ask_price, tier.py version-scoped write-once identity, DQ-report multi-manifest fix (fixture-only)
+- [x] 06-02-PLAN.md — mvp/sim/ticks.py: tick constant + round-trip proof, lot-step measurement, $100-cap zero-lot dead zone
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 06-03-PLAN.md — mvp/sim/kernel.py: the sequential flip-only run_sim state machine, arrays.py boundary, outputs.py, reference.py twin, bitwise equivalence
+- [x] 06-04-PLAN.md — The real 7-day schema-v2 rebuild + the v1-vs-v2 label regression proof (249 errata cells, nowhere else)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 06-05-PLAN.md — Cross-process determinism (sha256) + refuse-on-null/dropped-row contract
+- [x] 06-06-PLAN.md — Path-dependence, flip-invariant, hand-computed/zero-prediction oracles, real-day perfect-foresight reconciliation
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 06-07-PLAN.md — spec.md Simulator section + phase-wide verification pass
 
 ### Phase 7: Regression Track & Vertical Slice
 **Goal**: The cheapest model class proves the full Stage-1 plumbing — Trainer protocol, frozen predictors, prediction tables — end to end
@@ -110,7 +172,23 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. Regression track (linear → ridge/elastic-net → small non-linear) trains on harness folds and predicts 10s midprice return, beating the zero baseline on validation
   2. Frozen-predictor interface yields a deterministic predictor producing precomputed prediction tables keyed by segment manifest
   3. The full vertical slice runs end to end on validation data: curated store → feature kernel → trained regressor → prediction table → simulator, with the run manifest in MLflow
-**Plans**: TBD
+**Plans**: 11 plans, 9 waves
+
+Plans:
+- [x] 07-01-PLAN.md — scikit-learn locked, the pin guardrail widened, the `tests/models/` floor (wave 1)
+- [x] 07-02-PLAN.md — the 7-day `compressed_3seg` segment manifest, alone in its wave: clean tree, 19.35 GiB peak, effectively one-shot (wave 2, **checkpoint**)
+- [x] 07-03-PLAN.md — Trainer/FrozenPredictor protocol naming no sklearn type, `predictor_id`, the learnable fixture rig (wave 3)
+- [x] 07-04-PLAN.md — the frozen predictor as coefficient JSON, never a pickle, with cross-process determinism (wave 4)
+- [x] 07-05-PLAN.md — the predictions tier, the return→price conversion, row-alignment proof (wave 4)
+- [x] 07-06-PLAN.md — four estimators over a counted 17-config grid, the Gram oracle, the three price-column refusals (wave 5)
+- [x] 07-07-PLAN.md — metrics with BOTH R² references, the gates, the re-measured ceiling, spec.md (wave 5)
+- [x] 07-08-PLAN.md — materialize-once cache keyed by tracking root, the OOF sweep, the negative-result log (wave 6)
+- [x] 07-09-PLAN.md — `run_slice`, the CLI and its refusals, the fixture end-to-end proof (wave 7)
+- [ ] 07-10-PLAN.md — real normalisation, the five OOF looks, the winner frozen and committed (wave 8, **checkpoint**)
+- [ ] 07-11-PLAN.md — the ONE honest `val` look, the stored table, the simulator, the disclosure (wave 9, **checkpoint**)
+
+**Window**: train 2026-09-12..16, val 2026-09-17..18. `budget_allowance = 3`; the phase spends 6 looks total (5 OOF + 1 val) and no more.
+**Cross-cutting**: waves 2, 8 and 9 are the only ones that touch anything irreversible, and all three are non-autonomous checkpoints.
 
 ### Phase 8: Trees, Transformer & v0 Gate
 **Goal**: All three model classes compete on identical folds and metrics, and the v0 smoke gate passes with the held-out window locked
@@ -168,13 +246,13 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Capture Daemon & Repo Foundation | 0/TBD | Not started | - |
-| 2. Stage 0 — Living Spec, CI Guardrails & Tracking | 0/TBD | Not started | - |
-| 3. Data Layer — Backfill, Ingest & Lockbox | 0/TBD | Not started | - |
-| 4. Feature & Label Engine | 0/TBD | Not started | - |
-| 5. Fold Harness & Overfitting Controls | 0/TBD | Not started | - |
-| 6. Event-Driven Simulator | 0/TBD | Not started | - |
-| 7. Regression Track & Vertical Slice | 0/TBD | Not started | - |
+| 1. Capture Daemon & Repo Foundation | 4/4 | Complete | 2026-09-13 |
+| 2. Stage 0 — Living Spec, CI Guardrails & Tracking | 4/4 | Complete | 2026-09-14 |
+| 3. Data Layer — Backfill, Ingest & Lockbox | 7/6 | Complete    | 2026-09-17 |
+| 4. Feature & Label Engine | 7/7 | Complete    | 2026-09-19 |
+| 5. Fold Harness & Overfitting Controls | 8/8 | Complete    | 2026-09-22 |
+| 6. Event-Driven Simulator | 7/7 | Complete    | 2026-09-24 |
+| 7. Regression Track & Vertical Slice | 9/11 | In Progress|  |
 | 8. Trees, Transformer & v0 Gate | 0/TBD | Not started | - |
 | 9. Stage 2 Monetization & v1 Gate | 0/TBD | Not started | - |
 | 10. Agentic Loop | 0/TBD | Not started | - |
