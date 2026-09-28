@@ -6,6 +6,13 @@
 # working directory override key anywhere, since every command already
 # carries its own `--directory mvp` targeting. This is what makes the
 # executed text byte-identical between the two callers.
+#
+# Two steps below are not `uv run` commands. The `shellcheck (tracked *.sh)`
+# CHECK step runs `bash tools/check-shell-scripts.sh` -- still a repo-root
+# relative path with no working-directory override, so it stays byte-identical
+# to its `entry:`. The `install shellcheck` step before it has no pre-commit
+# counterpart on purpose: it installs a tool instead of gating anything, and
+# the byte-identity rule is about check steps.
 name: CI
 
 on:
@@ -35,6 +42,35 @@ jobs:
 
       - name: ruff format --check
         run: uv run --locked --directory mvp ruff format --check .
+
+      # shellcheck is a Haskell binary, so `mvp/uv.lock` cannot pin it and THIS
+      # step is the pin. ubuntu-latest ships its own shellcheck at whatever
+      # version the image happens to carry; `/usr/local/bin` precedes
+      # `/usr/bin` on the runner PATH, so the pinned binary wins, and the
+      # checker asserts the version it actually resolved -- a shadowed binary
+      # fails loudly here instead of quietly reporting different findings than
+      # pre-commit did.
+      #
+      # A pinned tag URL, never the moving `/releases/latest/` alias. The
+      # sha256 is the digest GitHub's release API reports for this exact asset.
+      # `set -euo pipefail` because the default `run:` shell has neither, and a
+      # failed download would otherwise reach the checksum line as an empty
+      # file.
+      - name: install shellcheck 0.11.0 (pinned; not a check step)
+        run: |
+          set -euo pipefail
+          url=https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz
+          curl -fsSL --retry 3 -o /tmp/shellcheck.tar.xz "$url"
+          echo "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  /tmp/shellcheck.tar.xz" | sha256sum -c -
+          tar -xJf /tmp/shellcheck.tar.xz -C /tmp
+          sudo install -m 0755 /tmp/shellcheck-v0.11.0/shellcheck /usr/local/bin/shellcheck
+          shellcheck --version
+
+      # Byte-identical to the `shellcheck` hook's `entry:` in
+      # `.pre-commit-config.yaml` -- see that hook's comment for the gap in the
+      # parity test's parser.
+      - name: shellcheck (tracked *.sh)
+        run: bash tools/check-shell-scripts.sh
 
       - name: uv lock --check
         run: uv --directory mvp lock --check
