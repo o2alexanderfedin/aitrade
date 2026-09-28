@@ -38,12 +38,32 @@ PRE_COMMIT_ONLY: dict[str, str] = {
 }
 
 
+#: Prefixes that mark a line as a GUARDRAIL command rather than a provisioning
+#: step. `uv ` covered every gate until a shell script needed checking; the
+#: shellcheck gate is invoked as `bash tools/...`, and a parser that only knew
+#: about `uv ` silently excluded it -- present in both callers, verified by
+#: neither. Add a prefix here when a gate is added in a new language, or this
+#: test keeps passing while the pair it should be watching drifts apart.
+GUARDRAIL_PREFIXES: tuple[str, ...] = ("uv ", "bash tools/")
+
+
 def _commands(path: Path, key: str) -> list[str]:
+    """Every guardrail command in `path`, as written.
+
+    Only commands whose first token matches `GUARDRAIL_PREFIXES` count.
+    CI's tool-provisioning steps are deliberately excluded: they install a
+    binary rather than gate anything, and CI's shellcheck install is a
+    multi-line `run: |` block that no single-line prefix can match anyway.
+    """
     lines = []
     for raw in path.read_text().splitlines():
         stripped = raw.strip()
-        if stripped.startswith(f"{key}: uv ") or stripped.startswith(f"{key}: uv\t"):
-            lines.append(stripped[len(key) + 2 :])
+        prefix = f"{key}: "
+        if not stripped.startswith(prefix):
+            continue
+        command = stripped[len(prefix) :]
+        if command.startswith(GUARDRAIL_PREFIXES):
+            lines.append(command)
     return lines
 
 
@@ -54,7 +74,7 @@ def _commands(path: Path, key: str) -> list[str]:
 def test_every_pre_commit_command_is_a_ci_step_verbatim():
     hooks = _commands(PRE_COMMIT, "entry")
     steps = set(_commands(CI, "run"))
-    assert len(hooks) >= 15, f"only {len(hooks)} hook commands found -- parser drift?"
+    assert len(hooks) >= 16, f"only {len(hooks)} hook commands found -- parser drift?"
 
     missing = [c for c in hooks if c not in steps and c not in PRE_COMMIT_ONLY]
     assert not missing, (
@@ -76,6 +96,23 @@ def test_the_leakage_gate_is_named_in_both_callers():
     assert gate in _commands(CI, "run")
     assert "pytest (leakage suite)" in PRE_COMMIT.read_text()
     assert "pytest (leakage suite)" in CI.read_text()
+
+
+@pytest.mark.skipif(
+    not (PRE_COMMIT.exists() and CI.exists()),
+    reason="repo-root config files are not present (installed package, not a checkout)",
+)
+def test_the_shellcheck_gate_is_named_in_both_callers():
+    """The first gate that is not a `uv` command, and the reason
+    `GUARDRAIL_PREFIXES` exists. Asserted by name as well as by text: the
+    generic parity test would go quiet again if a future parser change stopped
+    matching this line, and a gate nobody can point at in a CI log is not one.
+    """
+    gate = "bash tools/check-shell-scripts.sh"
+    assert gate in _commands(PRE_COMMIT, "entry")
+    assert gate in _commands(CI, "run")
+    assert "shellcheck (tracked *.sh)" in PRE_COMMIT.read_text()
+    assert "shellcheck (tracked *.sh)" in CI.read_text()
 
 
 @pytest.mark.skipif(

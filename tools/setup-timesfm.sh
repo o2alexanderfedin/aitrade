@@ -86,6 +86,11 @@ echo "  $ROOT   [from: $ROOT_SOURCE]"
 export HF_HOME="$ROOT/hf-cache"
 export HUGGINGFACE_HUB_CACHE="$ROOT/hf-cache"
 export TOKENIZERS_PARALLELISM=false
+# uv hardlinks from its cache into the venv, which cannot work when the cache
+# (~/.cache, internal disk) and $ROOT (typically an external volume) are
+# different filesystems. uv already falls back to copying, but it first prints a
+# multi-line warning that reads like a failure. Ask for copying up front.
+export UV_LINK_MODE=copy
 mkdir -p "$HF_HOME" "$ROOT/work"
 
 echo "== venv =="

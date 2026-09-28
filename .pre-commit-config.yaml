@@ -8,6 +8,14 @@
 # `.github/workflows/ci.yml`, satisfying this plan's "identical check set in
 # both callers" requirement mechanically, not by convention.
 #
+# ONE HOOK IS NOT A `uv run`: `shellcheck` invokes
+# `bash tools/check-shell-scripts.sh`, a repo-root-relative path. It keeps the
+# part of the rule that matters -- run from the repo root, no `cd`, no
+# working-directory override -- so the identical string works in both callers.
+# What it cannot keep is the lockfile: shellcheck is a Haskell binary that
+# `mvp/uv.lock` cannot pin, and `mvp/` is closed to non-MVP code by the
+# containment rule. See the hook's own comment below.
+#
 # Deliberately does NOT use the official astral ruff pre-commit integration
 # hook: a second, independently-pinned ruff version is an entire class of
 # version drift this project doesn't need (02-RESEARCH.md Pitfall 2, option
@@ -36,6 +44,24 @@ repos:
       - id: ruff-format
         name: ruff format --check
         entry: uv run --locked --directory mvp ruff format --check .
+        language: system
+        pass_filenames: false
+
+      # The only guardrail here that is not a `uv run`, and so the only one
+      # whose tool no lockfile pins -- see the header. The checker prints and
+      # asserts the shellcheck version it resolved, and fails when the binary
+      # is absent rather than skipping, so this hook cannot go green by
+      # accident.
+      #
+      # NAMED GAP: `mvp/tests/tools/test_ci_pre_commit_parity.py` matches only
+      # lines that begin `entry: uv ` / `run: uv `, so THIS pair sits outside
+      # its coverage. The byte-identity was verified by hand (both command
+      # strings extracted and hashed); widening that parser to every command,
+      # not just the `uv` ones, is the follow-up. An unnamed exception is
+      # indistinguishable from a drift -- that test's own argument.
+      - id: shellcheck
+        name: shellcheck (tracked *.sh)
+        entry: bash tools/check-shell-scripts.sh
         language: system
         pass_filenames: false
 
