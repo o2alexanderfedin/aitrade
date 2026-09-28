@@ -74,7 +74,7 @@ tools/setup-timesfm.sh /path/to/timesfm       # or: TIMESFM_ROOT=/path/to/timesf
 
 With no argument it uses a sibling of the repo named `timesfm/`, and prints the resolved root before it writes anything. It **refuses** a root inside this repo — that refusal is the feature. It is safe to re-run: an existing venv is reused and the weights are verified rather than refetched (1.7 s on a complete install, against ~3 min for the first download).
 
-What it does, for a reader who wants to see inside it: creates the venv with `uv venv --python 3.12`; installs with `uv pip install --python "$TIMESFM_ROOT/.venv/bin/python" "timesfm[torch]" huggingface_hub`; exports `HF_HOME` and `HUGGINGFACE_HUB_CACHE`, both at `$TIMESFM_ROOT/hf-cache`, plus `TOKENIZERS_PARALLELISM=false`; then calls `huggingface_hub.snapshot_download("google/timesfm-3.0-pytorch", cache_dir=os.environ["HUGGINGFACE_HUB_CACHE"])`. The repo is ungated — no token, no access request, though an unauthenticated download is rate-limited. What landed here: 5 files, 1.23 GiB, `timesfm 3.0.2` and `torch 2.14.0` on CPython 3.12.2, with Apple MPS reported available.
+What it does, for a reader who wants to see inside it: creates the venv with `uv venv --python 3.12`; installs with `uv pip install --python "$TIMESFM_ROOT/.venv/bin/python" "timesfm[torch]" huggingface_hub`; exports `HF_HOME` and `HUGGINGFACE_HUB_CACHE`, both at `$TIMESFM_ROOT/hf-cache`, plus `TOKENIZERS_PARALLELISM=false`; then calls `huggingface_hub.snapshot_download("google/timesfm-3.0-pytorch", cache_dir=os.environ["HUGGINGFACE_HUB_CACHE"])`. The repo is ungated — no token, no access request, though an unauthenticated download is rate-limited. What landed here: 5 files, 1.23 GiB, `timesfm 3.0.2` and `torch 2.14.0` on CPython 3.12.2, with Apple MPS reported available -- and this example was re-run with `device="mps"` offline, producing the same shapes, so MPS is verified rather than merely reported.
 
 ### Check it actually landed
 
@@ -101,7 +101,7 @@ fc = TimesFM3Forecaster.from_pretrained(
     "google/timesfm-3.0-pytorch",
     cache_dir=os.environ["HUGGINGFACE_HUB_CACHE"],
     local_files_only=True,
-    device="cpu",                       # "cuda" where available; MPS untested here
+    device="cpu",                       # "mps" verified here; "cuda" where available
 )
 
 L, H = 512, 32
