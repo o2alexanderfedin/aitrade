@@ -57,7 +57,16 @@ completed: 2026-09-29
 ## Performance
 
 - **Duration:** ~35 min end to end; the `--select` invocation itself 10 min 37 s (2026-09-29T02:31:48Z → 02:42:25Z)
-- **Peak RSS:** 10.13 GiB (sampled every 20 s). Swap in use was 4.84 GiB before the run and did not grow during it; the host has 32 GiB and was in active use throughout. No thrashing.
+- **Peak RSS:** 10.13 GiB (sampled every 20 s)
+- **Swap: the host was pushed 3.03 GiB deeper into it.** `vm.swapusage` read 4,842 MB used of
+  a 6,144 MB swapfile before the run and 7,943 MB of a 9,216 MB one at peak — macOS grew the
+  swapfile by 3 GiB in three steps, first at 02:35:29 (as `oof_block_0`'s last poly2 fits gave
+  the block frame back and `oof_block_1` was about to be read), then at 02:37:49 and 02:39:49.
+  **Throughput did not degrade**, which is what makes this pressure rather than thrashing:
+  per-block fit seconds for grid 0 were 2.5 / 1.5 / 1.4 / 1.4 / 1.5 and for grid 15 were
+  4.1 / 3.2 / 2.9 / 1.2 / 1.7 — flat or faster after the first block. The host has 32 GiB and
+  was in active use by other applications throughout. An earlier draft of this summary said
+  swap "did not grow"; that was read off the first four samples and was wrong.
 - **Tasks:** 1 of 3 (Task 1 complete; Tasks 2 and 3 unexecutable — see below)
 - **Commits:** 2 (the normalisation manifest; this summary)
 
@@ -74,10 +83,22 @@ Two committed segment manifests × eight segment names, queried against the real
 | `97964cb27f62` AFTER | 0 | **0** | 0 | 0 | 0 | 0 | 0 | 0 |
 
 **`look_count("val")` is 0.** Five looks spent, exactly one per OOF block, exactly as planned.
-The `harness-looks` experiment holds exactly five runs and their `segment_name` tags are the
-five block names — no sixth run, and nothing tagged `val`. The seventeen negative-result runs
-carry no `segment_name` tag at all (verified by reading their tag keys), so none of them can be
+Summed across all sixteen counters the total is 5.
+
+The `harness-looks` experiment holds exactly five runs and their `segment_name` tags are exactly
+the five block names — no sixth run, and nothing tagged `val`. **All seventeen** negative-result
+runs lack a `segment_name` tag (`all('segment_name' not in r.data.tags for r in negs)` → True,
+not a spot check on one), and none carries `scored_segment_name` either, so none of them can be
 counted as a look.
+
+**One `code_hash`, threaded, across all twenty-two tracked runs.** The five look runs and the
+seventeen negative-result runs carry exactly one distinct `code_hash` between them —
+`30efe7c11a8c2d6f3dd568d078a9ee143565becc`, byte-identical to the one the `features_norm`
+manifest embeds — and none ends in `-dirty`. That is the "`compute_code_hash()` once per
+invocation, threaded through everything" claim measured rather than read: step 2's own manifest
+dirtied the tree before any of the five looks was recorded, so a second `compute_code_hash()`
+anywhere in the run would have been dirty by construction. The look runs' `data_hash` is
+`none` on all five, as `_look_tags` intends.
 
 ## What the run did, against what the plan expected
 
@@ -241,6 +262,19 @@ Reported above rather than absorbed. The observed counts are right.
 It cost no look: the log shows `CACHE HIT … no look spent` for the train frame, and `val`
 read 0 before and 0 after.
 
+## A design note the next plan needs, whichever option is chosen
+
+If the remedy is a NEW segment manifest with comparable blocks — D-05-14's remedy, and the one
+the evidence points at — **it is not free of design work, because the normalisation artifact is
+keyed on `(symbol, train_end_date)` alone.** `models.slice._existing_normalization` globs the
+`train_end=<date>` parent for `part-*.parquet` and returns the manifest naming it. So a new
+manifest whose train window still ends on 2026-09-16 — for example train 2026-09-13..16,
+dropping the quiet day — derives the same `train_end_date`, finds `c7749334`'s parquet already
+there, and REUSES it: an artifact whose `inputs` name 2026-09-12 and whose z-score parameters
+were fit including it. Not a `val` leak, and not a rewrite of committed bytes, but a provenance
+claim that would no longer be true of the window it was applied to, and `--select` would never
+fit a fresh artifact for that window. Stated here, not fixed here.
+
 ## Known Stubs
 
 None.
@@ -263,6 +297,12 @@ None.
 - **No mutation check was run**, because it belongs to the edit that was not made.
 - **No grid was shrunk, no config was dropped, no `max_iter` was raised**, and no
   best-of-the-failures was promoted.
+- **No `gsd-sdk state.advance-plan`, `state.record-metric` or `requirements.mark-complete` was
+  run.** The plan did not complete, so advancing the counter or checking off FCST-01/FCST-04
+  would assert something false. STATE.md was hand-edited instead: the plan counter still reads
+  9 of 11, the status reads blocked, and the new blocker names the decision.
+- **The observability wrapper was not committed**, by design — `--select` refuses a dirty tree,
+  so it could not be a repo file, and it is not production code.
 - **Nothing in the scratch cache was deleted.** The five block frames and the train frame
   remain at
   `/Volumes/ProjectsSSD/aihedgefund/scratch/phase07/0d85c8daacc2fe5e/807125015b25…/`, which
