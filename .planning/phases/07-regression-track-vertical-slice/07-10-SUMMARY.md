@@ -49,6 +49,7 @@ key-decisions:
   - "THE SELECTION-BIAS DENOMINATOR IS 36, not 9 and not 17. The grid was widened from 17 to 36 AFTER seeing that 0 of 17 passed; the negative-result log holds 44 records because `code_hash` is in the hashed recipe and the 17 re-tried configs got fresh fingerprints."
   - "THE GATE SEPARATED SIX COPIES OF ONE MODEL BY AMPLITUDE. Grids 8, 25, 26, 27, 28 and 29 are the same imb_top-only fit at five distinct amplitudes (27 and 28 share the L1 product 3.6e-5 reached two ways). Rank correlation cannot see a positive scale factor, so their per-block rank ICs agree to nine significant figures -- and the gate passed three and refused three on where `r2_vs_zero` landed."
   - "MEAN RANK IC BARELY DISCRIMINATES AMONG THE ELIGIBLE: 0.272056 (winner) against 0.271238 / 0.271180 / 0.271062 / 0.270995 / 0.268886 / 0.262117 for the other eligible rows. The winner is chosen on roughly the fourth decimal."
+  - "THE ADVERTISED TIE-BREAK NEVER FIRED. `select_winner` is a `max` over the raw tuple `(mean_rank_ic_non_tied, mean_r2_vs_mean, -grid_index)` with exact float comparison, and grid 26 beat grid 27 on the PRIMARY metric by 5.47e-12 -- rounding in the Spearman rank of ~4M float products, between three configs that are the same model at three amplitudes. Grid 26 also has the best mean_r2_vs_mean of the three (0.0144 vs 0.0097), so it wins under either reading; but the mechanism that chose it was float noise, not the documented rule. Recorded, not fixed."
   - "NO BAR WAS MOVED. `gate_forecast`, `gate_baseline`, the all-blocks requirement, the reference band, `select_winner` and GRID are byte-unchanged in this task; `git show --stat` on the one commit lists five paths and none of them is a gate."
   - "FCST-01 and FCST-04 were NOT marked complete. FCST-04 asks for a frozen predictor producing PRECOMPUTED PREDICTION TABLES keyed by segment manifest; no prediction table exists for a real segment until 07-11 runs. Marking either now would assert something false."
   - "The one-commit rule proved itself on the real registry rather than in a fixture: `test_real_committed_registry_is_append_only` went RED the moment the frozen body was on disk unstaged (rule 5's per-directory vacuity refusal, naming `predictors/`) and green the moment it was staged."
@@ -99,7 +100,7 @@ the winner on the train cache and wrote its coefficients into the registry.
 | rows | 44,229,781 fitted, 224,702 dropped (of the 44,454,483-row train cache) |
 | `seed` / `code_hash` | `20260925` / `f28c1efb6080bf31039e21ccc11de6279264cd06` (clean) |
 | per-block rank IC | mean **0.272056**, min 0.192094, max 0.375235, std 0.073615 |
-| file sha256 | `3d7734a757e0fa5d51bd67b3a40ce14513ee7d045672ad8a6072dcf112cc89e0` |
+| file sha256 | `3d7734a757e0fa5d51bd67b3a40ce14513ee7d045672ad8a6072dcf112cc89e0` — identical on disk and as `git show b75edc6:<path>`, so no hook rewrote the bytes (the canonicalised self-hash alone could not have told us that) |
 
 `design` is `"linear"`, derived from the recipe rather than stored. The body
 reads back through `read_frozen_predictor` with its self-hash re-derived from
@@ -210,9 +211,32 @@ All nine eligible configurations, by the selection rule's own metric:
 | 33 | Ridge+poly2 α=1e9 | 0.262117 |
 
 OLS (grid 0, ineligible) sits at 0.271184 and the whole Ridge ladder at
-≈0.2710. **The winner is chosen on roughly the fourth decimal**, and the
-tie-break inside the top three (mean `r2_vs_mean`, then ascending grid
-position) is what actually separated 26 from 27 and 28.
+≈0.2710. **The winner is chosen on roughly the fourth decimal.**
+
+And inside the top three it is worse than that. `select_winner` is a `max`
+over the raw tuple `(mean_rank_ic_non_tied, mean_r2_vs_mean, -grid_index)` —
+**exact float comparison, no tolerance** — so the documented tie-break
+*never fired*. Grid 26 beat grid 27 on the primary metric by
+**5.47e-12**:
+
+| grid | `mean_rank_ic_non_tied` | `mean_r2_vs_mean` |
+|---|---|---|
+| 26 | `0.2720564416784055` | 0.014400 |
+| 27 | `0.27205644167293275` | 0.009681 |
+| 28 | `0.27205644166616966` | 0.009679 |
+
+Those three are the same model at three amplitudes, so that 5.47e-12 is not a
+difference in skill — it is rounding in the Spearman rank of ~4M float
+products, the same numerical wobble measured in finding 3. **The winner among
+the top three was selected by float noise.**
+
+It happens not to matter: grid 26 also has by far the best `mean_r2_vs_mean`
+of the three (0.0144 against 0.0097), so had the comparison carried any
+tolerance at all the tie-break would have chosen 26 anyway. It wins under both
+readings. But the mechanism that actually chose it was not the tie-break the
+selection rule advertises, and a future grid where the noise falls the other
+way would promote a different member of an ordering-equivalent set. Recorded,
+not fixed — `select_winner` is byte-unchanged.
 
 ### 5. A specification concern about `gate_forecast`, reported and NOT acted on
 
@@ -816,6 +840,8 @@ celebrated, and it is one of the things the checkpoint asks a human to weigh.
 - `mvp/data/lake_registry/predictors/e3b4b235d0fe…json` exists, and its
   recomputed `manifest_id`, its `manifest_id` field and its filename stem all
   agree; `read_frozen_predictor` re-derives `predictor_id` `ff91c9aa2a59…`.
+- the body's file sha256 is byte-identical on disk and in the commit
+  (`git show b75edc6:<path> | shasum -a 256` → `3d7734a757e0…`).
 - `mvp/data/lake_registry/manifests/BTCUSDT.features_norm/c7749334fb73…json`
   exists.
 - commit `b75edc6` resolves in `git log` and `git show --stat` lists exactly the
