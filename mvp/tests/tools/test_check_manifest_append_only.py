@@ -23,6 +23,7 @@ import polars as pl
 import pytest
 
 from data.store import compute_manifest_id, issue_manifest
+from models.frozen import FrozenLinearPredictor, write_frozen_predictor
 from tools import check_manifest_id_integrity, check_no_manifest_rewrite
 from tools.check_manifest_append_only import check_append_only, main
 from tools.git_env import scrubbed_git_env
@@ -976,3 +977,105 @@ def test_registry_with_no_known_directory_at_all_is_a_vacuous_pass_failure(
     errors, _ = check_append_only(registry)
     assert any("refusing a vacuous pass" in e for e in errors), errors
     assert main(["--registry-root", str(registry)]) == 1
+
+
+# --- 07-10-PLAN.md Task 2 (D-07-22): REGISTRY_DIR_NAMES covers predictors/,
+# the fourth top-level sibling, where a frozen winner's coefficients live ---
+
+
+def _freeze_a_predictor(
+    registry: Path, *, coef: tuple[float, ...] = (1.3e-05, 0.0, -0.0)
+):
+    """Land a predictor body through the PRODUCTION writer
+    (`models.frozen.write_frozen_predictor`), never a hand-rolled lookalike:
+    what these tests protect has to be what `--freeze` actually emits, down
+    to the key set the self-hash covers. Returns `(manifest_id, path)`."""
+    predictor = FrozenLinearPredictor(
+        model_class="sklearn.ElasticNet",
+        feature_names=("imb_top", "ofi", "trade_flow"),
+        coef=coef,
+        intercept=1.2e-06,
+        normalization_manifest_id="c7" * 32,
+        seed=20260925,
+        code_hash="deadbeef",
+        hyperparameters={"alpha": 1e-04, "l1_ratio": 0.3},
+        train_target_mean=1.2e-06,
+        n_rows_fitted=44_229_781,
+        n_rows_dropped=224_702,
+    )
+    body = write_frozen_predictor(predictor, registry_root=registry)
+    return body["manifest_id"], registry / "predictors" / f"{body['manifest_id']}.json"
+
+
+def test_predictors_directory_is_covered_and_counted(tmp_path: Path, capsys):
+    repo, registry, lake, _m0 = _repo(tmp_path)
+    predictor_id, _path = _freeze_a_predictor(registry)
+    _commit_all(repo, "freeze the winner's coefficients")
+
+    assert check_append_only(registry) == ([], 2)
+    assert main(["--registry-root", str(registry)]) == 0
+    out = capsys.readouterr().out
+    assert "2 committed manifest(s)" in out
+    assert "predictors/=1" in out
+    assert "manifests/=1" in out
+    assert predictor_id  # sanity: a body really was written
+
+
+def test_untracked_predictor_body_is_a_vacuous_pass_failure_naming_only_predictors(
+    tmp_path: Path,
+):
+    """Rule 5's per-directory vacuity refusal, on the new name -- and the
+    mechanical reason the first frozen body and this guardrail extension had
+    to land in ONE commit (D-07-22). `predictors/` physically exists (a body
+    is sitting in it) but is tracked and staged nowhere: that reads as a
+    FAILURE naming `predictors/`, while `manifests/` (really committed, by
+    `_repo()`) is not named."""
+    repo, registry, lake, _m0 = _repo(tmp_path)
+    _freeze_a_predictor(registry)  # on disk; never staged, never committed
+
+    errors, _ = check_append_only(registry)
+    assert any("predictors/" in e and "refusing a vacuous pass" in e for e in errors), (
+        errors
+    )
+    assert not any(
+        "manifests/" in e and "refusing a vacuous pass" in e for e in errors
+    ), errors
+
+
+def test_committed_rewrite_of_a_frozen_predictor_body_is_caught(tmp_path: Path):
+    """THE proposition the freeze-before-the-val-look rests on: once a
+    winner's coefficients are committed, they cannot be changed and have the
+    change pass review. Doubling the one live coefficient and committing it is
+    a rule-2a `modified`, exactly as it is for a curated manifest -- which
+    only works because `_is_manifest_shaped` now knows the `predictors`
+    component. Without it the walk skips the path and the rewrite is
+    invisible."""
+    repo, registry, lake, _m0 = _repo(tmp_path)
+    predictor_id, path = _freeze_a_predictor(registry)
+    _commit_all(repo, "freeze the winner's coefficients")
+
+    body = json.loads(path.read_text())
+    body["coef"][0] = body["coef"][0] * 2  # twice the alpha it was selected at
+    path.write_text(json.dumps(body, sort_keys=True, indent=2))
+    _commit_all(repo, "rewrite the frozen coefficients in place")
+
+    errors, _ = check_append_only(registry)
+    assert any(predictor_id in e and "modified" in e for e in errors), errors
+
+
+def test_uncommitted_rewrite_of_a_frozen_predictor_body_is_caught(tmp_path: Path):
+    """The half that actually fires on a developer's machine: rule 3 refuses
+    the rewrite BEFORE it is ever committed, which is what makes the
+    pre-commit hook a gate rather than an after-the-fact audit."""
+    repo, registry, lake, _m0 = _repo(tmp_path)
+    predictor_id, path = _freeze_a_predictor(registry)
+    _commit_all(repo, "freeze the winner's coefficients")
+
+    body = json.loads(path.read_text())
+    body["coef"][0] = body["coef"][0] * 2
+    path.write_text(json.dumps(body, sort_keys=True, indent=2))  # NOT committed
+
+    errors, _ = check_append_only(registry)
+    assert any(
+        predictor_id in e and "modified in the working tree" in e for e in errors
+    ), errors

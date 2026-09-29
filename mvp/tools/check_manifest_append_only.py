@@ -147,7 +147,30 @@ POINTER_DIR_NAME = "by-date"
 #: no partition bytes of its own, D-05-09). `_realm`/`NON_REGISTRY_COMPONENTS`
 #: (below) need no change -- they already operate generically on path
 #: components, regardless of which registry name matched.
-REGISTRY_DIR_NAMES: frozenset[str] = frozenset({"manifests", "segments", "errata"})
+#:
+#: 07-10-PLAN.md Task 2 (D-07-22) adds a FOURTH: `predictors/`, where
+#: `models.frozen.write_frozen_predictor` lands a fitted model's coefficients
+#: under `sha256(canonicalize_manifest(body))` -- same content-addressing,
+#: same atomic tmp-then-rename, its own writer, and no `partitions` key
+#: (nothing in it for rule 4's `seen` map to populate, exactly like
+#: `segments/`/`errata/`). It has to be named here for ONE structural
+#: reason: it is a TOP-LEVEL sibling of `segments/`/`errata/`. The
+#: `BTCUSDT.predictions` dataset (D-07-38) needs no entry at all -- it is a
+#: SUBDIRECTORY of `manifests/`, which every recursive glob below already
+#: reaches.
+#:
+#: What the name buys: `_is_manifest_shaped` (rules 2a, 2b and 3) now treats
+#: a frozen predictor body as a manifest, so a committed body that is
+#: DELETED or REWRITTEN IN PLACE is refused exactly as a committed manifest
+#: is. That is the load-bearing half of freezing a winner's coefficients
+#: before the validation window is ever looked at: without it the body would
+#: be an ordinary JSON file anyone could edit after the fact, and the
+#: "immutable in git before it met val" claim would rest on nothing. Rule
+#: 5's per-directory vacuity refusal is the other half, and it is why the
+#: first body and this line landed in ONE commit.
+REGISTRY_DIR_NAMES: frozenset[str] = frozenset(
+    {"manifests", "segments", "errata", "predictors"}
+)
 
 #: Refs whose merge-base with HEAD is rule 2b's base, in order.
 BASE_BRANCH_REFS: tuple[str, ...] = ("develop", "origin/develop")

@@ -1,0 +1,31 @@
+{
+  "code_hash": "f28c1efb6080bf31039e21ccc11de6279264cd06",
+  "coef": [
+    1.3252347394352176e-05,
+    0.0,
+    -0.0
+  ],
+  "design": "linear",
+  "feature_names": [
+    "imb_top",
+    "ofi",
+    "trade_flow"
+  ],
+  "hyperparameters": {
+    "alpha": 0.0001,
+    "l1_ratio": 0.3,
+    "max_iter": 1000,
+    "selection": "cyclic",
+    "tol": 0.0001
+  },
+  "intercept": 1.2101376491973044e-06,
+  "manifest_id": "e3b4b235d0fe3c025be7c7cdbf7eaa3d2d5675ad9571d6f6a30b1a45680c2d01",
+  "model_class": "sklearn.ElasticNet",
+  "n_rows_dropped": 224702,
+  "n_rows_fitted": 44229781,
+  "normalization_manifest_id": "c7749334fb73e090272013dfeb10013e25948b11a0907d56a69ee39d7b8954ba",
+  "predictor_id": "ff91c9aa2a595513f407c4a01ad794ebc4b5ccd3595c61d5dabdcc426298c3ff",
+  "schema_version": 1,
+  "seed": 20260925,
+  "train_target_mean": 1.2207031283365225e-06
+}

@@ -58,7 +58,22 @@ BY_DATE_MARKER = "/by-date/"
 #: whole check is `json.loads` + `compute_manifest_id` + a filename/field
 #: comparison, so extending the glob roots is safe as-is (confirmed
 #: against the actual code, not assumed -- RESEARCH.md Q1's own caveat).
-REGISTRY_DIR_NAMES: tuple[str, ...] = ("manifests", "segments", "errata")
+#: 07-10-PLAN.md Task 2 (D-07-22): `predictors/` joins them, a fourth
+#: TOP-LEVEL sibling holding `models.frozen`'s frozen coefficient bodies.
+#: This module needs no other change to judge one: its whole check is
+#: `json.loads` + `compute_manifest_id` + a filename/field comparison, and a
+#: predictor body's `manifest_id` IS the self-hash over the entire body --
+#: coefficients included. So a hand-edited coefficient is caught here on
+#: every commit and on every CI run, with no mounted lake required.
+#: `manifests/BTCUSDT.predictions` (D-07-38) is a dataset SUBDIRECTORY
+#: already reached by the recursive glob below; only a new TOP-LEVEL sibling
+#: ever needs a name here.
+REGISTRY_DIR_NAMES: tuple[str, ...] = (
+    "manifests",
+    "segments",
+    "errata",
+    "predictors",
+)
 
 
 def _iter_manifest_files(registry_root: Path) -> list[Path]:

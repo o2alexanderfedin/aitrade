@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 
 from data.store import compute_manifest_id, issue_manifest
+from models.frozen import FrozenLinearPredictor, write_frozen_predictor
 from tools.check_manifest_id_integrity import check_manifest_file, main
 
 
@@ -211,3 +212,78 @@ def test_main_fails_when_no_manifests_are_found(tmp_path: Path, monkeypatch, cap
     monkeypatch.setattr("tools.check_manifest_id_integrity.LAKE_REGISTRY_ROOT", empty)
     assert main([]) == 1
     assert "FAIL" in capsys.readouterr().out
+
+
+def _freeze_a_predictor(registry_root: Path) -> Path:
+    """Land a predictor body through the PRODUCTION writer
+    (`models.frozen.write_frozen_predictor`) -- 07-10-PLAN.md Task 2,
+    D-07-22. Never a hand-rolled lookalike: the point of the check is that a
+    body's `manifest_id` is the self-hash over the WHOLE body, coefficients
+    included, so the body under test has to carry the real key set."""
+    predictor = FrozenLinearPredictor(
+        model_class="sklearn.ElasticNet",
+        feature_names=("imb_top", "ofi", "trade_flow"),
+        coef=(1.3e-05, 0.0, -0.0),
+        intercept=1.2e-06,
+        normalization_manifest_id="c7" * 32,
+        seed=20260925,
+        code_hash="deadbeef",
+        hyperparameters={"alpha": 1e-04, "l1_ratio": 0.3},
+        train_target_mean=1.2e-06,
+        n_rows_fitted=44_229_781,
+        n_rows_dropped=224_702,
+    )
+    body = write_frozen_predictor(predictor, registry_root=registry_root)
+    return registry_root / "predictors" / f"{body['manifest_id']}.json"
+
+
+def test_main_checks_the_predictors_directory_too(tmp_path: Path, monkeypatch, capsys):
+    """`predictors/` is scanned and COUNTED -- `checked 2` rather than
+    `checked 1`, which is what fails if the name is ever dropped from
+    REGISTRY_DIR_NAMES."""
+    registry_root = tmp_path / "registry"
+    _issue_fixture_manifest(registry_root)
+    _freeze_a_predictor(registry_root)
+    monkeypatch.setattr(
+        "tools.check_manifest_id_integrity.LAKE_REGISTRY_ROOT", registry_root
+    )
+    assert main([]) == 0
+    assert "checked 2 manifest(s)" in capsys.readouterr().out
+
+
+def test_main_fails_and_names_a_hand_edited_predictor_body(
+    tmp_path: Path, monkeypatch, capsys
+):
+    """A coefficient edited after the freeze is caught, NAMED, and the exit
+    code can only have come from the predictor body.
+
+    THE HEALTHY `manifests/` MANIFEST BESIDE IT IS LOAD-BEARING, not scenery.
+    With only a tampered body in the registry, dropping `"predictors"` from
+    REGISTRY_DIR_NAMES would leave `_iter_manifest_files` empty, the GLOBAL
+    vacuity guard would fire, and `main()` would still return 1 -- the test
+    would pass while proving nothing about predictors at all. With a real
+    manifest present the scan is non-empty either way, so exit 1 has exactly
+    one available cause."""
+    registry_root = tmp_path / "registry"
+    _issue_fixture_manifest(registry_root)
+    path = _freeze_a_predictor(registry_root)
+
+    body = json.loads(path.read_text())
+    body["coef"][0] = body["coef"][0] * 2  # id now stale, filename unchanged
+    path.write_text(json.dumps(body, sort_keys=True, indent=2))
+
+    monkeypatch.setattr(
+        "tools.check_manifest_id_integrity.LAKE_REGISTRY_ROOT", registry_root
+    )
+    assert main([]) == 1
+    out = capsys.readouterr().out
+    assert "checked 2 manifest(s)" in out
+    assert path.name in out
+    assert "body hand-edited or corrupted" in out
+
+
+def test_check_manifest_file_passes_on_an_untouched_predictor_body(tmp_path: Path):
+    """The positive half, at the single-file level: what `--freeze` writes
+    self-verifies on both the `manifest_id` field and the filename stem."""
+    registry_root = tmp_path / "registry"
+    assert check_manifest_file(_freeze_a_predictor(registry_root)) is None
