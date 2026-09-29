@@ -1,4 +1,4 @@
-"""The 17-config x 5-block out-of-fold sweep: the winner is picked on data
+"""The 36-config x 5-block out-of-fold sweep: the winner is picked on data
 that is not `val`, by a rule written down here rather than by a human
 reading a table.
 
@@ -825,7 +825,7 @@ def run_oof_sweep(
     look) and its scoring arrays are built once, then all configs are fitted
     against it while the train cache stays warm in the page cache. The
     config-outer alternative reads each block's columns once per config --
-    17x the block I/O for identical arithmetic. Results are collected by
+    36x the block I/O for identical arithmetic. Results are collected by
     `(grid_index, block)` and reduced per config afterwards, so the loop
     order is invisible in the output.
 

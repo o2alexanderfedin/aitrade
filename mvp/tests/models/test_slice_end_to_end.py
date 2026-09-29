@@ -31,9 +31,9 @@ closed ticks / +$0.0050 against a ceiling of 639 trades / 2,187 ticks. The
 short rig is kept for the gate-failure test, where a genuinely worthless
 result is better than a patched gate.
 
-NO GRID REDUCTION ANYWHERE. The full 17 configs run in every `select`, and
-`n_configs` is asserted, so nobody can later believe 17 were exercised when 3
-were.
+NO GRID REDUCTION ANYWHERE. The full `GRID_SIZE` configs run in every
+`select`, and `n_configs` is asserted against that symbol rather than a
+literal, so nobody can later believe the whole grid was exercised when 3 were.
 
 Every test builds its own `tmp_path` lake, registry, MLflow tracking and
 cache roots. Pre-commit hooks 18/19 run the full suite on every commit, so a

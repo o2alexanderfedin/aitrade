@@ -48,10 +48,10 @@ from tests.fixtures import model_fit
 from tests.fixtures.model_span import build_model_span_fixture
 
 #: The same reduced span `tests/models/test_cache.py` uses: 6,600 rows and a
-#: 6,000 s train entry, which keeps the FULL 17-config x 5-block sweep at
-#: about 0.65 s including its MLflow negative-result runs. NO GRID REDUCTION
+#: 6,000 s train entry, which keeps the FULL 36-config x 5-block sweep at
+#: about 1.4 s including its MLflow negative-result runs. NO GRID REDUCTION
 #: IS USED ANYWHERE IN THIS FILE -- measured, not assumed, so nobody later
-#: believes 17 configs were exercised when 3 were.
+#: believes 36 configs were exercised when 3 were.
 RIG_ROWS: int = 6_600
 RIG_TRAIN_ROWS: int = 6_000
 
@@ -175,13 +175,13 @@ def _block_score(name: str, metrics: dict[str, float]) -> sweep.BlockScore:
 def test_the_sweep_scores_every_config_on_every_block_and_names_one_winner(
     tmp_path, lake_root, registry_root, tracking_root
 ):
-    """The full 17-config grid, five per-block metric rows each, one winner.
+    """The full 36-config grid, five per-block metric rows each, one winner.
 
-    `len(GRID) == 17` is asserted explicitly and the sweep is handed no
-    `grid=` override, so the count in the result is the count in the module
-    literal and not a reduction somebody forgot to mention.
+    `len(GRID) == GRID_SIZE == 36` is asserted explicitly and the sweep is
+    handed no `grid=` override, so the count in the result is the count in the
+    module literal and not a reduction somebody forgot to mention.
     """
-    assert len(GRID) == GRID_SIZE == 17
+    assert len(GRID) == GRID_SIZE == 36
     prepared = _prepared(tmp_path, lake_root, registry_root, tracking_root)
     result = _sweep(
         prepared,
@@ -190,9 +190,9 @@ def test_the_sweep_scores_every_config_on_every_block_and_names_one_winner(
         tracking_root=tracking_root,
     )
 
-    assert result.n_configs == 17
-    assert len(result.configs) == 17
-    assert [config.grid_index for config in result.configs] == list(range(17))
+    assert result.n_configs == GRID_SIZE
+    assert len(result.configs) == GRID_SIZE
+    assert [config.grid_index for config in result.configs] == list(range(GRID_SIZE))
     for config in result.configs:
         assert len(config.blocks) == 5
         assert [block.segment_name for block in config.blocks] == prepared[
@@ -202,9 +202,9 @@ def test_the_sweep_scores_every_config_on_every_block_and_names_one_winner(
             assert sorted(block.metrics) == sorted(FORECAST_METRIC_KEYS)
             assert block.n_rows_fitted > 0
 
-    # Distinct fingerprints, all 17: two configs sharing one would share one
+    # Distinct fingerprints, all 36: two configs sharing one would share one
     # negative-result record and D-07-20 would be false.
-    assert len({config.config_fingerprint for config in result.configs}) == 17
+    assert len({config.config_fingerprint for config in result.configs}) == GRID_SIZE
 
     assert result.has_winner
     winner = result.winner
@@ -221,7 +221,7 @@ def test_the_sweep_scores_every_config_on_every_block_and_names_one_winner(
     )
     assert best.grid_index == winner.grid_index
     # Anti-vacuity: the field is genuinely split, so "eligible" is doing work.
-    assert 0 < result.eligible_count < 17
+    assert 0 < result.eligible_count < GRID_SIZE
 
     # Exactly one look per block, and none on val.
     for name in prepared["block_names"]:
@@ -539,7 +539,7 @@ def test_the_selection_json_round_trips_the_winner_and_refuses_a_mismatched_mani
         prepared["manifest_id"],
         normalization_manifest_id=prepared["normalization_manifest_id"],
     )
-    assert body["n_configs"] == 17
+    assert body["n_configs"] == GRID_SIZE
     assert body["winner_grid_index"] == result.winner_grid_index
     assert body["eligible_count"] == result.eligible_count
     assert body["block_names"] == prepared["block_names"]
@@ -553,7 +553,7 @@ def test_the_selection_json_round_trips_the_winner_and_refuses_a_mismatched_mani
         assert body["look_run_ids"][name] == list(result.look_run_ids[name])
     # Per-block metrics for EVERY config, winner and loser alike -- scalars
     # only, no prediction table anywhere.
-    assert len(body["configs"]) == 17
+    assert len(body["configs"]) == GRID_SIZE
     assert all(len(config["blocks"]) == 5 for config in body["configs"])
 
     context = FitContext(
@@ -633,7 +633,9 @@ def test_the_grid_drift_refusals_fire_and_a_poly2_winner_rebuilds_with_its_degre
         code_hash=CODE_HASH,
     )
 
-    def body(index: int, model_class: str, hyperparameters: dict, n_configs: int = 17):
+    def body(
+        index: int, model_class: str, hyperparameters: dict, n_configs: int = GRID_SIZE
+    ):
         return {
             "schema_version": sweep.SELECTION_SCHEMA_VERSION,
             "n_configs": n_configs,
@@ -678,15 +680,15 @@ def test_the_grid_drift_refusals_fire_and_a_poly2_winner_rebuilds_with_its_degre
     assert "16 configs" in str(excinfo.value)
 
     # An index outside the grid. This branch is ONLY reachable when
-    # `n_configs` AGREES -- measured: with `n_configs=18` the size refusal
-    # fires first and this one never runs -- so the case it guards is a
+    # `n_configs` AGREES -- measured: with `n_configs=GRID_SIZE+1` the size
+    # refusal fires first and this one never runs -- so the case it guards is a
     # hand-edited index inside an otherwise consistent file. Refused by its
     # own message rather than as an IndexError from `grid[index]`.
     with pytest.raises(sweep.SelectionError) as excinfo:
         sweep.selection_winner_trainer(
-            body(17, "sklearn.Ridge", {"alpha": 100.0}), context=context
+            body(GRID_SIZE, "sklearn.Ridge", {"alpha": 100.0}), context=context
         )
-    assert "outside the 17-entry grid" in str(excinfo.value)
+    assert f"outside the {GRID_SIZE}-entry grid" in str(excinfo.value)
 
 
 def test_the_sweep_refuses_a_segment_name_that_is_not_an_oof_block(

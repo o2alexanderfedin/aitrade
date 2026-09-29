@@ -1,0 +1,1827 @@
+{
+  "block_names": [
+    "oof_block_0",
+    "oof_block_1",
+    "oof_block_2",
+    "oof_block_3",
+    "oof_block_4"
+  ],
+  "configs": [
+    {
+      "blocks": [
+        {
+          "fit_seconds": 2.450664708041586,
+          "gate_passed": false,
+          "gate_reason": "r2_vs_zero=-0.112905 <= 0 -- does not beat the constant-ZERO predictor, the reference D-07-18(a) names.",
+          "metrics": {
+            "n_scorable": 4136550,
+            "r2_vs_mean": -0.11327930156633714,
+            "r2_vs_zero": -0.11290505441990306,
+            "r2_vs_zero_of_constant_train_mean": -0.0009587313761230121,
+            "rank_ic_all": 0.3301815135895526,
+            "rank_ic_non_tied": 0.3400765672893258,
+            "tie_fraction": 0.7023028852546204
+          },
+          "n_rows_dropped": 168188,
+          "n_rows_fitted": 40070735,
+          "segment_name": "oof_block_0"
+        },
+        {
+          "fit_seconds": 1.533975875005126,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.056424 r2_vs_mean=0.0564113 rank_ic_non_tied=0.376499 rank_ic_all=0.365051 tie_fraction=0.438897",
+          "metrics": {
+            "n_scorable": 6864852,
+            "r2_vs_mean": 0.056411277166958484,
+            "r2_vs_zero": 0.05642398054199016,
+            "r2_vs_zero_of_constant_train_mean": -1.4955612120060024e-05,
+            "rank_ic_all": 0.36505078966837623,
+            "rank_ic_non_tied": 0.37649872764784187,
+            "tie_fraction": 0.43889686186970966
+          },
+          "n_rows_dropped": 224700,
+          "n_rows_fitted": 37260539,
+          "segment_name": "oof_block_1"
+        },
+        {
+          "fit_seconds": 1.3915097089484334,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0340454 r2_vs_mean=0.0338635 rank_ic_non_tied=0.241164 rank_ic_all=0.241615 tie_fraction=0.122646",
+          "metrics": {
+            "n_scorable": 11285128,
+            "r2_vs_mean": 0.03386347297682857,
+            "r2_vs_zero": 0.03404540897296404,
+            "r2_vs_zero_of_constant_train_mean": 4.7485396705848615e-05,
+            "rank_ic_all": 0.24161451836348105,
+            "rank_ic_non_tied": 0.24116445410405143,
+            "tie_fraction": 0.12264601695257688
+          },
+          "n_rows_dropped": 186136,
+          "n_rows_fitted": 32808179,
+          "segment_name": "oof_block_2"
+        },
+        {
+          "fit_seconds": 1.3512932499870658,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0138872 r2_vs_mean=0.013836 rank_ic_non_tied=0.194097 rank_ic_all=0.197827 tie_fraction=0.124053",
+          "metrics": {
+            "n_scorable": 12137023,
+            "r2_vs_mean": 0.013836013311350537,
+            "r2_vs_zero": 0.01388716929656264,
+            "r2_vs_zero_of_constant_train_mean": -0.00014784412221557908,
+            "rank_ic_all": 0.1978267670273492,
+            "rank_ic_non_tied": 0.19409660046405525,
+            "tie_fraction": 0.12405332015931748
+          },
+          "n_rows_dropped": 158432,
+          "n_rows_fitted": 31932611,
+          "segment_name": "oof_block_3"
+        },
+        {
+          "fit_seconds": 1.4914669580757618,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0158524 r2_vs_mean=0.0156714 rank_ic_non_tied=0.204082 rank_ic_all=0.207015 tie_fraction=0.115076",
+          "metrics": {
+            "n_scorable": 9806089,
+            "r2_vs_mean": 0.015671371368408682,
+            "r2_vs_zero": 0.015852356790176603,
+            "r2_vs_zero_of_constant_train_mean": -1.0553877485275365e-06,
+            "rank_ic_all": 0.20701480332865624,
+            "rank_ic_non_tied": 0.20408208933066235,
+            "tie_fraction": 0.1150760512167491
+          },
+          "n_rows_dropped": 161350,
+          "n_rows_fitted": 34369356,
+          "segment_name": "oof_block_4"
+        }
+      ],
+      "config_fingerprint": "9e5a5e6a66556557c3d63e3ac573b380db1d68686e7393fce141dcf6f26a781b",
+      "eligible": false,
+      "fit_seconds_total": 8.218910500057973,
+      "grid_index": 0,
+      "hyperparameters": {},
+      "ic_max": 0.37649872764784187,
+      "ic_min": 0.19409660046405525,
+      "ic_std": 0.07373423140611836,
+      "mean_r2_vs_mean": 0.0013005666514418258,
+      "mean_rank_ic_non_tied": 0.2711836877671873,
+      "model_class": "sklearn.LinearRegression",
+      "negative_run_id": "4c271dcc138f4b0aaa834e60b2c91d25"
+    },
+    {
+      "blocks": [
+        {
+          "fit_seconds": 1.16168583300896,
+          "gate_passed": false,
+          "gate_reason": "r2_vs_zero=-0.112905 <= 0 -- does not beat the constant-ZERO predictor, the reference D-07-18(a) names.",
+          "metrics": {
+            "n_scorable": 4136550,
+            "r2_vs_mean": -0.1132793015663851,
+            "r2_vs_zero": -0.1129050544199508,
+            "r2_vs_zero_of_constant_train_mean": -0.0009587313761230121,
+            "rank_ic_all": 0.3301815135894209,
+            "rank_ic_non_tied": 0.3400765672908329,
+            "tie_fraction": 0.7023028852546204
+          },
+          "n_rows_dropped": 168188,
+          "n_rows_fitted": 40070735,
+          "segment_name": "oof_block_0"
+        },
+        {
+          "fit_seconds": 1.068570707924664,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.056424 r2_vs_mean=0.0564113 rank_ic_non_tied=0.376499 rank_ic_all=0.365051 tie_fraction=0.438897",
+          "metrics": {
+            "n_scorable": 6864852,
+            "r2_vs_mean": 0.05641127716696004,
+            "r2_vs_zero": 0.056423980541991714,
+            "r2_vs_zero_of_constant_train_mean": -1.4955612120060024e-05,
+            "rank_ic_all": 0.36505078966863236,
+            "rank_ic_non_tied": 0.37649872764784176,
+            "tie_fraction": 0.43889686186970966
+          },
+          "n_rows_dropped": 224700,
+          "n_rows_fitted": 37260539,
+          "segment_name": "oof_block_1"
+        },
+        {
+          "fit_seconds": 0.9065808749292046,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0340454 r2_vs_mean=0.0338635 rank_ic_non_tied=0.241164 rank_ic_all=0.241615 tie_fraction=0.122646",
+          "metrics": {
+            "n_scorable": 11285128,
+            "r2_vs_mean": 0.03386347297682901,
+            "r2_vs_zero": 0.034045408972964486,
+            "r2_vs_zero_of_constant_train_mean": 4.7485396705848615e-05,
+            "rank_ic_all": 0.24161451836354256,
+            "rank_ic_non_tied": 0.24116445410412296,
+            "tie_fraction": 0.12264601695257688
+          },
+          "n_rows_dropped": 186136,
+          "n_rows_fitted": 32808179,
+          "segment_name": "oof_block_2"
+        },
+        {
+          "fit_seconds": 0.9131222500000149,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0138872 r2_vs_mean=0.013836 rank_ic_non_tied=0.194097 rank_ic_all=0.197827 tie_fraction=0.124053",
+          "metrics": {
+            "n_scorable": 12137023,
+            "r2_vs_mean": 0.013836013311349982,
+            "r2_vs_zero": 0.013887169296561974,
+            "r2_vs_zero_of_constant_train_mean": -0.00014784412221557908,
+            "rank_ic_all": 0.19782676702737872,
+            "rank_ic_non_tied": 0.1940966004640204,
+            "tie_fraction": 0.12405332015931748
+          },
+          "n_rows_dropped": 158432,
+          "n_rows_fitted": 31932611,
+          "segment_name": "oof_block_3"
+        },
+        {
+          "fit_seconds": 0.9406782920705155,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0158524 r2_vs_mean=0.0156714 rank_ic_non_tied=0.204082 rank_ic_all=0.207015 tie_fraction=0.115076",
+          "metrics": {
+            "n_scorable": 9806089,
+            "r2_vs_mean": 0.01567137136840846,
+            "r2_vs_zero": 0.01585235679017638,
+            "r2_vs_zero_of_constant_train_mean": -1.0553877485275365e-06,
+            "rank_ic_all": 0.2070148033287062,
+            "rank_ic_non_tied": 0.2040820893307006,
+            "tie_fraction": 0.1150760512167491
+          },
+          "n_rows_dropped": 161350,
+          "n_rows_fitted": 34369356,
+          "segment_name": "oof_block_4"
+        }
+      ],
+      "config_fingerprint": "0bb6f9eae6ce0633f423c77b8305633885435f88871efecb28eda6028fe292a7",
+      "eligible": false,
+      "fit_seconds_total": 4.990637957933359,
+      "grid_index": 1,
+      "hyperparameters": {
+        "alpha": 1e-06
+      },
+      "ic_max": 0.37649872764784176,
+      "ic_min": 0.1940966004640204,
+      "ic_std": 0.07373423140639446,
+      "mean_r2_vs_mean": 0.0013005666514324776,
+      "mean_rank_ic_non_tied": 0.27118368776750373,
+      "model_class": "sklearn.Ridge",
+      "negative_run_id": "23d79be20b70434b83537e850dd432c8"
+    },
+    {
+      "blocks": [
+        {
+          "fit_seconds": 1.2646075409138575,
+          "gate_passed": false,
+          "gate_reason": "r2_vs_zero=-0.112905 <= 0 -- does not beat the constant-ZERO predictor, the reference D-07-18(a) names.",
+          "metrics": {
+            "n_scorable": 4136550,
+            "r2_vs_mean": -0.11327930155843124,
+            "r2_vs_zero": -0.11290505441199983,
+            "r2_vs_zero_of_constant_train_mean": -0.0009587313761230121,
+            "rank_ic_all": 0.33018151358999664,
+            "rank_ic_non_tied": 0.340076567292256,
+            "tie_fraction": 0.7023028852546204
+          },
+          "n_rows_dropped": 168188,
+          "n_rows_fitted": 40070735,
+          "segment_name": "oof_block_0"
+        },
+        {
+          "fit_seconds": 1.0867079999297857,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.056424 r2_vs_mean=0.0564113 rank_ic_non_tied=0.376499 rank_ic_all=0.365051 tie_fraction=0.438897",
+          "metrics": {
+            "n_scorable": 6864852,
+            "r2_vs_mean": 0.05641127716805483,
+            "r2_vs_zero": 0.056423980543086616,
+            "r2_vs_zero_of_constant_train_mean": -1.4955612120060024e-05,
+            "rank_ic_all": 0.3650507896683507,
+            "rank_ic_non_tied": 0.376498727647348,
+            "tie_fraction": 0.43889686186970966
+          },
+          "n_rows_dropped": 224700,
+          "n_rows_fitted": 37260539,
+          "segment_name": "oof_block_1"
+        },
+        {
+          "fit_seconds": 0.9082036250038072,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0340454 r2_vs_mean=0.0338635 rank_ic_non_tied=0.241164 rank_ic_all=0.241615 tie_fraction=0.122646",
+          "metrics": {
+            "n_scorable": 11285128,
+            "r2_vs_mean": 0.03386347297688885,
+            "r2_vs_zero": 0.03404540897302433,
+            "r2_vs_zero_of_constant_train_mean": 4.7485396705848615e-05,
+            "rank_ic_all": 0.24161451836364042,
+            "rank_ic_non_tied": 0.2411644541042065,
+            "tie_fraction": 0.12264601695257688
+          },
+          "n_rows_dropped": 186136,
+          "n_rows_fitted": 32808179,
+          "segment_name": "oof_block_2"
+        },
+        {
+          "fit_seconds": 0.8475730839418247,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0138872 r2_vs_mean=0.013836 rank_ic_non_tied=0.194097 rank_ic_all=0.197827 tie_fraction=0.124053",
+          "metrics": {
+            "n_scorable": 12137023,
+            "r2_vs_mean": 0.013836013311155138,
+            "r2_vs_zero": 0.01388716929636713,
+            "r2_vs_zero_of_constant_train_mean": -0.00014784412221557908,
+            "rank_ic_all": 0.19782676702735424,
+            "rank_ic_non_tied": 0.19409660046432634,
+            "tie_fraction": 0.12405332015931748
+          },
+          "n_rows_dropped": 158432,
+          "n_rows_fitted": 31932611,
+          "segment_name": "oof_block_3"
+        },
+        {
+          "fit_seconds": 0.9512607499491423,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0158524 r2_vs_mean=0.0156714 rank_ic_non_tied=0.204082 rank_ic_all=0.207015 tie_fraction=0.115076",
+          "metrics": {
+            "n_scorable": 9806089,
+            "r2_vs_mean": 0.015671371368264575,
+            "r2_vs_zero": 0.015852356790032496,
+            "r2_vs_zero_of_constant_train_mean": -1.0553877485275365e-06,
+            "rank_ic_all": 0.2070148033288565,
+            "rank_ic_non_tied": 0.2040820893309335,
+            "tie_fraction": 0.1150760512167491
+          },
+          "n_rows_dropped": 161350,
+          "n_rows_fitted": 34369356,
+          "segment_name": "oof_block_4"
+        }
+      ],
+      "config_fingerprint": "e2ca1965a52fe3d4f0b1bdc630a5d894f72e4cbdf9b5d1edb59cb3d36c53df2e",
+      "eligible": false,
+      "fit_seconds_total": 5.058352999738418,
+      "grid_index": 2,
+      "hyperparameters": {
+        "alpha": 0.001
+      },
+      "ic_max": 0.376498727647348,
+      "ic_min": 0.19409660046432634,
+      "ic_std": 0.07373423140640617,
+      "mean_r2_vs_mean": 0.0013005666531864303,
+      "mean_rank_ic_non_tied": 0.2711836877678141,
+      "model_class": "sklearn.Ridge",
+      "negative_run_id": "b5e4c5d7328a412f87a040403378b6b0"
+    },
+    {
+      "blocks": [
+        {
+          "fit_seconds": 1.1804164160275832,
+          "gate_passed": false,
+          "gate_reason": "r2_vs_zero=-0.112905 <= 0 -- does not beat the constant-ZERO predictor, the reference D-07-18(a) names.",
+          "metrics": {
+            "n_scorable": 4136550,
+            "r2_vs_mean": -0.11327929360458766,
+            "r2_vs_zero": -0.1129050464608301,
+            "r2_vs_zero_of_constant_train_mean": -0.0009587313761230121,
+            "rank_ic_all": 0.33018151358151226,
+            "rank_ic_non_tied": 0.3400765672902834,
+            "tie_fraction": 0.7023028852546204
+          },
+          "n_rows_dropped": 168188,
+          "n_rows_fitted": 40070735,
+          "segment_name": "oof_block_0"
+        },
+        {
+          "fit_seconds": 1.092985499999486,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.056424 r2_vs_mean=0.0564113 rank_ic_non_tied=0.376499 rank_ic_all=0.365051 tie_fraction=0.438897",
+          "metrics": {
+            "n_scorable": 6864852,
+            "r2_vs_mean": 0.056411278262827325,
+            "r2_vs_zero": 0.056423981637844345,
+            "r2_vs_zero_of_constant_train_mean": -1.4955612120060024e-05,
+            "rank_ic_all": 0.36505078967176074,
+            "rank_ic_non_tied": 0.3764987276639449,
+            "tie_fraction": 0.43889686186970966
+          },
+          "n_rows_dropped": 224700,
+          "n_rows_fitted": 37260539,
+          "segment_name": "oof_block_1"
+        },
+        {
+          "fit_seconds": 0.9105846249731258,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0340454 r2_vs_mean=0.0338635 rank_ic_non_tied=0.241164 rank_ic_all=0.241615 tie_fraction=0.122646",
+          "metrics": {
+            "n_scorable": 11285128,
+            "r2_vs_mean": 0.033863473036705005,
+            "r2_vs_zero": 0.034045409032829155,
+            "r2_vs_zero_of_constant_train_mean": 4.7485396705848615e-05,
+            "rank_ic_all": 0.24161451835527994,
+            "rank_ic_non_tied": 0.24116445409602683,
+            "tie_fraction": 0.12264601695257688
+          },
+          "n_rows_dropped": 186136,
+          "n_rows_fitted": 32808179,
+          "segment_name": "oof_block_2"
+        },
+        {
+          "fit_seconds": 0.9153743750648573,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0138872 r2_vs_mean=0.013836 rank_ic_non_tied=0.194097 rank_ic_all=0.197827 tie_fraction=0.124053",
+          "metrics": {
+            "n_scorable": 12137023,
+            "r2_vs_mean": 0.013836013116154566,
+            "r2_vs_zero": 0.013887169101376662,
+            "r2_vs_zero_of_constant_train_mean": -0.00014784412221557908,
+            "rank_ic_all": 0.19782676706203914,
+            "rank_ic_non_tied": 0.19409660049452787,
+            "tie_fraction": 0.12405332015931748
+          },
+          "n_rows_dropped": 158432,
+          "n_rows_fitted": 31932611,
+          "segment_name": "oof_block_3"
+        },
+        {
+          "fit_seconds": 0.9433344589779153,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0158524 r2_vs_mean=0.0156714 rank_ic_non_tied=0.204082 rank_ic_all=0.207015 tie_fraction=0.115076",
+          "metrics": {
+            "n_scorable": 9806089,
+            "r2_vs_mean": 0.01567137122459994,
+            "r2_vs_zero": 0.015852356646394283,
+            "r2_vs_zero_of_constant_train_mean": -1.0553877485275365e-06,
+            "rank_ic_all": 0.2070148033576075,
+            "rank_ic_non_tied": 0.20408208936163477,
+            "tie_fraction": 0.1150760512167491
+          },
+          "n_rows_dropped": 161350,
+          "n_rows_fitted": 34369356,
+          "segment_name": "oof_block_4"
+        }
+      ],
+      "config_fingerprint": "e2f8e7b6008622ce9f7ca9b5321ce109e6cc213140bbbc1ef327e57ccc511f80",
+      "eligible": false,
+      "fit_seconds_total": 5.0426953750429675,
+      "grid_index": 3,
+      "hyperparameters": {
+        "alpha": 1.0
+      },
+      "ic_max": 0.3764987276639449,
+      "ic_min": 0.19409660049452787,
+      "ic_std": 0.07373423139954179,
+      "mean_r2_vs_mean": 0.0013005684071398349,
+      "mean_rank_ic_non_tied": 0.27118368778128354,
+      "model_class": "sklearn.Ridge",
+      "negative_run_id": "52268045ce55497b964175b5f8091c10"
+    },
+    {
+      "blocks": [
+        {
+          "fit_seconds": 1.4396759999217466,
+          "gate_passed": false,
+          "gate_reason": "r2_vs_zero=-0.112904 <= 0 -- does not beat the constant-ZERO predictor, the reference D-07-18(a) names.",
+          "metrics": {
+            "n_scorable": 4136550,
+            "r2_vs_mean": -0.11327850538912632,
+            "r2_vs_zero": -0.11290425851034036,
+            "r2_vs_zero_of_constant_train_mean": -0.0009587313761230121,
+            "rank_ic_all": 0.3301815148926225,
+            "rank_ic_non_tied": 0.34007657111039735,
+            "tie_fraction": 0.7023028852546204
+          },
+          "n_rows_dropped": 168188,
+          "n_rows_fitted": 40070735,
+          "segment_name": "oof_block_0"
+        },
+        {
+          "fit_seconds": 1.1114518330432475,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0564241 r2_vs_mean=0.0564114 rank_ic_non_tied=0.376499 rank_ic_all=0.365051 tie_fraction=0.438897",
+          "metrics": {
+            "n_scorable": 6864852,
+            "r2_vs_mean": 0.05641138675276147,
+            "r2_vs_zero": 0.05642409012631788,
+            "r2_vs_zero_of_constant_train_mean": -1.4955612120060024e-05,
+            "rank_ic_all": 0.3650507891042296,
+            "rank_ic_non_tied": 0.37649872749251595,
+            "tie_fraction": 0.43889686186970966
+          },
+          "n_rows_dropped": 224700,
+          "n_rows_fitted": 37260539,
+          "segment_name": "oof_block_1"
+        },
+        {
+          "fit_seconds": 0.9072956249583513,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0340454 r2_vs_mean=0.0338635 rank_ic_non_tied=0.241164 rank_ic_all=0.241615 tie_fraction=0.122646",
+          "metrics": {
+            "n_scorable": 11285128,
+            "r2_vs_mean": 0.03386347896404307,
+            "r2_vs_zero": 0.034045414959051,
+            "r2_vs_zero_of_constant_train_mean": 4.7485396705848615e-05,
+            "rank_ic_all": 0.24161451889782767,
+            "rank_ic_non_tied": 0.24116445478027934,
+            "tie_fraction": 0.12264601695257688
+          },
+          "n_rows_dropped": 186136,
+          "n_rows_fitted": 32808179,
+          "segment_name": "oof_block_2"
+        },
+        {
+          "fit_seconds": 0.8414210000773892,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0138871 r2_vs_mean=0.013836 rank_ic_non_tied=0.194097 rank_ic_all=0.197827 tie_fraction=0.124053",
+          "metrics": {
+            "n_scorable": 12137023,
+            "r2_vs_mean": 0.01383599379177336,
+            "r2_vs_zero": 0.013887149777997987,
+            "r2_vs_zero_of_constant_train_mean": -0.00014784412221557908,
+            "rank_ic_all": 0.19782677101733925,
+            "rank_ic_non_tied": 0.19409660416588012,
+            "tie_fraction": 0.12405332015931748
+          },
+          "n_rows_dropped": 158432,
+          "n_rows_fitted": 31932611,
+          "segment_name": "oof_block_3"
+        },
+        {
+          "fit_seconds": 0.944495250005275,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0158523 r2_vs_mean=0.0156714 rank_ic_non_tied=0.204082 rank_ic_all=0.207015 tie_fraction=0.115076",
+          "metrics": {
+            "n_scorable": 9806089,
+            "r2_vs_mean": 0.015671356987508878,
+            "r2_vs_zero": 0.015852342411921017,
+            "r2_vs_zero_of_constant_train_mean": -1.0553877485275365e-06,
+            "rank_ic_all": 0.20701480616291906,
+            "rank_ic_non_tied": 0.2040820924191065,
+            "tie_fraction": 0.1150760512167491
+          },
+          "n_rows_dropped": 161350,
+          "n_rows_fitted": 34369356,
+          "segment_name": "oof_block_4"
+        }
+      ],
+      "config_fingerprint": "13a51c78de1daefc0ff0c68ed964f5b9095490492b1cd7d73b46f2c992387849",
+      "eligible": false,
+      "fit_seconds_total": 5.2443397080060095,
+      "grid_index": 4,
+      "hyperparameters": {
+        "alpha": 100.0
+      },
+      "ic_max": 0.37649872749251595,
+      "ic_min": 0.19409660416588012,
+      "ic_std": 0.07373423068456528,
+      "mean_r2_vs_mean": 0.0013007422213920927,
+      "mean_rank_ic_non_tied": 0.27118368999363585,
+      "model_class": "sklearn.Ridge",
+      "negative_run_id": "ae0448feb971434fb94f7b54e3ea7ebe"
+    },
+    {
+      "blocks": [
+        {
+          "fit_seconds": 1.0931988339871168,
+          "gate_passed": false,
+          "gate_reason": "r2_vs_zero=-0.11176 <= 0 -- does not beat the constant-ZERO predictor, the reference D-07-18(a) names.",
+          "metrics": {
+            "n_scorable": 4136550,
+            "r2_vs_mean": -0.11213432557187941,
+            "r2_vs_zero": -0.1117604633279563,
+            "r2_vs_zero_of_constant_train_mean": -0.0009587313761230121,
+            "rank_ic_all": 0.3302681132932011,
+            "rank_ic_non_tied": 0.34018769680705074,
+            "tie_fraction": 0.7023028852546204
+          },
+          "n_rows_dropped": 168188,
+          "n_rows_fitted": 40070735,
+          "segment_name": "oof_block_0"
+        },
+        {
+          "fit_seconds": 0.7147419579559937,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0565455 r2_vs_mean=0.0565328 rank_ic_non_tied=0.376555 rank_ic_all=0.365128 tie_fraction=0.438897",
+          "metrics": {
+            "n_scorable": 6864852,
+            "r2_vs_mean": 0.056532760175457275,
+            "r2_vs_zero": 0.056545461914983886,
+            "r2_vs_zero_of_constant_train_mean": -1.4955612120060024e-05,
+            "rank_ic_all": 0.3651280490256176,
+            "rank_ic_non_tied": 0.37655532390217256,
+            "tie_fraction": 0.43889686186970966
+          },
+          "n_rows_dropped": 224700,
+          "n_rows_fitted": 37260539,
+          "segment_name": "oof_block_1"
+        },
+        {
+          "fit_seconds": 0.6135069589363411,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0340799 r2_vs_mean=0.0338979 rank_ic_non_tied=0.241209 rank_ic_all=0.241661 tie_fraction=0.122646",
+          "metrics": {
+            "n_scorable": 11285128,
+            "r2_vs_mean": 0.0338979338926948,
+            "r2_vs_zero": 0.034079863399394394,
+            "r2_vs_zero_of_constant_train_mean": 4.7485396705848615e-05,
+            "rank_ic_all": 0.24166092692101454,
+            "rank_ic_non_tied": 0.24120887152732168,
+            "tie_fraction": 0.12264601695257688
+          },
+          "n_rows_dropped": 186136,
+          "n_rows_fitted": 32808179,
+          "segment_name": "oof_block_2"
+        },
+        {
+          "fit_seconds": 0.5867561670020223,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0138152 r2_vs_mean=0.013764 rank_ic_non_tied=0.194152 rank_ic_all=0.197884 tie_fraction=0.124053",
+          "metrics": {
+            "n_scorable": 12137023,
+            "r2_vs_mean": 0.013763993147426268,
+            "r2_vs_zero": 0.013815152868591474,
+            "r2_vs_zero_of_constant_train_mean": -0.00014784412221557908,
+            "rank_ic_all": 0.19788428385234733,
+            "rank_ic_non_tied": 0.19415200724683176,
+            "tie_fraction": 0.12405332015931748
+          },
+          "n_rows_dropped": 158432,
+          "n_rows_fitted": 31932611,
+          "segment_name": "oof_block_3"
+        },
+        {
+          "fit_seconds": 0.6376317919930443,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0158364 r2_vs_mean=0.0156554 rank_ic_non_tied=0.20413 rank_ic_all=0.207063 tie_fraction=0.115076",
+          "metrics": {
+            "n_scorable": 9806089,
+            "r2_vs_mean": 0.01565541495904188,
+            "r2_vs_zero": 0.01583640331466485,
+            "r2_vs_zero_of_constant_train_mean": -1.0553877485275365e-06,
+            "rank_ic_all": 0.2070629318960842,
+            "rank_ic_non_tied": 0.20413031249922142,
+            "tie_fraction": 0.1150760512167491
+          },
+          "n_rows_dropped": 161350,
+          "n_rows_fitted": 34369356,
+          "segment_name": "oof_block_4"
+        }
+      ],
+      "config_fingerprint": "0b72927a1c370c3d61906f622f9d0a8908bcd11bf91df173c4aaaac64c230ca5",
+      "eligible": false,
+      "fit_seconds_total": 3.645835709874518,
+      "grid_index": 5,
+      "hyperparameters": {
+        "alpha": 1e-06,
+        "l1_ratio": 0.15,
+        "max_iter": 1000,
+        "selection": "cyclic",
+        "tol": 0.0001
+      },
+      "ic_max": 0.37655532390217256,
+      "ic_min": 0.19415200724683176,
+      "ic_std": 0.07374718919393708,
+      "mean_r2_vs_mean": 0.0015431553205481618,
+      "mean_rank_ic_non_tied": 0.27124684239651964,
+      "model_class": "sklearn.ElasticNet",
+      "negative_run_id": "7def75d8a297448fa6d2e86b806bd32a"
+    },
+    {
+      "blocks": [
+        {
+          "fit_seconds": 0.8857929999940097,
+          "gate_passed": false,
+          "gate_reason": "r2_vs_zero=-0.109142 <= 0 -- does not beat the constant-ZERO predictor, the reference D-07-18(a) names.",
+          "metrics": {
+            "n_scorable": 4136550,
+            "r2_vs_mean": -0.10951511109867473,
+            "r2_vs_zero": -0.10914212934677292,
+            "r2_vs_zero_of_constant_train_mean": -0.0009587313761230121,
+            "rank_ic_all": 0.3304492128800519,
+            "rank_ic_non_tied": 0.34041790851311715,
+            "tie_fraction": 0.7023028852546204
+          },
+          "n_rows_dropped": 168188,
+          "n_rows_fitted": 40070735,
+          "segment_name": "oof_block_0"
+        },
+        {
+          "fit_seconds": 0.7003532499074936,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.056809 r2_vs_mean=0.0567963 rank_ic_non_tied=0.376678 rank_ic_all=0.365297 tie_fraction=0.438897",
+          "metrics": {
+            "n_scorable": 6864852,
+            "r2_vs_mean": 0.05679632542987123,
+            "r2_vs_zero": 0.05680902362106344,
+            "r2_vs_zero_of_constant_train_mean": -1.4955612120060024e-05,
+            "rank_ic_all": 0.36529733338985454,
+            "rank_ic_non_tied": 0.37667789629432796,
+            "tie_fraction": 0.43889686186970966
+          },
+          "n_rows_dropped": 224700,
+          "n_rows_fitted": 37260539,
+          "segment_name": "oof_block_1"
+        },
+        {
+          "fit_seconds": 0.7002418329939246,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0341523 r2_vs_mean=0.0339704 rank_ic_non_tied=0.241305 rank_ic_all=0.241762 tie_fraction=0.122646",
+          "metrics": {
+            "n_scorable": 11285128,
+            "r2_vs_mean": 0.033970405236242396,
+            "r2_vs_zero": 0.03415232109565125,
+            "r2_vs_zero_of_constant_train_mean": 4.7485396705848615e-05,
+            "rank_ic_all": 0.24176216042071993,
+            "rank_ic_non_tied": 0.24130541902954095,
+            "tie_fraction": 0.12264601695257688
+          },
+          "n_rows_dropped": 186136,
+          "n_rows_fitted": 32808179,
+          "segment_name": "oof_block_2"
+        },
+        {
+          "fit_seconds": 0.588177458033897,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0136387 r2_vs_mean=0.0135875 rank_ic_non_tied=0.194268 rank_ic_all=0.198006 tie_fraction=0.124053",
+          "metrics": {
+            "n_scorable": 12137023,
+            "r2_vs_mean": 0.013587498561825395,
+            "r2_vs_zero": 0.013638667438419572,
+            "r2_vs_zero_of_constant_train_mean": -0.00014784412221557908,
+            "rank_ic_all": 0.19800575147662786,
+            "rank_ic_non_tied": 0.19426844769953622,
+            "tie_fraction": 0.12405332015931748
+          },
+          "n_rows_dropped": 158432,
+          "n_rows_fitted": 31932611,
+          "segment_name": "oof_block_3"
+        },
+        {
+          "fit_seconds": 0.6352405420038849,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0157968 r2_vs_mean=0.0156158 rank_ic_non_tied=0.204241 rank_ic_all=0.207173 tie_fraction=0.115076",
+          "metrics": {
+            "n_scorable": 9806089,
+            "r2_vs_mean": 0.01561580132308904,
+            "r2_vs_zero": 0.015796796962347148,
+            "r2_vs_zero_of_constant_train_mean": -1.0553877485275365e-06,
+            "rank_ic_all": 0.2071734625338132,
+            "rank_ic_non_tied": 0.20424142798917616,
+            "tie_fraction": 0.1150760512167491
+          },
+          "n_rows_dropped": 161350,
+          "n_rows_fitted": 34369356,
+          "segment_name": "oof_block_4"
+        }
+      ],
+      "config_fingerprint": "227e5641140ac44019ba0831ec8e69c9cdb15e50ed830ebb9f662a5911576eed",
+      "eligible": false,
+      "fit_seconds_total": 3.50980608293321,
+      "grid_index": 6,
+      "hyperparameters": {
+        "alpha": 1e-06,
+        "l1_ratio": 0.5,
+        "max_iter": 1000,
+        "selection": "cyclic",
+        "tol": 0.0001
+      },
+      "ic_max": 0.37667789629432796,
+      "ic_min": 0.19426844769953622,
+      "ic_std": 0.07377281277221999,
+      "mean_r2_vs_mean": 0.0020909838904706658,
+      "mean_rank_ic_non_tied": 0.2713822199051397,
+      "model_class": "sklearn.ElasticNet",
+      "negative_run_id": "edccffaa36ea457692d9d4dfd3d8b347"
+    },
+    {
+      "blocks": [
+        {
+          "fit_seconds": 0.8423605419229716,
+          "gate_passed": false,
+          "gate_reason": "r2_vs_zero=-0.106597 <= 0 -- does not beat the constant-ZERO predictor, the reference D-07-18(a) names.",
+          "metrics": {
+            "n_scorable": 4136550,
+            "r2_vs_mean": -0.10696905281961722,
+            "r2_vs_zero": -0.10659692696707879,
+            "r2_vs_zero_of_constant_train_mean": -0.0009587313761230121,
+            "rank_ic_all": 0.3306027790148257,
+            "rank_ic_non_tied": 0.3405674338702932,
+            "tie_fraction": 0.7023028852546204
+          },
+          "n_rows_dropped": 168188,
+          "n_rows_fitted": 40070735,
+          "segment_name": "oof_block_0"
+        },
+        {
+          "fit_seconds": 0.7466151249827817,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0570448 r2_vs_mean=0.0570321 rank_ic_non_tied=0.37679 rank_ic_all=0.36545 tie_fraction=0.438897",
+          "metrics": {
+            "n_scorable": 6864852,
+            "r2_vs_mean": 0.05703208534584836,
+            "r2_vs_zero": 0.057044780363044834,
+            "r2_vs_zero_of_constant_train_mean": -1.4955612120060024e-05,
+            "rank_ic_all": 0.3654501998300288,
+            "rank_ic_non_tied": 0.37679018071936526,
+            "tie_fraction": 0.43889686186970966
+          },
+          "n_rows_dropped": 224700,
+          "n_rows_fitted": 37260539,
+          "segment_name": "oof_block_1"
+        },
+        {
+          "fit_seconds": 0.604421874973923,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0342137 r2_vs_mean=0.0340318 rank_ic_non_tied=0.241391 rank_ic_all=0.241852 tie_fraction=0.122646",
+          "metrics": {
+            "n_scorable": 11285128,
+            "r2_vs_mean": 0.03403177615363795,
+            "r2_vs_zero": 0.03421368045610973,
+            "r2_vs_zero_of_constant_train_mean": 4.7485396705848615e-05,
+            "rank_ic_all": 0.241852061946863,
+            "rank_ic_non_tied": 0.24139085805074031,
+            "tie_fraction": 0.12264601695257688
+          },
+          "n_rows_dropped": 186136,
+          "n_rows_fitted": 32808179,
+          "segment_name": "oof_block_2"
+        },
+        {
+          "fit_seconds": 0.6015929579734802,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0134503 r2_vs_mean=0.0133992 rank_ic_non_tied=0.194344 rank_ic_all=0.198089 tie_fraction=0.124053",
+          "metrics": {
+            "n_scorable": 12137023,
+            "r2_vs_mean": 0.01339915834171912,
+            "r2_vs_zero": 0.013450336988219402,
+            "r2_vs_zero_of_constant_train_mean": -0.00014784412221557908,
+            "rank_ic_all": 0.19808935597730812,
+            "rank_ic_non_tied": 0.19434440642239545,
+            "tie_fraction": 0.12405332015931748
+          },
+          "n_rows_dropped": 158432,
+          "n_rows_fitted": 31932611,
+          "segment_name": "oof_block_3"
+        },
+        {
+          "fit_seconds": 0.6305201250361279,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0157538 r2_vs_mean=0.0155728 rank_ic_non_tied=0.204346 rank_ic_all=0.207278 tie_fraction=0.115076",
+          "metrics": {
+            "n_scorable": 9806089,
+            "r2_vs_mean": 0.015572844164952526,
+            "r2_vs_zero": 0.01575384770260868,
+            "r2_vs_zero_of_constant_train_mean": -1.0553877485275365e-06,
+            "rank_ic_all": 0.20727755530869327,
+            "rank_ic_non_tied": 0.20434643391024998,
+            "tie_fraction": 0.1150760512167491
+          },
+          "n_rows_dropped": 161350,
+          "n_rows_fitted": 34369356,
+          "segment_name": "oof_block_4"
+        }
+      ],
+      "config_fingerprint": "f9d396d364dbca3fe2c9fb86ebe1dd4466457ed67a6c358f0ac3aa098363c4d6",
+      "eligible": false,
+      "fit_seconds_total": 3.4255106248892844,
+      "grid_index": 7,
+      "hyperparameters": {
+        "alpha": 1e-06,
+        "l1_ratio": 0.85,
+        "max_iter": 1000,
+        "selection": "cyclic",
+        "tol": 0.0001
+      },
+      "ic_max": 0.37679018071936526,
+      "ic_min": 0.19434440642239545,
+      "ic_std": 0.07379089283721191,
+      "mean_r2_vs_mean": 0.0026133622373081477,
+      "mean_rank_ic_non_tied": 0.27148786259460883,
+      "model_class": "sklearn.ElasticNet",
+      "negative_run_id": "9e40b2749c554b5b90b504f3a5d0f022"
+    },
+    {
+      "blocks": [
+        {
+          "fit_seconds": 0.772365500102751,
+          "gate_passed": false,
+          "gate_reason": "r2_vs_zero=-0.029429 <= 0 -- does not beat the constant-ZERO predictor, the reference D-07-18(a) names.",
+          "metrics": {
+            "n_scorable": 4136550,
+            "r2_vs_mean": -0.029775208247810214,
+            "r2_vs_zero": -0.029429032375670072,
+            "r2_vs_zero_of_constant_train_mean": -0.0009587313761230121,
+            "rank_ic_all": 0.33250783416034524,
+            "rank_ic_non_tied": 0.3427039241728718,
+            "tie_fraction": 0.7023028852546204
+          },
+          "n_rows_dropped": 168188,
+          "n_rows_fitted": 40070735,
+          "segment_name": "oof_block_0"
+        },
+        {
+          "fit_seconds": 0.5888418750837445,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0551817 r2_vs_mean=0.055169 rank_ic_non_tied=0.375235 rank_ic_all=0.365666 tie_fraction=0.438897",
+          "metrics": {
+            "n_scorable": 6864852,
+            "r2_vs_mean": 0.05516898818713689,
+            "r2_vs_zero": 0.055181708286894615,
+            "r2_vs_zero_of_constant_train_mean": -1.4955612120060024e-05,
+            "rank_ic_all": 0.36566592477109644,
+            "rank_ic_non_tied": 0.3752353915617115,
+            "tie_fraction": 0.43889686186970966
+          },
+          "n_rows_dropped": 224700,
+          "n_rows_fitted": 37260539,
+          "segment_name": "oof_block_1"
+        },
+        {
+          "fit_seconds": 0.4502164580626413,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0305265 r2_vs_mean=0.0303439 rank_ic_non_tied=0.243281 rank_ic_all=0.243906 tie_fraction=0.122646",
+          "metrics": {
+            "n_scorable": 11285128,
+            "r2_vs_mean": 0.030343899892358417,
+            "r2_vs_zero": 0.03052649866959911,
+            "r2_vs_zero_of_constant_train_mean": 4.7485396705848615e-05,
+            "rank_ic_all": 0.24390569805083157,
+            "rank_ic_non_tied": 0.24328134520985428,
+            "tie_fraction": 0.12264601695257688
+          },
+          "n_rows_dropped": 186136,
+          "n_rows_fitted": 32808179,
+          "segment_name": "oof_block_2"
+        },
+        {
+          "fit_seconds": 0.4806821660604328,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.00997592 r2_vs_mean=0.00992456 rank_ic_non_tied=0.192094 rank_ic_all=0.196152 tie_fraction=0.124053",
+          "metrics": {
+            "n_scorable": 12137023,
+            "r2_vs_mean": 0.00992456393816632,
+            "r2_vs_zero": 0.00997592282477111,
+            "r2_vs_zero_of_constant_train_mean": -0.00014784412221557908,
+            "rank_ic_all": 0.19615225048558763,
+            "rank_ic_non_tied": 0.19209398534180283,
+            "tie_fraction": 0.12405332015931748
+          },
+          "n_rows_dropped": 158432,
+          "n_rows_fitted": 31932611,
+          "segment_name": "oof_block_3"
+        },
+        {
+          "fit_seconds": 1.3104249159805477,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0122192 r2_vs_mean=0.0120376 rank_ic_non_tied=0.206968 rank_ic_all=0.209891 tie_fraction=0.115076",
+          "metrics": {
+            "n_scorable": 9806089,
+            "r2_vs_mean": 0.012037579908815932,
+            "r2_vs_zero": 0.01221923346443754,
+            "r2_vs_zero_of_constant_train_mean": -1.0553877485275365e-06,
+            "rank_ic_all": 0.20989062692526092,
+            "rank_ic_non_tied": 0.20696756203997685,
+            "tie_fraction": 0.1150760512167491
+          },
+          "n_rows_dropped": 161350,
+          "n_rows_fitted": 34369356,
+          "segment_name": "oof_block_4"
+        }
+      ],
+      "config_fingerprint": "8370fe681456541c4bf2c87abe9887584046785bdec42e8a81d4089daacb5ea4",
+      "eligible": false,
+      "fit_seconds_total": 3.6025309152901173,
+      "grid_index": 8,
+      "hyperparameters": {
+        "alpha": 0.0001,
+        "l1_ratio": 0.15,
+        "max_iter": 1000,
+        "selection": "cyclic",
+        "tol": 0.0001
+      },
+      "ic_max": 0.3752353915617115,
+      "ic_min": 0.19209398534180283,
+      "ic_std": 0.07361457102309442,
+      "mean_r2_vs_mean": 0.015539964735733469,
+      "mean_rank_ic_non_tied": 0.27205644166524345,
+      "model_class": "sklearn.ElasticNet",
+      "negative_run_id": "4f8aa009ef204ceebfe9057180f1d92e"
+    },
+    {
+      "blocks": [
+        {
+          "fit_seconds": 0.4411226250231266,
+          "gate_passed": false,
+          "gate_reason": "rank IC is not finite -- scipy.stats.spearmanr returns NaN for a CONSTANT input. The prediction has no ordering at all; this is NOT a small positive IC and not a weak one. A constant predictor at the train mean is the measured shape of this failure, and it scores r2_vs_zero=+0.001647 while using no feature at all.",
+          "metrics": {
+            "n_scorable": 4136550,
+            "r2_vs_mean": -0.00129533326990372,
+            "r2_vs_zero": -0.0009587313761230121,
+            "r2_vs_zero_of_constant_train_mean": -0.0009587313761230121,
+            "rank_ic_all": null,
+            "rank_ic_non_tied": null,
+            "tie_fraction": 0.7023028852546204
+          },
+          "n_rows_dropped": 168188,
+          "n_rows_fitted": 40070735,
+          "segment_name": "oof_block_0"
+        },
+        {
+          "fit_seconds": 0.3929717499995604,
+          "gate_passed": false,
+          "gate_reason": "rank IC is not finite -- scipy.stats.spearmanr returns NaN for a CONSTANT input. The prediction has no ordering at all; this is NOT a small positive IC and not a weak one. A constant predictor at the train mean is the measured shape of this failure, and it scores r2_vs_zero=+0.001647 while using no feature at all.",
+          "metrics": {
+            "n_scorable": 6864852,
+            "r2_vs_mean": -2.84188252122064e-05,
+            "r2_vs_zero": -1.4955612120060024e-05,
+            "r2_vs_zero_of_constant_train_mean": -1.4955612120060024e-05,
+            "rank_ic_all": null,
+            "rank_ic_non_tied": null,
+            "tie_fraction": 0.43889686186970966
+          },
+          "n_rows_dropped": 224700,
+          "n_rows_fitted": 37260539,
+          "segment_name": "oof_block_1"
+        },
+        {
+          "fit_seconds": 0.3452061670832336,
+          "gate_passed": false,
+          "gate_reason": "rank IC is not finite -- scipy.stats.spearmanr returns NaN for a CONSTANT input. The prediction has no ordering at all; this is NOT a small positive IC and not a weak one. A constant predictor at the train mean is the measured shape of this failure, and it scores r2_vs_zero=+0.001647 while using no feature at all.",
+          "metrics": {
+            "n_scorable": 11285128,
+            "r2_vs_mean": -0.00014085405374286708,
+            "r2_vs_zero": 4.7485396705848615e-05,
+            "r2_vs_zero_of_constant_train_mean": 4.7485396705848615e-05,
+            "rank_ic_all": null,
+            "rank_ic_non_tied": null,
+            "tie_fraction": 0.12264601695257688
+          },
+          "n_rows_dropped": 186136,
+          "n_rows_fitted": 32808179,
+          "segment_name": "oof_block_2"
+        },
+        {
+          "fit_seconds": 0.3430209170328453,
+          "gate_passed": false,
+          "gate_reason": "rank IC is not finite -- scipy.stats.spearmanr returns NaN for a CONSTANT input. The prediction has no ordering at all; this is NOT a small positive IC and not a weak one. A constant predictor at the train mean is the measured shape of this failure, and it scores r2_vs_zero=+0.001647 while using no feature at all.",
+          "metrics": {
+            "n_scorable": 12137023,
+            "r2_vs_mean": -0.00019972819342006787,
+            "r2_vs_zero": -0.00014784412221557908,
+            "r2_vs_zero_of_constant_train_mean": -0.00014784412221557908,
+            "rank_ic_all": null,
+            "rank_ic_non_tied": null,
+            "tie_fraction": 0.12405332015931748
+          },
+          "n_rows_dropped": 158432,
+          "n_rows_fitted": 31932611,
+          "segment_name": "oof_block_3"
+        },
+        {
+          "fit_seconds": 0.42072704096790403,
+          "gate_passed": false,
+          "gate_reason": "rank IC is not finite -- scipy.stats.spearmanr returns NaN for a CONSTANT input. The prediction has no ordering at all; this is NOT a small positive IC and not a weak one. A constant predictor at the train mean is the measured shape of this failure, and it scores r2_vs_zero=+0.001647 while using no feature at all.",
+          "metrics": {
+            "n_scorable": 9806089,
+            "r2_vs_mean": -0.00018495626281178623,
+            "r2_vs_zero": -1.0553877485275365e-06,
+            "r2_vs_zero_of_constant_train_mean": -1.0553877485275365e-06,
+            "rank_ic_all": null,
+            "rank_ic_non_tied": null,
+            "tie_fraction": 0.1150760512167491
+          },
+          "n_rows_dropped": 161350,
+          "n_rows_fitted": 34369356,
+          "segment_name": "oof_block_4"
+        }
+      ],
+      "config_fingerprint": "babe22d13f44acb066e51ce9600f909f89e22cd4fd63b3c18221e253da542a6e",
+      "eligible": false,
+      "fit_seconds_total": 1.94304850010667,
+      "grid_index": 9,
+      "hyperparameters": {
+        "alpha": 0.0001,
+        "l1_ratio": 0.5,
+        "max_iter": 1000,
+        "selection": "cyclic",
+        "tol": 0.0001
+      },
+      "ic_max": null,
+      "ic_min": null,
+      "ic_std": null,
+      "mean_r2_vs_mean": -0.0003698581210181295,
+      "mean_rank_ic_non_tied": null,
+      "model_class": "sklearn.ElasticNet",
+      "negative_run_id": "9f86815d0a194cba82aa775be6e3c4bc"
+    },
+    {
+      "blocks": [
+        {
+          "fit_seconds": 0.42377191700506955,
+          "gate_passed": false,
+          "gate_reason": "rank IC is not finite -- scipy.stats.spearmanr returns NaN for a CONSTANT input. The prediction has no ordering at all; this is NOT a small positive IC and not a weak one. A constant predictor at the train mean is the measured shape of this failure, and it scores r2_vs_zero=+0.001647 while using no feature at all.",
+          "metrics": {
+            "n_scorable": 4136550,
+            "r2_vs_mean": -0.00129533326990372,
+            "r2_vs_zero": -0.0009587313761230121,
+            "r2_vs_zero_of_constant_train_mean": -0.0009587313761230121,
+            "rank_ic_all": null,
+            "rank_ic_non_tied": null,
+            "tie_fraction": 0.7023028852546204
+          },
+          "n_rows_dropped": 168188,
+          "n_rows_fitted": 40070735,
+          "segment_name": "oof_block_0"
+        },
+        {
+          "fit_seconds": 0.3939370419830084,
+          "gate_passed": false,
+          "gate_reason": "rank IC is not finite -- scipy.stats.spearmanr returns NaN for a CONSTANT input. The prediction has no ordering at all; this is NOT a small positive IC and not a weak one. A constant predictor at the train mean is the measured shape of this failure, and it scores r2_vs_zero=+0.001647 while using no feature at all.",
+          "metrics": {
+            "n_scorable": 6864852,
+            "r2_vs_mean": -2.84188252122064e-05,
+            "r2_vs_zero": -1.4955612120060024e-05,
+            "r2_vs_zero_of_constant_train_mean": -1.4955612120060024e-05,
+            "rank_ic_all": null,
+            "rank_ic_non_tied": null,
+            "tie_fraction": 0.43889686186970966
+          },
+          "n_rows_dropped": 224700,
+          "n_rows_fitted": 37260539,
+          "segment_name": "oof_block_1"
+        },
+        {
+          "fit_seconds": 0.3622288750484586,
+          "gate_passed": false,
+          "gate_reason": "rank IC is not finite -- scipy.stats.spearmanr returns NaN for a CONSTANT input. The prediction has no ordering at all; this is NOT a small positive IC and not a weak one. A constant predictor at the train mean is the measured shape of this failure, and it scores r2_vs_zero=+0.001647 while using no feature at all.",
+          "metrics": {
+            "n_scorable": 11285128,
+            "r2_vs_mean": -0.00014085405374286708,
+            "r2_vs_zero": 4.7485396705848615e-05,
+            "r2_vs_zero_of_constant_train_mean": 4.7485396705848615e-05,
+            "rank_ic_all": null,
+            "rank_ic_non_tied": null,
+            "tie_fraction": 0.12264601695257688
+          },
+          "n_rows_dropped": 186136,
+          "n_rows_fitted": 32808179,
+          "segment_name": "oof_block_2"
+        },
+        {
+          "fit_seconds": 0.3487337500555441,
+          "gate_passed": false,
+          "gate_reason": "rank IC is not finite -- scipy.stats.spearmanr returns NaN for a CONSTANT input. The prediction has no ordering at all; this is NOT a small positive IC and not a weak one. A constant predictor at the train mean is the measured shape of this failure, and it scores r2_vs_zero=+0.001647 while using no feature at all.",
+          "metrics": {
+            "n_scorable": 12137023,
+            "r2_vs_mean": -0.00019972819342006787,
+            "r2_vs_zero": -0.00014784412221557908,
+            "r2_vs_zero_of_constant_train_mean": -0.00014784412221557908,
+            "rank_ic_all": null,
+            "rank_ic_non_tied": null,
+            "tie_fraction": 0.12405332015931748
+          },
+          "n_rows_dropped": 158432,
+          "n_rows_fitted": 31932611,
+          "segment_name": "oof_block_3"
+        },
+        {
+          "fit_seconds": 0.3685105839977041,
+          "gate_passed": false,
+          "gate_reason": "rank IC is not finite -- scipy.stats.spearmanr returns NaN for a CONSTANT input. The prediction has no ordering at all; this is NOT a small positive IC and not a weak one. A constant predictor at the train mean is the measured shape of this failure, and it scores r2_vs_zero=+0.001647 while using no feature at all.",
+          "metrics": {
+            "n_scorable": 9806089,
+            "r2_vs_mean": -0.00018495626281178623,
+            "r2_vs_zero": -1.0553877485275365e-06,
+            "r2_vs_zero_of_constant_train_mean": -1.0553877485275365e-06,
+            "rank_ic_all": null,
+            "rank_ic_non_tied": null,
+            "tie_fraction": 0.1150760512167491
+          },
+          "n_rows_dropped": 161350,
+          "n_rows_fitted": 34369356,
+          "segment_name": "oof_block_4"
+        }
+      ],
+      "config_fingerprint": "bba40ed8b44995f2729added6eae445fb47e60aeb5459ff18ed950bc8ca1ea5c",
+      "eligible": false,
+      "fit_seconds_total": 1.8971821680897847,
+      "grid_index": 10,
+      "hyperparameters": {
+        "alpha": 0.0001,
+        "l1_ratio": 0.85,
+        "max_iter": 1000,
+        "selection": "cyclic",
+        "tol": 0.0001
+      },
+      "ic_max": null,
+      "ic_min": null,
+      "ic_std": null,
+      "mean_r2_vs_mean": -0.0003698581210181295,
+      "mean_rank_ic_non_tied": null,
+      "model_class": "sklearn.ElasticNet",
+      "negative_run_id": "d3561b2b050649408a58bf62459f72a8"
+    },
+    {
+      "blocks": [
+        {
+          "fit_seconds": 0.4341582079650834,
+          "gate_passed": false,
+          "gate_reason": "rank IC is not finite -- scipy.stats.spearmanr returns NaN for a CONSTANT input. The prediction has no ordering at all; this is NOT a small positive IC and not a weak one. A constant predictor at the train mean is the measured shape of this failure, and it scores r2_vs_zero=+0.001647 while using no feature at all.",
+          "metrics": {
+            "n_scorable": 4136550,
+            "r2_vs_mean": -0.00129533326990372,
+            "r2_vs_zero": -0.0009587313761230121,
+            "r2_vs_zero_of_constant_train_mean": -0.0009587313761230121,
+            "rank_ic_all": null,
+            "rank_ic_non_tied": null,
+            "tie_fraction": 0.7023028852546204
+          },
+          "n_rows_dropped": 168188,
+          "n_rows_fitted": 40070735,
+          "segment_name": "oof_block_0"
+        },
+        {
+          "fit_seconds": 0.3966711669927463,
+          "gate_passed": false,
+          "gate_reason": "rank IC is not finite -- scipy.stats.spearmanr returns NaN for a CONSTANT input. The prediction has no ordering at all; this is NOT a small positive IC and not a weak one. A constant predictor at the train mean is the measured shape of this failure, and it scores r2_vs_zero=+0.001647 while using no feature at all.",
+          "metrics": {
+            "n_scorable": 6864852,
+            "r2_vs_mean": -2.84188252122064e-05,
+            "r2_vs_zero": -1.4955612120060024e-05,
+            "r2_vs_zero_of_constant_train_mean": -1.4955612120060024e-05,
+            "rank_ic_all": null,
+            "rank_ic_non_tied": null,
+            "tie_fraction": 0.43889686186970966
+          },
+          "n_rows_dropped": 224700,
+          "n_rows_fitted": 37260539,
+          "segment_name": "oof_block_1"
+        },
+        {
+          "fit_seconds": 0.33996958297211677,
+          "gate_passed": false,
+          "gate_reason": "rank IC is not finite -- scipy.stats.spearmanr returns NaN for a CONSTANT input. The prediction has no ordering at all; this is NOT a small positive IC and not a weak one. A constant predictor at the train mean is the measured shape of this failure, and it scores r2_vs_zero=+0.001647 while using no feature at all.",
+          "metrics": {
+            "n_scorable": 11285128,
+            "r2_vs_mean": -0.00014085405374286708,
+            "r2_vs_zero": 4.7485396705848615e-05,
+            "r2_vs_zero_of_constant_train_mean": 4.7485396705848615e-05,
+            "rank_ic_all": null,
+            "rank_ic_non_tied": null,
+            "tie_fraction": 0.12264601695257688
+          },
+          "n_rows_dropped": 186136,
+          "n_rows_fitted": 32808179,
+          "segment_name": "oof_block_2"
+        },
+        {
+          "fit_seconds": 0.33227337489370257,
+          "gate_passed": false,
+          "gate_reason": "rank IC is not finite -- scipy.stats.spearmanr returns NaN for a CONSTANT input. The prediction has no ordering at all; this is NOT a small positive IC and not a weak one. A constant predictor at the train mean is the measured shape of this failure, and it scores r2_vs_zero=+0.001647 while using no feature at all.",
+          "metrics": {
+            "n_scorable": 12137023,
+            "r2_vs_mean": -0.00019972819342006787,
+            "r2_vs_zero": -0.00014784412221557908,
+            "r2_vs_zero_of_constant_train_mean": -0.00014784412221557908,
+            "rank_ic_all": null,
+            "rank_ic_non_tied": null,
+            "tie_fraction": 0.12405332015931748
+          },
+          "n_rows_dropped": 158432,
+          "n_rows_fitted": 31932611,
+          "segment_name": "oof_block_3"
+        },
+        {
+          "fit_seconds": 0.38870595896150917,
+          "gate_passed": false,
+          "gate_reason": "rank IC is not finite -- scipy.stats.spearmanr returns NaN for a CONSTANT input. The prediction has no ordering at all; this is NOT a small positive IC and not a weak one. A constant predictor at the train mean is the measured shape of this failure, and it scores r2_vs_zero=+0.001647 while using no feature at all.",
+          "metrics": {
+            "n_scorable": 9806089,
+            "r2_vs_mean": -0.00018495626281178623,
+            "r2_vs_zero": -1.0553877485275365e-06,
+            "r2_vs_zero_of_constant_train_mean": -1.0553877485275365e-06,
+            "rank_ic_all": null,
+            "rank_ic_non_tied": null,
+            "tie_fraction": 0.1150760512167491
+          },
+          "n_rows_dropped": 161350,
+          "n_rows_fitted": 34369356,
+          "segment_name": "oof_block_4"
+        }
+      ],
+      "config_fingerprint": "4814e932a67ac028d2fc51ad02c40d14f4c84e906a848a826cbba4007dc7c022",
+      "eligible": false,
+      "fit_seconds_total": 1.8917782917851582,
+      "grid_index": 11,
+      "hyperparameters": {
+        "alpha": 0.01,
+        "l1_ratio": 0.15,
+        "max_iter": 1000,
+        "selection": "cyclic",
+        "tol": 0.0001
+      },
+      "ic_max": null,
+      "ic_min": null,
+      "ic_std": null,
+      "mean_r2_vs_mean": -0.0003698581210181295,
+      "mean_rank_ic_non_tied": null,
+      "model_class": "sklearn.ElasticNet",
+      "negative_run_id": "cee416f9bae74505ac9ad5fbcbad7648"
+    },
+    {
+      "blocks": [
+        {
+          "fit_seconds": 0.44585266697686166,
+          "gate_passed": false,
+          "gate_reason": "rank IC is not finite -- scipy.stats.spearmanr returns NaN for a CONSTANT input. The prediction has no ordering at all; this is NOT a small positive IC and not a weak one. A constant predictor at the train mean is the measured shape of this failure, and it scores r2_vs_zero=+0.001647 while using no feature at all.",
+          "metrics": {
+            "n_scorable": 4136550,
+            "r2_vs_mean": -0.00129533326990372,
+            "r2_vs_zero": -0.0009587313761230121,
+            "r2_vs_zero_of_constant_train_mean": -0.0009587313761230121,
+            "rank_ic_all": null,
+            "rank_ic_non_tied": null,
+            "tie_fraction": 0.7023028852546204
+          },
+          "n_rows_dropped": 168188,
+          "n_rows_fitted": 40070735,
+          "segment_name": "oof_block_0"
+        },
+        {
+          "fit_seconds": 0.3959681250853464,
+          "gate_passed": false,
+          "gate_reason": "rank IC is not finite -- scipy.stats.spearmanr returns NaN for a CONSTANT input. The prediction has no ordering at all; this is NOT a small positive IC and not a weak one. A constant predictor at the train mean is the measured shape of this failure, and it scores r2_vs_zero=+0.001647 while using no feature at all.",
+          "metrics": {
+            "n_scorable": 6864852,
+            "r2_vs_mean": -2.84188252122064e-05,
+            "r2_vs_zero": -1.4955612120060024e-05,
+            "r2_vs_zero_of_constant_train_mean": -1.4955612120060024e-05,
+            "rank_ic_all": null,
+            "rank_ic_non_tied": null,
+            "tie_fraction": 0.43889686186970966
+          },
+          "n_rows_dropped": 224700,
+          "n_rows_fitted": 37260539,
+          "segment_name": "oof_block_1"
+        },
+        {
+          "fit_seconds": 0.3405696250265464,
+          "gate_passed": false,
+          "gate_reason": "rank IC is not finite -- scipy.stats.spearmanr returns NaN for a CONSTANT input. The prediction has no ordering at all; this is NOT a small positive IC and not a weak one. A constant predictor at the train mean is the measured shape of this failure, and it scores r2_vs_zero=+0.001647 while using no feature at all.",
+          "metrics": {
+            "n_scorable": 11285128,
+            "r2_vs_mean": -0.00014085405374286708,
+            "r2_vs_zero": 4.7485396705848615e-05,
+            "r2_vs_zero_of_constant_train_mean": 4.7485396705848615e-05,
+            "rank_ic_all": null,
+            "rank_ic_non_tied": null,
+            "tie_fraction": 0.12264601695257688
+          },
+          "n_rows_dropped": 186136,
+          "n_rows_fitted": 32808179,
+          "segment_name": "oof_block_2"
+        },
+        {
+          "fit_seconds": 0.32566770794801414,
+          "gate_passed": false,
+          "gate_reason": "rank IC is not finite -- scipy.stats.spearmanr returns NaN for a CONSTANT input. The prediction has no ordering at all; this is NOT a small positive IC and not a weak one. A constant predictor at the train mean is the measured shape of this failure, and it scores r2_vs_zero=+0.001647 while using no feature at all.",
+          "metrics": {
+            "n_scorable": 12137023,
+            "r2_vs_mean": -0.00019972819342006787,
+            "r2_vs_zero": -0.00014784412221557908,
+            "r2_vs_zero_of_constant_train_mean": -0.00014784412221557908,
+            "rank_ic_all": null,
+            "rank_ic_non_tied": null,
+            "tie_fraction": 0.12405332015931748
+          },
+          "n_rows_dropped": 158432,
+          "n_rows_fitted": 31932611,
+          "segment_name": "oof_block_3"
+        },
+        {
+          "fit_seconds": 0.3628730409545824,
+          "gate_passed": false,
+          "gate_reason": "rank IC is not finite -- scipy.stats.spearmanr returns NaN for a CONSTANT input. The prediction has no ordering at all; this is NOT a small positive IC and not a weak one. A constant predictor at the train mean is the measured shape of this failure, and it scores r2_vs_zero=+0.001647 while using no feature at all.",
+          "metrics": {
+            "n_scorable": 9806089,
+            "r2_vs_mean": -0.00018495626281178623,
+            "r2_vs_zero": -1.0553877485275365e-06,
+            "r2_vs_zero_of_constant_train_mean": -1.0553877485275365e-06,
+            "rank_ic_all": null,
+            "rank_ic_non_tied": null,
+            "tie_fraction": 0.1150760512167491
+          },
+          "n_rows_dropped": 161350,
+          "n_rows_fitted": 34369356,
+          "segment_name": "oof_block_4"
+        }
+      ],
+      "config_fingerprint": "407d1369c121a5fb10a01cda5df4e6e1e827f27833df5e2a2394cfe47d55e6fe",
+      "eligible": false,
+      "fit_seconds_total": 1.870931165991351,
+      "grid_index": 12,
+      "hyperparameters": {
+        "alpha": 0.01,
+        "l1_ratio": 0.5,
+        "max_iter": 1000,
+        "selection": "cyclic",
+        "tol": 0.0001
+      },
+      "ic_max": null,
+      "ic_min": null,
+      "ic_std": null,
+      "mean_r2_vs_mean": -0.0003698581210181295,
+      "mean_rank_ic_non_tied": null,
+      "model_class": "sklearn.ElasticNet",
+      "negative_run_id": "dc6d31a1269b46b0af14d14cf6e9a9d8"
+    },
+    {
+      "blocks": [
+        {
+          "fit_seconds": 0.5302984999725595,
+          "gate_passed": false,
+          "gate_reason": "rank IC is not finite -- scipy.stats.spearmanr returns NaN for a CONSTANT input. The prediction has no ordering at all; this is NOT a small positive IC and not a weak one. A constant predictor at the train mean is the measured shape of this failure, and it scores r2_vs_zero=+0.001647 while using no feature at all.",
+          "metrics": {
+            "n_scorable": 4136550,
+            "r2_vs_mean": -0.00129533326990372,
+            "r2_vs_zero": -0.0009587313761230121,
+            "r2_vs_zero_of_constant_train_mean": -0.0009587313761230121,
+            "rank_ic_all": null,
+            "rank_ic_non_tied": null,
+            "tie_fraction": 0.7023028852546204
+          },
+          "n_rows_dropped": 168188,
+          "n_rows_fitted": 40070735,
+          "segment_name": "oof_block_0"
+        },
+        {
+          "fit_seconds": 0.3972532079787925,
+          "gate_passed": false,
+          "gate_reason": "rank IC is not finite -- scipy.stats.spearmanr returns NaN for a CONSTANT input. The prediction has no ordering at all; this is NOT a small positive IC and not a weak one. A constant predictor at the train mean is the measured shape of this failure, and it scores r2_vs_zero=+0.001647 while using no feature at all.",
+          "metrics": {
+            "n_scorable": 6864852,
+            "r2_vs_mean": -2.84188252122064e-05,
+            "r2_vs_zero": -1.4955612120060024e-05,
+            "r2_vs_zero_of_constant_train_mean": -1.4955612120060024e-05,
+            "rank_ic_all": null,
+            "rank_ic_non_tied": null,
+            "tie_fraction": 0.43889686186970966
+          },
+          "n_rows_dropped": 224700,
+          "n_rows_fitted": 37260539,
+          "segment_name": "oof_block_1"
+        },
+        {
+          "fit_seconds": 0.36083620809949934,
+          "gate_passed": false,
+          "gate_reason": "rank IC is not finite -- scipy.stats.spearmanr returns NaN for a CONSTANT input. The prediction has no ordering at all; this is NOT a small positive IC and not a weak one. A constant predictor at the train mean is the measured shape of this failure, and it scores r2_vs_zero=+0.001647 while using no feature at all.",
+          "metrics": {
+            "n_scorable": 11285128,
+            "r2_vs_mean": -0.00014085405374286708,
+            "r2_vs_zero": 4.7485396705848615e-05,
+            "r2_vs_zero_of_constant_train_mean": 4.7485396705848615e-05,
+            "rank_ic_all": null,
+            "rank_ic_non_tied": null,
+            "tie_fraction": 0.12264601695257688
+          },
+          "n_rows_dropped": 186136,
+          "n_rows_fitted": 32808179,
+          "segment_name": "oof_block_2"
+        },
+        {
+          "fit_seconds": 0.2970409580739215,
+          "gate_passed": false,
+          "gate_reason": "rank IC is not finite -- scipy.stats.spearmanr returns NaN for a CONSTANT input. The prediction has no ordering at all; this is NOT a small positive IC and not a weak one. A constant predictor at the train mean is the measured shape of this failure, and it scores r2_vs_zero=+0.001647 while using no feature at all.",
+          "metrics": {
+            "n_scorable": 12137023,
+            "r2_vs_mean": -0.00019972819342006787,
+            "r2_vs_zero": -0.00014784412221557908,
+            "r2_vs_zero_of_constant_train_mean": -0.00014784412221557908,
+            "rank_ic_all": null,
+            "rank_ic_non_tied": null,
+            "tie_fraction": 0.12405332015931748
+          },
+          "n_rows_dropped": 158432,
+          "n_rows_fitted": 31932611,
+          "segment_name": "oof_block_3"
+        },
+        {
+          "fit_seconds": 0.366819667047821,
+          "gate_passed": false,
+          "gate_reason": "rank IC is not finite -- scipy.stats.spearmanr returns NaN for a CONSTANT input. The prediction has no ordering at all; this is NOT a small positive IC and not a weak one. A constant predictor at the train mean is the measured shape of this failure, and it scores r2_vs_zero=+0.001647 while using no feature at all.",
+          "metrics": {
+            "n_scorable": 9806089,
+            "r2_vs_mean": -0.00018495626281178623,
+            "r2_vs_zero": -1.0553877485275365e-06,
+            "r2_vs_zero_of_constant_train_mean": -1.0553877485275365e-06,
+            "rank_ic_all": null,
+            "rank_ic_non_tied": null,
+            "tie_fraction": 0.1150760512167491
+          },
+          "n_rows_dropped": 161350,
+          "n_rows_fitted": 34369356,
+          "segment_name": "oof_block_4"
+        }
+      ],
+      "config_fingerprint": "bcf3f1799793a76abc04cad225471a7b08d74dfd16f1d2ce74a79865ee8d01bb",
+      "eligible": false,
+      "fit_seconds_total": 1.9522485411725938,
+      "grid_index": 13,
+      "hyperparameters": {
+        "alpha": 0.01,
+        "l1_ratio": 0.85,
+        "max_iter": 1000,
+        "selection": "cyclic",
+        "tol": 0.0001
+      },
+      "ic_max": null,
+      "ic_min": null,
+      "ic_std": null,
+      "mean_r2_vs_mean": -0.0003698581210181295,
+      "mean_rank_ic_non_tied": null,
+      "model_class": "sklearn.ElasticNet",
+      "negative_run_id": "4830c71b3af444f6b355fd58e80d6ddd"
+    },
+    {
+      "blocks": [
+        {
+          "fit_seconds": 3.8301806249655783,
+          "gate_passed": false,
+          "gate_reason": "r2_vs_zero=-0.110395 <= 0 -- does not beat the constant-ZERO predictor, the reference D-07-18(a) names.",
+          "metrics": {
+            "n_scorable": 4136550,
+            "r2_vs_mean": -0.11076822442269663,
+            "r2_vs_zero": -0.11039482141614188,
+            "r2_vs_zero_of_constant_train_mean": -0.0009587313761230121,
+            "rank_ic_all": 0.33160909653239895,
+            "rank_ic_non_tied": 0.3422097927186253,
+            "tie_fraction": 0.7023028852546204
+          },
+          "n_rows_dropped": 168188,
+          "n_rows_fitted": 40070735,
+          "segment_name": "oof_block_0"
+        },
+        {
+          "fit_seconds": 2.095845333999023,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0590675 r2_vs_mean=0.0590548 rank_ic_non_tied=0.375914 rank_ic_all=0.36545 tie_fraction=0.438897",
+          "metrics": {
+            "n_scorable": 6864852,
+            "r2_vs_mean": 0.0590548341895798,
+            "r2_vs_zero": 0.059067501974851444,
+            "r2_vs_zero_of_constant_train_mean": -1.4955612120060024e-05,
+            "rank_ic_all": 0.3654495162822825,
+            "rank_ic_non_tied": 0.37591406335649713,
+            "tie_fraction": 0.43889686186970966
+          },
+          "n_rows_dropped": 224700,
+          "n_rows_fitted": 37260539,
+          "segment_name": "oof_block_1"
+        },
+        {
+          "fit_seconds": 2.6510907909832895,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0355704 r2_vs_mean=0.0353887 rank_ic_non_tied=0.242908 rank_ic_all=0.243381 tie_fraction=0.122646",
+          "metrics": {
+            "n_scorable": 11285128,
+            "r2_vs_mean": 0.03538870219451784,
+            "r2_vs_zero": 0.03557035097027683,
+            "r2_vs_zero_of_constant_train_mean": 4.7485396705848615e-05,
+            "rank_ic_all": 0.24338130078264297,
+            "rank_ic_non_tied": 0.24290767787172066,
+            "tie_fraction": 0.12264601695257688
+          },
+          "n_rows_dropped": 186136,
+          "n_rows_fitted": 32808179,
+          "segment_name": "oof_block_2"
+        },
+        {
+          "fit_seconds": 2.92118883295916,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0132157 r2_vs_mean=0.0131645 rank_ic_non_tied=0.194812 rank_ic_all=0.198417 tie_fraction=0.124053",
+          "metrics": {
+            "n_scorable": 12137023,
+            "r2_vs_mean": 0.013164514917696324,
+            "r2_vs_zero": 0.01321570573602171,
+            "r2_vs_zero_of_constant_train_mean": -0.00014784412221557908,
+            "rank_ic_all": 0.19841717598138633,
+            "rank_ic_non_tied": 0.19481245512625942,
+            "tie_fraction": 0.12405332015931748
+          },
+          "n_rows_dropped": 158432,
+          "n_rows_fitted": 31932611,
+          "segment_name": "oof_block_3"
+        },
+        {
+          "fit_seconds": 3.736532040988095,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0165338 r2_vs_mean=0.0163529 rank_ic_non_tied=0.207331 rank_ic_all=0.210101 tie_fraction=0.115076",
+          "metrics": {
+            "n_scorable": 9806089,
+            "r2_vs_mean": 0.016352898185541198,
+            "r2_vs_zero": 0.016533758297108014,
+            "r2_vs_zero_of_constant_train_mean": -1.0553877485275365e-06,
+            "rank_ic_all": 0.2101009330724427,
+            "rank_ic_non_tied": 0.20733085185818176,
+            "tie_fraction": 0.1150760512167491
+          },
+          "n_rows_dropped": 161350,
+          "n_rows_fitted": 34369356,
+          "segment_name": "oof_block_4"
+        }
+      ],
+      "config_fingerprint": "cb0fc9796d0ae13f019b222b3388badcae6bcee07cbb375518675275206aebb4",
+      "eligible": false,
+      "fit_seconds_total": 15.234837623895146,
+      "grid_index": 14,
+      "hyperparameters": {
+        "alpha": 0.001,
+        "degree": 2
+      },
+      "ic_max": 0.37591406335649713,
+      "ic_min": 0.19481245512625942,
+      "ic_std": 0.07309160094799177,
+      "mean_r2_vs_mean": 0.0026385450129277066,
+      "mean_rank_ic_non_tied": 0.2726349681862569,
+      "model_class": "sklearn.Ridge",
+      "negative_run_id": "e7a3f9c1ccee4aa09b347389c886a62e"
+    },
+    {
+      "blocks": [
+        {
+          "fit_seconds": 4.134054207941517,
+          "gate_passed": false,
+          "gate_reason": "r2_vs_zero=-0.110395 <= 0 -- does not beat the constant-ZERO predictor, the reference D-07-18(a) names.",
+          "metrics": {
+            "n_scorable": 4136550,
+            "r2_vs_mean": -0.11076821662324332,
+            "r2_vs_zero": -0.1103948136193107,
+            "r2_vs_zero_of_constant_train_mean": -0.0009587313761230121,
+            "rank_ic_all": 0.33160909658196747,
+            "rank_ic_non_tied": 0.34220979255593725,
+            "tie_fraction": 0.7023028852546204
+          },
+          "n_rows_dropped": 168188,
+          "n_rows_fitted": 40070735,
+          "segment_name": "oof_block_0"
+        },
+        {
+          "fit_seconds": 3.2453315829625353,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0590675 r2_vs_mean=0.0590548 rank_ic_non_tied=0.375914 rank_ic_all=0.36545 tie_fraction=0.438897",
+          "metrics": {
+            "n_scorable": 6864852,
+            "r2_vs_mean": 0.05905483524263333,
+            "r2_vs_zero": 0.05906750302789088,
+            "r2_vs_zero_of_constant_train_mean": -1.4955612120060024e-05,
+            "rank_ic_all": 0.3654495162692123,
+            "rank_ic_non_tied": 0.3759140632970193,
+            "tie_fraction": 0.43889686186970966
+          },
+          "n_rows_dropped": 224700,
+          "n_rows_fitted": 37260539,
+          "segment_name": "oof_block_1"
+        },
+        {
+          "fit_seconds": 2.891959707951173,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0355704 r2_vs_mean=0.0353887 rank_ic_non_tied=0.242908 rank_ic_all=0.243381 tie_fraction=0.122646",
+          "metrics": {
+            "n_scorable": 11285128,
+            "r2_vs_mean": 0.03538870210493572,
+            "r2_vs_zero": 0.03557035088071148,
+            "r2_vs_zero_of_constant_train_mean": 4.7485396705848615e-05,
+            "rank_ic_all": 0.24338130076039338,
+            "rank_ic_non_tied": 0.24290767784101938,
+            "tie_fraction": 0.12264601695257688
+          },
+          "n_rows_dropped": 186136,
+          "n_rows_fitted": 32808179,
+          "segment_name": "oof_block_2"
+        },
+        {
+          "fit_seconds": 1.2130025420337915,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0132157 r2_vs_mean=0.0131645 rank_ic_non_tied=0.194812 rank_ic_all=0.198417 tie_fraction=0.124053",
+          "metrics": {
+            "n_scorable": 12137023,
+            "r2_vs_mean": 0.013164515085060668,
+            "r2_vs_zero": 0.013215705903377284,
+            "r2_vs_zero_of_constant_train_mean": -0.00014784412221557908,
+            "rank_ic_all": 0.19841717603669046,
+            "rank_ic_non_tied": 0.19481245518204715,
+            "tie_fraction": 0.12405332015931748
+          },
+          "n_rows_dropped": 158432,
+          "n_rows_fitted": 31932611,
+          "segment_name": "oof_block_3"
+        },
+        {
+          "fit_seconds": 1.7433811660157517,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0165338 r2_vs_mean=0.0163529 rank_ic_non_tied=0.207331 rank_ic_all=0.210101 tie_fraction=0.115076",
+          "metrics": {
+            "n_scorable": 9806089,
+            "r2_vs_mean": 0.016352898026656404,
+            "r2_vs_zero": 0.01653375813825242,
+            "r2_vs_zero_of_constant_train_mean": -1.0553877485275365e-06,
+            "rank_ic_all": 0.21010093313005687,
+            "rank_ic_non_tied": 0.20733085191360925,
+            "tie_fraction": 0.1150760512167491
+          },
+          "n_rows_dropped": 161350,
+          "n_rows_fitted": 34369356,
+          "segment_name": "oof_block_4"
+        }
+      ],
+      "config_fingerprint": "ca424848f69cc0d0868f9f94916c5b9a8889de86af6c44217e3c99fbf97392cb",
+      "eligible": false,
+      "fit_seconds_total": 13.227729206904769,
+      "grid_index": 15,
+      "hyperparameters": {
+        "alpha": 1.0,
+        "degree": 2
+      },
+      "ic_max": 0.3759140632970193,
+      "ic_min": 0.19481245518204715,
+      "ic_std": 0.07309160088092435,
+      "mean_r2_vs_mean": 0.0026385467672085604,
+      "mean_rank_ic_non_tied": 0.2726349681579265,
+      "model_class": "sklearn.Ridge",
+      "negative_run_id": "d87e791077f74910b9cbf22eff8339bf"
+    },
+    {
+      "blocks": [
+        {
+          "fit_seconds": 4.655005709035322,
+          "gate_passed": false,
+          "gate_reason": "r2_vs_zero=-0.110394 <= 0 -- does not beat the constant-ZERO predictor, the reference D-07-18(a) names.",
+          "metrics": {
+            "n_scorable": 4136550,
+            "r2_vs_mean": -0.11076744370775637,
+            "r2_vs_zero": -0.11039404096365191,
+            "r2_vs_zero_of_constant_train_mean": -0.0009587313761230121,
+            "rank_ic_all": 0.3316090979739872,
+            "rank_ic_non_tied": 0.34220979243865446,
+            "tie_fraction": 0.7023028852546204
+          },
+          "n_rows_dropped": 168188,
+          "n_rows_fitted": 40070735,
+          "segment_name": "oof_block_0"
+        },
+        {
+          "fit_seconds": 3.569807249936275,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0590676 r2_vs_mean=0.0590549 rank_ic_non_tied=0.375914 rank_ic_all=0.36545 tie_fraction=0.438897",
+          "metrics": {
+            "n_scorable": 6864852,
+            "r2_vs_mean": 0.05905493959830299,
+            "r2_vs_zero": 0.05906760738215555,
+            "r2_vs_zero_of_constant_train_mean": -1.4955612120060024e-05,
+            "rank_ic_all": 0.3654495131986137,
+            "rank_ic_non_tied": 0.3759140569288607,
+            "tie_fraction": 0.43889686186970966
+          },
+          "n_rows_dropped": 224700,
+          "n_rows_fitted": 37260539,
+          "segment_name": "oof_block_1"
+        },
+        {
+          "fit_seconds": 1.5088757920311764,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0355703 r2_vs_mean=0.0353887 rank_ic_non_tied=0.242908 rank_ic_all=0.243381 tie_fraction=0.122646",
+          "metrics": {
+            "n_scorable": 11285128,
+            "r2_vs_mean": 0.035388693227078494,
+            "r2_vs_zero": 0.035570342004526134,
+            "r2_vs_zero_of_constant_train_mean": 4.7485396705848615e-05,
+            "rank_ic_all": 0.24338129794381358,
+            "rank_ic_non_tied": 0.24290767479083006,
+            "tie_fraction": 0.12264601695257688
+          },
+          "n_rows_dropped": 186136,
+          "n_rows_fitted": 32808179,
+          "segment_name": "oof_block_2"
+        },
+        {
+          "fit_seconds": 2.26558320899494,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0132157 r2_vs_mean=0.0131645 rank_ic_non_tied=0.194812 rank_ic_all=0.198417 tie_fraction=0.124053",
+          "metrics": {
+            "n_scorable": 12137023,
+            "r2_vs_mean": 0.013164531670432411,
+            "r2_vs_zero": 0.013215722487888715,
+            "r2_vs_zero_of_constant_train_mean": -0.00014784412221557908,
+            "rank_ic_all": 0.19841718133444558,
+            "rank_ic_non_tied": 0.19481246050300255,
+            "tie_fraction": 0.12405332015931748
+          },
+          "n_rows_dropped": 158432,
+          "n_rows_fitted": 31932611,
+          "segment_name": "oof_block_3"
+        },
+        {
+          "fit_seconds": 3.1837694169953465,
+          "gate_passed": true,
+          "gate_reason": "ok: r2_vs_zero=0.0165337 r2_vs_mean=0.0163529 rank_ic_non_tied=0.207331 rank_ic_all=0.210101 tie_fraction=0.115076",
+          "metrics": {
+            "n_scorable": 9806089,
+            "r2_vs_mean": 0.01635288228125642,
+            "r2_vs_zero": 0.016533742395747564,
+            "r2_vs_zero_of_constant_train_mean": -1.0553877485275365e-06,
+            "rank_ic_all": 0.21010093936719829,
+            "rank_ic_non_tied": 0.20733085863828649,
+            "tie_fraction": 0.1150760512167491
+          },
+          "n_rows_dropped": 161350,
+          "n_rows_fitted": 34369356,
+          "segment_name": "oof_block_4"
+        }
+      ],
+      "config_fingerprint": "b66511d6e87ad2a38a37284c4d712980ad05fa43b47c8c895f2a072731751605",
+      "eligible": false,
+      "fit_seconds_total": 15.18304137699306,
+      "grid_index": 16,
+      "hyperparameters": {
+        "alpha": 100.0,
+        "degree": 2
+      },
+      "ic_max": 0.3759140569288607,
+      "ic_min": 0.19481246050300255,
+      "ic_std": 0.0730915969723414,
+      "mean_r2_vs_mean": 0.0026387206138627885,
+      "mean_rank_ic_non_tied": 0.27263496865992687,
+      "model_class": "sklearn.Ridge",
+      "negative_run_id": "98026e7804b54658b166b7582643815a"
+    }
+  ],
+  "eligible_count": 0,
+  "eligible_grid_indices": [],
+  "fold_config": "compressed_3seg",
+  "look_run_ids": {
+    "oof_block_0": [
+      "ac42fea02a974e3f80d179ecdec929ba"
+    ],
+    "oof_block_1": [
+      "20697256a3b647c5929a71606d866388"
+    ],
+    "oof_block_2": [
+      "5b612b2d2e4b482198f2804828955347"
+    ],
+    "oof_block_3": [
+      "06fde359d042426c9664c7e6f65b6091"
+    ],
+    "oof_block_4": [
+      "6a2c3198ad85420a96b08bb0b0442981"
+    ]
+  },
+  "n_configs": 17,
+  "normalization_manifest_id": "c7749334fb73e090272013dfeb10013e25948b11a0907d56a69ee39d7b8954ba",
+  "schema_version": 1,
+  "segment_manifest_id": "807125015b252014ad8ee5282a21b2eccbfe01a287122cce5512ec9885aa3548",
+  "selection_rule": "eligible = gate_forecast passes on ALL blocks; rank by mean rank_ic_non_tied; tie-break on mean r2_vs_mean, then on ascending grid position",
+  "symbol": "BTCUSDT",
+  "winner": null,
+  "winner_grid_index": null
+}

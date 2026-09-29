@@ -14,7 +14,7 @@ converse by grep, that this file is the only importer in the package.
 WHAT THIS MODULE DELIBERATELY DOES NOT DO:
 
 1. IT DOES NOT SEARCH. `GRID` is a hand-written, COUNTED, module-level
-   literal of 17 configurations (D-07-08). No Optuna, no sampler, no
+   literal of 36 configurations (D-07-08). No Optuna, no sampler, no
    `itertools.product` -- FCST-05 and the black-box HPO it names are Phase
    8's territory, and a grid a reader cannot count is a grid whose
    selection-bias budget nobody can count either.
@@ -55,8 +55,10 @@ a single id colliding, `harness.negative_log` would deduplicate away up to
 three distinct ineligible configs (falsifying D-07-20), and a stored table's
 `predictor=<first 16 chars>` directory would name a config that never
 produced it. `tests/models/test_protocol_conformance.py` asserts the class
-strings are equal AND that stripping `degree` collapses 17 distinct ids to
-14; with a distinct class string that collapse would not happen and the test
+strings are equal AND that stripping `degree` collapses 36 distinct ids to
+27 -- one collapse per poly2 alpha, because every poly2 alpha is ALSO a plain
+Ridge alpha by construction (`poly2 < plain`, asserted). With a distinct
+class string that collapse would not happen and the test
 would pass for the wrong reason. The expressiveness the pin costs a run
 manifest is bought back by the additive `design` tag plan 07-07 logs.
 
@@ -752,7 +754,13 @@ class GridEntry:
 #: How many configurations the sweep logs as `n_configs`. A LITERAL, pinned
 #: beside the grid it counts and cross-checked against `len(GRID)` at import
 #: -- so an edit that adds a row without the reader noticing fails loudly.
-GRID_SIZE: int = 17
+#:
+#: IT IS ALSO THE SELECTION-BIAS DENOMINATOR, AND IT ONLY EVER GROWS. Rows
+#: 17-35 were added AFTER the first sweep of rows 0-16 returned 0 of 17
+#: eligible (plan 07-10), which is exactly the cost this number measures: a
+#: grid widened in response to a result has been selected on. 17 is not
+#: recoverable by deleting rows.
+GRID_SIZE: int = 36
 
 #: D-07-08's grid: FIXED, HAND-WRITTEN, COUNTED. One row per configuration,
 #: never `itertools.product` and never a sampler -- FCST-05's black-box HPO
@@ -761,15 +769,19 @@ GRID_SIZE: int = 17
 #:
 #:     LinearRegression                                            1
 #:     Ridge          alpha in {1e-6, 1e-3, 1.0, 100.0}            4
+#:                    + {3e4, 1e7, 3e7, 1e8, 3e8, 1e9, 3e9, 1e11}  8
 #:     ElasticNet     alpha in {1e-6, 1e-4, 1e-2}
 #:                    x l1_ratio in {0.15, 0.5, 0.85}              9
+#:                    + five (alpha, l1_ratio) pairs on the
+#:                      alpha*l1_ratio axis below the measured cliff   5
 #:     Ridge + poly2  alpha in {1e-3, 1.0, 100.0}                  3
-#:                                                                17
+#:                    + {3e7, 1e8, 3e8, 1e9, 3e9, 1e11}            6
+#:                                                                36
 #:
-#: The three poly2 rows share their alphas with three of the Ridge rows on
+#: The NINE poly2 rows share their alphas with nine of the Ridge rows on
 #: purpose; `degree` inside `hyperparameters` is what keeps their
 #: `predictor_id`s distinct (`tests/models/test_protocol_conformance.py`
-#: measures the collapse to 14 when it is removed).
+#: measures the collapse to 27 when it is removed).
 GRID: tuple[GridEntry, ...] = (
     # 1 -- the honest floor.
     GridEntry(LinearRegressionTrainer, {}),
@@ -794,6 +806,70 @@ GRID: tuple[GridEntry, ...] = (
     GridEntry(Poly2RidgeTrainer, {"alpha": 1e-3}),
     GridEntry(Poly2RidgeTrainer, {"alpha": 1.0}),
     GridEntry(Poly2RidgeTrainer, {"alpha": 100.0}),
+    # ==================================================================
+    # ROWS 17-35: the widening. APPENDED, never interleaved, so grid
+    # positions 0-16 keep naming the same configs the plan 07-10
+    # `selection.json` and its negative-result records name.
+    #
+    # WHY THE L2 LADDER JUMPS FOUR DECADES ABOVE 100, which is the whole
+    # point of these rows. sklearn's Ridge minimises
+    # `||y - Xw||^2 + alpha*||w||^2` -- the SUM of squared residuals, NOT
+    # the mean -- so `alpha` competes with `sum(x^2)`, and on the FEAT-05
+    # z-scored design that sum IS THE ROW COUNT: 44,229,781 fitted rows on
+    # this segment's train frame. The four alphas above (1e-6 .. 100) can
+    # therefore shrink by at most 100/4.42e7 = 2.3e-6, and they measured
+    # IDENTICAL to six decimals on all five OOF blocks -- the alpha ladder
+    # was never a shrinkage ladder at all. The quantity that matters is the
+    # PREDICTION-SCALE ratio sd(Xw_alpha)/sd(Xw_ols), measured train-only
+    # (train role costs no look) on this manifest's cached train frame:
+    #
+    #   alpha      3e4     1e7     3e7     1e8     3e8     1e9     3e9    1e11
+    #   linear  0.9993  0.8101  0.5879  0.3007  0.1257  0.0414  0.0142  0.0004
+    #   poly2   0.9994  0.8366  0.6534  0.4450  0.3585  0.3344  0.3180  0.1028
+    #
+    # 3e4 is carried as a WITNESS, not as a candidate: it is the top of the
+    # ladder a reader would reach for next, and it measures nothing new.
+    # The poly2 row flattens at ~0.32 because its centred 9x9 Gram carries
+    # one eigenvalue of 3.78e5 * n (a squared fat-tailed feature), which no
+    # alpha below ~1e10 can touch -- so 1e11 is the only poly2 row that
+    # reaches the low-amplitude band the linear ladder covers from 1e8 down.
+    # 8 -- L2 where L2 on 4.4e7 rows actually bites.
+    GridEntry(RidgeTrainer, {"alpha": 3e4}),
+    GridEntry(RidgeTrainer, {"alpha": 1e7}),
+    GridEntry(RidgeTrainer, {"alpha": 3e7}),
+    GridEntry(RidgeTrainer, {"alpha": 1e8}),
+    GridEntry(RidgeTrainer, {"alpha": 3e8}),
+    GridEntry(RidgeTrainer, {"alpha": 1e9}),
+    GridEntry(RidgeTrainer, {"alpha": 3e9}),
+    GridEntry(RidgeTrainer, {"alpha": 1e11}),
+    # 5 -- ElasticNet along `alpha * l1_ratio`, WHICH IS THE ONLY AXIS IT
+    # HAS HERE. This estimator's data term carries `1/(2*n_samples)`, so
+    # `alpha*l1_ratio` is a soft threshold in per-sample gradient units and
+    # `alpha*(1-l1_ratio)` is an L2 term ~1e-4 -- utterly inert beside the
+    # L2 ladder above. The thresholds it is compared against are the
+    # per-column |X'(y - ybar)/n| on the same train frame, measured:
+    # imb_top 4.328e-5, trade_flow 7.453e-6, ofi 4.138e-6. So EVERY
+    # coefficient is exactly zero once alpha*l1_ratio > 4.328e-5 (which is
+    # why rows 9-13 were constant), and every live ElasticNet at
+    # alpha*l1_ratio > 7.5e-6 -- INCLUDING row 8 -- is an imb_top-ONLY
+    # model, not a shrunk three-feature one. These five walk the live band
+    # 2.0e-5 .. 4.2e-5 toward that cliff, varying l1_ratio as well as alpha
+    # so the product really is the axis rather than an assumption.
+    GridEntry(ElasticNetTrainer, {"alpha": 2e-4, "l1_ratio": 0.10}),
+    GridEntry(ElasticNetTrainer, {"alpha": 1e-4, "l1_ratio": 0.30}),
+    GridEntry(ElasticNetTrainer, {"alpha": 1.2e-4, "l1_ratio": 0.30}),
+    GridEntry(ElasticNetTrainer, {"alpha": 3.6e-4, "l1_ratio": 0.10}),
+    GridEntry(ElasticNetTrainer, {"alpha": 4e-4, "l1_ratio": 0.10}),
+    # 6 -- the same L2 ladder on the degree-2 design, from the first alpha
+    # that moves it. Every one of these six is ALSO a plain Ridge alpha
+    # above, which is what keeps `poly2 < plain` true and makes the
+    # stripped-`degree` collapse exactly nine.
+    GridEntry(Poly2RidgeTrainer, {"alpha": 3e7}),
+    GridEntry(Poly2RidgeTrainer, {"alpha": 1e8}),
+    GridEntry(Poly2RidgeTrainer, {"alpha": 3e8}),
+    GridEntry(Poly2RidgeTrainer, {"alpha": 1e9}),
+    GridEntry(Poly2RidgeTrainer, {"alpha": 3e9}),
+    GridEntry(Poly2RidgeTrainer, {"alpha": 1e11}),
 )
 
 if len(GRID) != GRID_SIZE:

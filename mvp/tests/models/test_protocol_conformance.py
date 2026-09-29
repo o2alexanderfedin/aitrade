@@ -7,7 +7,7 @@ annotation and a `typing.Protocol` is documentation on its own.
 `@runtime_checkable` plus `isinstance` discriminates, that a stub minus one
 member is rejected, and that no parameter name or annotation in
 `protocol.py` names a class-specific knob. This file is the other half it
-promised: the same checks against the 17 configurations that actually exist,
+promised: the same checks against the 36 configurations that actually exist,
 plus the two things only a real grid can be asked.
 
 WHAT IS NEW HERE, AND WHAT IS DELIBERATELY NOT REPEATED. The signature rule
@@ -19,13 +19,13 @@ are not copied -- pre-commit runs the full suite on every commit, and a
 duplicated scan is a second thing to maintain that checks the same file.
 
 THE LOAD-BEARING TEST IN THIS FILE is
-`test_all_17_grid_entries_have_distinct_predictor_ids`. `models.
+`test_every_grid_entry_has_a_distinct_predictor_id`. `models.
 predictor_id` hashes exactly D-07-14's five fields; `design` is not one of
 them, and both Ridge trainers report the byte-identical `model_class`
 `"sklearn.Ridge"` on purpose. So `degree: 2` inside the poly2 trainer's
-`hyperparameters` is the ONLY thing separating its three configs from the
-plain Ridge configs at alpha 1e-3, 1.0 and 100.0 -- and the test measures the
-collapse to 14 when it is removed, which is the only form of that claim that
+`hyperparameters` is the ONLY thing separating its nine configs from the
+plain Ridge configs at the same nine alphas -- and the test measures the
+collapse to 27 when it is removed, which is the only form of that claim that
 cannot be satisfied by a coincidence. Plan 07-03's five-way sensitivity test
 structurally cannot catch it: `design` is not one of the five fields it
 varies.
@@ -103,7 +103,7 @@ def _context(tmp_path: Path) -> FitContext:
 
 @pytest.mark.parametrize("index", range(GRID_SIZE))
 def test_every_grid_entry_is_a_trainer_at_runtime(index, tmp_path):
-    """All 17, one parametrised case each, so a typo'd method name shows up
+    """All 36, one parametrised case each, so a typo'd method name shows up
     at the top of a sweep instead of after the first fold.
 
     `isinstance` against a `@runtime_checkable` Protocol checks member
@@ -116,23 +116,26 @@ def test_every_grid_entry_is_a_trainer_at_runtime(index, tmp_path):
     assert dict(trainer.hyperparameters) == dict(trainer.hyperparameters)
 
 
-def test_the_grid_is_seventeen_configs_composed_the_way_d_07_08_counts_them(tmp_path):
+def test_the_grid_is_thirty_six_configs_composed_the_way_d_07_08_counts_them(tmp_path):
     """The COUNT is the claim (D-07-08: a fixed, hand-written, counted grid,
-    no Optuna). 1 OLS + 4 Ridge + 9 ElasticNet + 3 Ridge-on-poly2, asserted
-    per class so a row moved between groups is not invisible."""
-    assert len(GRID) == GRID_SIZE == 17
+    no Optuna), and it is also the selection-bias denominator: rows 17-35 were
+    appended after the first sweep of rows 0-16 returned 0 of 17 eligible, so
+    36 is the number of configurations this phase has tried, not the number it
+    currently likes. 1 OLS + 12 Ridge + 14 ElasticNet + 9 Ridge-on-poly2,
+    asserted per class so a row moved between groups is not invisible."""
+    assert len(GRID) == GRID_SIZE == 36
     per_class: dict[type, int] = {}
     for entry in GRID:
         per_class[entry.trainer_class] = per_class.get(entry.trainer_class, 0) + 1
     assert per_class == {
         LinearRegressionTrainer: 1,
-        RidgeTrainer: 4,
-        ElasticNetTrainer: 9,
-        Poly2RidgeTrainer: 3,
+        RidgeTrainer: 12,
+        ElasticNetTrainer: 14,
+        Poly2RidgeTrainer: 9,
     }
     # And every entry really builds -- a grid whose rows cannot be
     # constructed is a count of nothing.
-    assert len(build_grid(_context(tmp_path))) == 17
+    assert len(build_grid(_context(tmp_path))) == GRID_SIZE
 
 
 @pytest.mark.parametrize("label", sorted(CHEAPEST_PER_CLASS))
@@ -248,7 +251,7 @@ def test_the_signature_scan_flags_a_fit_it_is_shown_with_a_knob_in_it():
     assert any("(self, inputs)" in item for item in violations), violations
 
 
-# --------------------------------------------------- the 17 distinct recipes
+# --------------------------------------------------- the 36 distinct recipes
 
 
 def _ids_for(hyperparameter_sets: list[tuple[str, dict]]) -> list[str]:
@@ -264,24 +267,24 @@ def _ids_for(hyperparameter_sets: list[tuple[str, dict]]) -> list[str]:
     ]
 
 
-def test_all_17_grid_entries_have_distinct_predictor_ids(tmp_path):
+def test_every_grid_entry_has_a_distinct_predictor_id(tmp_path):
     """The collision that would otherwise be invisible, and the measurement
     that proves `degree` is what prevents it.
 
-    Held byte-identical across all 17: the seed, the code hash and the
+    Held byte-identical across all 36: the seed, the code hash and the
     normalisation manifest id. So two configs can only differ through
     `model_class` and `hyperparameters` -- and both Ridge trainers report the
     SAME `model_class`, which is asserted here rather than assumed. Strip
-    `degree` and three pairs become byte-identical recipes: 14 distinct ids,
-    `harness.negative_log` deduplicating away three real ineligible configs
+    `degree` and NINE pairs become byte-identical recipes: 27 distinct ids,
+    `harness.negative_log` deduplicating away nine real ineligible configs
     (falsifying D-07-20), and a stored table's `predictor=<first 16>`
     directory naming a config that never produced it.
     """
     trainers = build_grid(_context(tmp_path))
     recipes = [(t.model_class, dict(t.hyperparameters)) for t in trainers]
     ids = _ids_for(recipes)
-    assert len(ids) == 17
-    assert len(set(ids)) == 17, {
+    assert len(ids) == GRID_SIZE
+    assert len(set(ids)) == GRID_SIZE, {
         identifier: [r for r, i in zip(recipes, ids, strict=True) if i == identifier]
         for identifier in ids
         if ids.count(identifier) > 1
@@ -292,19 +295,19 @@ def test_all_17_grid_entries_have_distinct_predictor_ids(tmp_path):
     assert Poly2RidgeTrainer.MODEL_CLASS == RidgeTrainer.MODEL_CLASS
     assert Poly2RidgeTrainer.MODEL_CLASS == RIDGE_MODEL_CLASS
 
-    # The measured collapse. Remove `degree` from the recipe and the three
-    # poly2 configs become the three Ridge configs at alpha 1e-3, 1.0, 100.0.
+    # The measured collapse. Remove `degree` from the recipe and the NINE
+    # poly2 configs become the nine Ridge configs at the same nine alphas.
     stripped = [
         (model_class, {k: v for k, v in knobs.items() if k != "degree"})
         for model_class, knobs in recipes
     ]
     collapsed = _ids_for(stripped)
-    assert len(set(collapsed)) == 14, sorted({f"{c}:{k}" for c, k in stripped})
-    assert len(set(ids)) - len(set(collapsed)) == 3
+    assert len(set(collapsed)) == 27, sorted({f"{c}:{k}" for c, k in stripped})
+    assert len(set(ids)) - len(set(collapsed)) == 9
 
 
 def test_the_three_shared_alphas_are_the_ones_degree_separates(tmp_path):
-    """Which three pairs, named -- so the number 14 above is a consequence of
+    """Which nine pairs, named -- so the number 27 above is a consequence of
     a stated overlap rather than a magic constant."""
     trainers = build_grid(_context(tmp_path))
     plain = {
@@ -315,9 +318,9 @@ def test_the_three_shared_alphas_are_the_ones_degree_separates(tmp_path):
     poly2 = {
         t.hyperparameters["alpha"] for t in trainers if isinstance(t, Poly2RidgeTrainer)
     }
-    assert poly2 == {1e-3, 1.0, 100.0}
+    assert poly2 == {1e-3, 1.0, 100.0, 3e7, 1e8, 3e8, 1e9, 3e9, 1e11}
     assert poly2 < plain, (plain, poly2)
-    assert len(poly2) == 3
+    assert len(poly2) == 9
 
 
 def test_two_fits_of_one_config_on_different_rows_share_an_id_and_differ_in_body(

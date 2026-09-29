@@ -281,7 +281,7 @@ class FrozenLinearPredictor:
         The numeric coercions are not cosmetic. `json.dumps` raises
         `TypeError` on a numpy scalar, and `sklearn`'s `coef_` is a numpy
         ARRAY of `np.float64`; a `to_artifact()` that inherited them would
-        fail in the middle of a 17-config sweep, hours in, which is a bad
+        fail in the middle of a 36-config sweep, hours in, which is a bad
         place to learn the body was never JSON-able. `hyperparameters` goes
         through `models.predictor_id`'s own per-type coercion so the body
         and the hashed recipe hold the same bytes; a value that survives

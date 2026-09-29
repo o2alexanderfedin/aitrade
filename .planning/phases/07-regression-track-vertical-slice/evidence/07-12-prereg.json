@@ -1,0 +1,254 @@
+{
+  "written_before": "the --select re-run of the widened grid; committed in the same commit as the GRID edit",
+  "segment_manifest_id": "807125015b252014ad8ee5282a21b2eccbfe01a287122cce5512ec9885aa3548",
+  "denominator": {
+    "before": 17,
+    "added": 19,
+    "after": 36,
+    "note": "the grid was widened AFTER seeing 0 of 17 eligible; 36 is what the selection-bias budget must record"
+  },
+  "derivations": {
+    "ridge_alpha_competes_with_row_count": "sklearn Ridge minimises ||y-Xw||^2 + alpha*||w||^2 -- SUM, not mean -- so on the z-scored design alpha competes with sum(x^2) = n = 44,229,781 fitted rows. alpha=100 shrinks by 2.3e-6. This is why grid rows 1-4 measured identical to six decimals across eight decades of alpha, and why the 300..3e4 ladder cannot move a gate.",
+    "elasticnet_axis_is_the_product": "ElasticNet's data term carries 1/(2n), so alpha*l1_ratio is a per-sample soft threshold and alpha*(1-l1_ratio) is an inert ~1e-4 L2 term. Measured per-column |X'(y-ybar)/n| on the train frame: imb_top 4.3280e-05, ofi 4.1376e-06, trade_flow 7.4534e-06. So EVERY coefficient is zero once alpha*l1_ratio > 4.3280e-05.",
+    "amplitude_parabola": "r2_vs_zero(c) = k + 2*c*p - c^2*q where c is the prediction-scale ratio, k is the measured c->0 asymptote (the constant-train-mean predictor) and 2p-q = r2_vs_zero(1) - k from grid 0. Downward parabola => each block admits a TWO-SIDED interval of c. rank_ic_non_tied is invariant under a positive scaling, so a shrunk Ridge should carry OLS's ICs unchanged.",
+    "block_0_passability": "Block 0's parabola has a positive maximum iff q_0 > 0.13467 (from (q-0.111946)^2 > 0.003836q). If q_0 is below that, the ENTIRE Ridge band fails block 0 and the honest result is a clean negative.",
+    "poly2_cannot_be_shrunk_uniformly": "The centred poly2 Gram has eigenvalues/n = 0.551, 0.7811, 0.9164, 1.043, 1.057, 1.092, 8.831, 981.5, 3.783e+05 -- one direction at 3.78e5*n. No alpha below ~1e10 touches it, so poly2's amplitude floors at ~0.32 until 1e11."
+  },
+  "measured_endpoints_per_block": {
+    "oof_block_0": {
+      "r2_vs_zero_at_c_1_OLS": -0.11290505441990306,
+      "r2_vs_zero_at_c_0_constant": -0.0009587313761230121,
+      "two_p_minus_q": -0.11194632304378005
+    },
+    "oof_block_1": {
+      "r2_vs_zero_at_c_1_OLS": 0.05642398054199016,
+      "r2_vs_zero_at_c_0_constant": -1.4955612120060024e-05,
+      "two_p_minus_q": 0.05643893615411022
+    },
+    "oof_block_2": {
+      "r2_vs_zero_at_c_1_OLS": 0.03404540897296404,
+      "r2_vs_zero_at_c_0_constant": 4.7485396705848615e-05,
+      "two_p_minus_q": 0.03399792357625819
+    },
+    "oof_block_3": {
+      "r2_vs_zero_at_c_1_OLS": 0.01388716929656264,
+      "r2_vs_zero_at_c_0_constant": -0.00014784412221557908,
+      "two_p_minus_q": 0.01403501341877822
+    },
+    "oof_block_4": {
+      "r2_vs_zero_at_c_1_OLS": 0.015852356790176603,
+      "r2_vs_zero_at_c_0_constant": -1.0553877485275365e-06,
+      "two_p_minus_q": 0.01585341217792513
+    }
+  },
+  "predictions": [
+    {
+      "grid_index": 17,
+      "model_class": "sklearn.Ridge",
+      "hyperparameters": {
+        "alpha": 30000.0
+      },
+      "predicted_amplitude_vs_ols": 0.999295,
+      "predicted_verdict": "FAIL block 0",
+      "reason": "indistinguishable from grid 4; carried as a witness that the 300..3e4 decade does nothing"
+    },
+    {
+      "grid_index": 18,
+      "model_class": "sklearn.Ridge",
+      "hyperparameters": {
+        "alpha": 10000000.0
+      },
+      "predicted_amplitude_vs_ols": 0.810084,
+      "predicted_verdict": "FAIL block 0",
+      "reason": "still 81% of OLS amplitude -- far above the admissible interval"
+    },
+    {
+      "grid_index": 19,
+      "model_class": "sklearn.Ridge",
+      "hyperparameters": {
+        "alpha": 30000000.0
+      },
+      "predicted_amplitude_vs_ols": 0.587911,
+      "predicted_verdict": "FAIL block 0",
+      "reason": "59% amplitude"
+    },
+    {
+      "grid_index": 20,
+      "model_class": "sklearn.Ridge",
+      "hyperparameters": {
+        "alpha": 100000000.0
+      },
+      "predicted_amplitude_vs_ols": 0.300682,
+      "predicted_verdict": "BORDERLINE",
+      "reason": "30% amplitude sits at the estimated upper edge of block 0's interval"
+    },
+    {
+      "grid_index": 21,
+      "model_class": "sklearn.Ridge",
+      "hyperparameters": {
+        "alpha": 300000000.0
+      },
+      "predicted_amplitude_vs_ols": 0.125673,
+      "predicted_verdict": "PASS all five",
+      "reason": "13% amplitude -- the most likely passer"
+    },
+    {
+      "grid_index": 22,
+      "model_class": "sklearn.Ridge",
+      "hyperparameters": {
+        "alpha": 1000000000.0
+      },
+      "predicted_amplitude_vs_ols": 0.041395,
+      "predicted_verdict": "PASS all five",
+      "reason": "4% amplitude, still above every block's lower root"
+    },
+    {
+      "grid_index": 23,
+      "model_class": "sklearn.Ridge",
+      "hyperparameters": {
+        "alpha": 3000000000.0
+      },
+      "predicted_amplitude_vs_ols": 0.014196,
+      "predicted_verdict": "BORDERLINE",
+      "reason": "1.4% amplitude approaches block 3's lower root (~0.011)"
+    },
+    {
+      "grid_index": 24,
+      "model_class": "sklearn.Ridge",
+      "hyperparameters": {
+        "alpha": 100000000000.0
+      },
+      "predicted_amplitude_vs_ols": 0.000432,
+      "predicted_verdict": "FAIL",
+      "reason": "0.04% amplitude -- r2_vs_zero collapses onto the NEGATIVE c->0 asymptote on blocks 0/1/3/4"
+    },
+    {
+      "grid_index": 25,
+      "model_class": "sklearn.ElasticNet",
+      "hyperparameters": {
+        "alpha": 0.0002,
+        "l1_ratio": 0.1
+      },
+      "predicted_amplitude_vs_ols": 0.5379,
+      "predicted_verdict": "imb_top-ONLY, non-degenerate",
+      "reason": "alpha*l1_ratio = 2.000e-05; ofi (4.138e-06) and trade_flow (7.453e-06) are both below it so BOTH are exactly zero; imb_top survives at 53.8% of its univariate coefficient. Rows 27 and 28 share the product 2.000e-05 at 3x different l1_ratio and MUST come out metrically identical if the product really is the axis."
+    },
+    {
+      "grid_index": 26,
+      "model_class": "sklearn.ElasticNet",
+      "hyperparameters": {
+        "alpha": 0.0001,
+        "l1_ratio": 0.3
+      },
+      "predicted_amplitude_vs_ols": 0.3068,
+      "predicted_verdict": "imb_top-ONLY, non-degenerate",
+      "reason": "alpha*l1_ratio = 3.000e-05; ofi (4.138e-06) and trade_flow (7.453e-06) are both below it so BOTH are exactly zero; imb_top survives at 30.7% of its univariate coefficient. Rows 27 and 28 share the product 3.000e-05 at 3x different l1_ratio and MUST come out metrically identical if the product really is the axis."
+    },
+    {
+      "grid_index": 27,
+      "model_class": "sklearn.ElasticNet",
+      "hyperparameters": {
+        "alpha": 0.00012,
+        "l1_ratio": 0.3
+      },
+      "predicted_amplitude_vs_ols": 0.1682,
+      "predicted_verdict": "imb_top-ONLY, non-degenerate",
+      "reason": "alpha*l1_ratio = 3.600e-05; ofi (4.138e-06) and trade_flow (7.453e-06) are both below it so BOTH are exactly zero; imb_top survives at 16.8% of its univariate coefficient. Rows 27 and 28 share the product 3.600e-05 at 3x different l1_ratio and MUST come out metrically identical if the product really is the axis."
+    },
+    {
+      "grid_index": 28,
+      "model_class": "sklearn.ElasticNet",
+      "hyperparameters": {
+        "alpha": 0.00036,
+        "l1_ratio": 0.1
+      },
+      "predicted_amplitude_vs_ols": 0.1682,
+      "predicted_verdict": "imb_top-ONLY, non-degenerate",
+      "reason": "alpha*l1_ratio = 3.600e-05; ofi (4.138e-06) and trade_flow (7.453e-06) are both below it so BOTH are exactly zero; imb_top survives at 16.8% of its univariate coefficient. Rows 27 and 28 share the product 3.600e-05 at 3x different l1_ratio and MUST come out metrically identical if the product really is the axis."
+    },
+    {
+      "grid_index": 29,
+      "model_class": "sklearn.ElasticNet",
+      "hyperparameters": {
+        "alpha": 0.0004,
+        "l1_ratio": 0.1
+      },
+      "predicted_amplitude_vs_ols": 0.0758,
+      "predicted_verdict": "imb_top-ONLY, non-degenerate",
+      "reason": "alpha*l1_ratio = 4.000e-05; ofi (4.138e-06) and trade_flow (7.453e-06) are both below it so BOTH are exactly zero; imb_top survives at 7.6% of its univariate coefficient. Rows 27 and 28 share the product 4.000e-05 at 3x different l1_ratio and MUST come out metrically identical if the product really is the axis."
+    },
+    {
+      "grid_index": 30,
+      "model_class": "sklearn.Ridge+degree2",
+      "hyperparameters": {
+        "alpha": 30000000.0,
+        "degree": 2
+      },
+      "predicted_amplitude_vs_ols": 0.6534,
+      "predicted_verdict": "FAIL block 0",
+      "reason": "65% amplitude. Weakest of the three families for the scaling model: cond(poly2 Gram) = 6.9e5, so alpha rotates the direction as well as scaling it"
+    },
+    {
+      "grid_index": 31,
+      "model_class": "sklearn.Ridge+degree2",
+      "hyperparameters": {
+        "alpha": 100000000.0,
+        "degree": 2
+      },
+      "predicted_amplitude_vs_ols": 0.444998,
+      "predicted_verdict": "FAIL block 0",
+      "reason": "45%. Weakest of the three families for the scaling model: cond(poly2 Gram) = 6.9e5, so alpha rotates the direction as well as scaling it"
+    },
+    {
+      "grid_index": 32,
+      "model_class": "sklearn.Ridge+degree2",
+      "hyperparameters": {
+        "alpha": 300000000.0,
+        "degree": 2
+      },
+      "predicted_amplitude_vs_ols": 0.358463,
+      "predicted_verdict": "FAIL block 0",
+      "reason": "36% -- on the plateau the big eigenvalue creates. Weakest of the three families for the scaling model: cond(poly2 Gram) = 6.9e5, so alpha rotates the direction as well as scaling it"
+    },
+    {
+      "grid_index": 33,
+      "model_class": "sklearn.Ridge+degree2",
+      "hyperparameters": {
+        "alpha": 1000000000.0,
+        "degree": 2
+      },
+      "predicted_amplitude_vs_ols": 0.334382,
+      "predicted_verdict": "FAIL block 0",
+      "reason": "33% -- plateau. Weakest of the three families for the scaling model: cond(poly2 Gram) = 6.9e5, so alpha rotates the direction as well as scaling it"
+    },
+    {
+      "grid_index": 34,
+      "model_class": "sklearn.Ridge+degree2",
+      "hyperparameters": {
+        "alpha": 3000000000.0,
+        "degree": 2
+      },
+      "predicted_amplitude_vs_ols": 0.317959,
+      "predicted_verdict": "FAIL block 0",
+      "reason": "32% -- plateau. Weakest of the three families for the scaling model: cond(poly2 Gram) = 6.9e5, so alpha rotates the direction as well as scaling it"
+    },
+    {
+      "grid_index": 35,
+      "model_class": "sklearn.Ridge+degree2",
+      "hyperparameters": {
+        "alpha": 100000000000.0,
+        "degree": 2
+      },
+      "predicted_amplitude_vs_ols": 0.102801,
+      "predicted_verdict": "PASS or BORDERLINE",
+      "reason": "10% -- the only poly2 row that breaks the plateau. Weakest of the three families for the scaling model: cond(poly2 Gram) = 6.9e5, so alpha rotates the direction as well as scaling it"
+    }
+  ],
+  "falsifiers": [
+    "A passing Ridge row whose rank_ic_non_tied differs from OLS's 0.3401/0.3765/0.2412/0.1941/0.2041 by more than ~0.01 => the near-isotropic scaling model is wrong.",
+    "Rows 27 and 28 differing by more than ~1e-4 in any metric => alpha*l1_ratio is NOT the only ElasticNet axis here.",
+    "Any nonzero ofi or trade_flow coefficient in rows 25-29 => the KKT threshold reasoning is wrong.",
+    "Row 17 (alpha=3e4) differing from grid 4 (alpha=100) in the 4th decimal of any metric => the sum-vs-mean derivation is wrong.",
+    "EVERY Ridge row failing block 0 => q_0 <= 0.13467 and no amplitude passes; the clean negative."
+  ]
+}
