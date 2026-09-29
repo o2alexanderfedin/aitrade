@@ -1,0 +1,26 @@
+{
+  "counts": {
+    "807125015b252014ad8ee5282a21b2eccbfe01a287122cce5512ec9885aa3548": {
+      "held_out": 0,
+      "oof_block_0": 1,
+      "oof_block_1": 1,
+      "oof_block_2": 1,
+      "oof_block_3": 1,
+      "oof_block_4": 1,
+      "train": 0,
+      "val": 0
+    },
+    "97964cb27f62aa07201e2e52f788240d4f7801582c7cac25ac21107aa9e330e2": {
+      "held_out": 0,
+      "oof_block_0": 0,
+      "oof_block_1": 0,
+      "oof_block_2": 0,
+      "oof_block_3": 0,
+      "oof_block_4": 0,
+      "train": 0,
+      "val": 0
+    }
+  },
+  "total": 5,
+  "tracking_root": "/Volumes/ProjectsSSD/aihedgefund/mlflow"
+}
