@@ -1,0 +1,83 @@
+{
+  "built_at": 1790649157629335000,
+  "code_hash": "30efe7c11a8c2d6f3dd568d078a9ee143565becc",
+  "dataset": "BTCUSDT.features_norm",
+  "etime_range": [
+    1789171200002000000,
+    1789602599845000000
+  ],
+  "inputs": [
+    {
+      "dataset": "BTCUSDT.features",
+      "dates": [
+        "2026-09-12"
+      ],
+      "manifest_id": "91154024ba400fb2d183828f4b6b745d73862b08313cbef33cf5c957503df005",
+      "path": "/Volumes/ProjectsSSD/aihedgefund/repo/mvp/data/lake_registry/manifests/BTCUSDT.features/91154024ba400fb2d183828f4b6b745d73862b08313cbef33cf5c957503df005.json",
+      "role": "features_day",
+      "rows": 4193137,
+      "sha256": "779ba9e9c2f137672436fc848441bcb7271cfdb038120c48fb6928a43af9ff8d"
+    },
+    {
+      "dataset": "BTCUSDT.features",
+      "dates": [
+        "2026-09-13"
+      ],
+      "manifest_id": "5e4ce973b196b60fbdec22bf771ff2c9d517c739d7150cd218a535842eb55f6a",
+      "path": "/Volumes/ProjectsSSD/aihedgefund/repo/mvp/data/lake_registry/manifests/BTCUSDT.features/5e4ce973b196b60fbdec22bf771ff2c9d517c739d7150cd218a535842eb55f6a.json",
+      "role": "features_day",
+      "rows": 6864853,
+      "sha256": "22f819dc9a58c74041ed1bd11fa9e272222ed796bcc417bb00cef00ad36744bd"
+    },
+    {
+      "dataset": "BTCUSDT.features",
+      "dates": [
+        "2026-09-14"
+      ],
+      "manifest_id": "1863b8d255d17312e3c6135af19f75e85cd9250d307ed43b8f6a604f95adcbc0",
+      "path": "/Volumes/ProjectsSSD/aihedgefund/repo/mvp/data/lake_registry/manifests/BTCUSDT.features/1863b8d255d17312e3c6135af19f75e85cd9250d307ed43b8f6a604f95adcbc0.json",
+      "role": "features_day",
+      "rows": 11323694,
+      "sha256": "8d68d44f991d0b79f658dcd49ffb9d1cf5e5c4645e55a6237d705c55eafc5c0c"
+    },
+    {
+      "dataset": "BTCUSDT.features",
+      "dates": [
+        "2026-09-15"
+      ],
+      "manifest_id": "2da1b5b97f97b28b1df1500ed91596304d78ba6888900390795721c7bcd2e1a1",
+      "path": "/Volumes/ProjectsSSD/aihedgefund/repo/mvp/data/lake_registry/manifests/BTCUSDT.features/2da1b5b97f97b28b1df1500ed91596304d78ba6888900390795721c7bcd2e1a1.json",
+      "role": "features_day",
+      "rows": 12203294,
+      "sha256": "e3ed2407f11900f98c234eff417b2d3485a20206a9d83b704277a14b6db072ed"
+    },
+    {
+      "dataset": "BTCUSDT.features",
+      "dates": [
+        "2026-09-16"
+      ],
+      "manifest_id": "0bfa8d286d90280251ddabbad340e07f3fd193545de294a3feefb73ec5a63924",
+      "path": "/Volumes/ProjectsSSD/aihedgefund/repo/mvp/data/lake_registry/manifests/BTCUSDT.features/0bfa8d286d90280251ddabbad340e07f3fd193545de294a3feefb73ec5a63924.json",
+      "role": "features_day",
+      "rows": 9872620,
+      "sha256": "9666e6d184d07e4fbcb8b55923d0bd64590c85d3b3be1feeb203c2d585de891f"
+    }
+  ],
+  "manifest_id": "c7749334fb73e090272013dfeb10013e25948b11a0907d56a69ee39d7b8954ba",
+  "partitions": [
+    {
+      "etime_max": 1789602599845000000,
+      "etime_min": 1789171200002000000,
+      "mtime_ns": 1790649157627099378,
+      "path": "features_norm/symbol=BTCUSDT/train_end=2026-09-16/part-1790649157622680000.parquet",
+      "rows": 4,
+      "sha256": "86d0127f04c0196d7574f007dd87e35b0c0b2e2c5b1660c70cfa12804c9bac69",
+      "size_bytes": 5689
+    }
+  ],
+  "row_count": 4,
+  "schema_version": 1,
+  "stream": "features_norm",
+  "symbol": "BTCUSDT",
+  "tier": "features_norm"
+}
