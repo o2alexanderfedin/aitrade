@@ -184,8 +184,8 @@ Plans:
 - [x] 07-07-PLAN.md — metrics with BOTH R² references, the gates, the re-measured ceiling, spec.md (wave 5)
 - [x] 07-08-PLAN.md — materialize-once cache keyed by tracking root, the OOF sweep, the negative-result log (wave 6)
 - [x] 07-09-PLAN.md — `run_slice`, the CLI and its refusals, the fixture end-to-end proof (wave 7)
-- [ ] 07-10-PLAN.md — real normalisation, the five OOF looks, the winner frozen and committed (wave 8, **checkpoint**) — **HALTED 2026-09-29 at a RESULT: 0 of 17 configs eligible.** Normalisation committed, five OOF looks spent, `look_count(val)` still 0, nothing frozen, both registry guardrails byte-unchanged. Awaiting a developer decision (see STATE.md Blockers and 07-10-SUMMARY.md).
-- [ ] 07-11-PLAN.md — the ONE honest `val` look, the stored table, the simulator, the disclosure (wave 9, **checkpoint**)
+- [x] 07-10-PLAN.md — real normalisation, the five OOF looks, the winner frozen and committed (wave 8, **checkpoint**) — Tasks 1 and 2 done. Normalisation committed; five OOF looks spent; the grid widened 17→36 after 0 of 17 passed, re-scored at ZERO additional looks, 9 of 36 eligible; **ElasticNet(alpha=1e-4, l1_ratio=0.30) frozen as `predictors/e3b4b235d0fe…json` in ONE commit (`b75edc6`) with both registry guardrail extensions**, and it is a ONE-FEATURE model (`imb_top` only). `look_count(val)` is still **0**. **Task 3, the blocking human-verify checkpoint, is OPEN** — see 07-10-SUMMARY.md's DISCLOSURE section.
+- [ ] 07-11-PLAN.md — the ONE honest `val` look, the stored table, the simulator, the disclosure (wave 9, **checkpoint**) — **OUTSTANDING and NON-AUTONOMOUS. Must not run until Task 3 of 07-10 is approved.**
 
 **Window**: train 2026-09-12..16, val 2026-09-17..18. `budget_allowance = 3`; the phase spends 6 looks total (5 OOF + 1 val) and no more.
 **Cross-cutting**: waves 2, 8 and 9 are the only ones that touch anything irreversible, and all three are non-autonomous checkpoints.
@@ -252,7 +252,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 4. Feature & Label Engine | 7/7 | Complete    | 2026-09-19 |
 | 5. Fold Harness & Overfitting Controls | 8/8 | Complete    | 2026-09-22 |
 | 6. Event-Driven Simulator | 7/7 | Complete    | 2026-09-24 |
-| 7. Regression Track & Vertical Slice | 9/11 | In Progress|  |
+| 7. Regression Track & Vertical Slice | 10/11 | In Progress — wave 9 outstanding, non-autonomous; 07-10's approval checkpoint open |  |
 | 8. Trees, Transformer & v0 Gate | 0/TBD | Not started | - |
 | 9. Stage 2 Monetization & v1 Gate | 0/TBD | Not started | - |
 | 10. Agentic Loop | 0/TBD | Not started | - |
