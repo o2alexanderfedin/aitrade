@@ -179,6 +179,50 @@ def _rank_ic(pred: np.ndarray, y: np.ndarray) -> float:
             return float("nan")
 
 
+def _r2_decomposition(pred: np.ndarray, y: np.ndarray) -> dict[str, float]:
+    """Why `r2_vs_zero` came out where it did, as arithmetic instead of a story.
+
+    Expand `1 - sum((y-p)^2)/sum(y^2)` about the constant-zero predictor and,
+    for a prediction with a mean small against its own spread, it collapses to
+
+        r2_vs_zero ~= 2 * rho * (sigma_p / sigma_y) - (sigma_p / sigma_y)^2
+
+    where `rho` is the ORDINARY PEARSON correlation. Two things fall straight
+    out of that. A prediction uncorrelated with the target scores exactly minus
+    the square of its relative amplitude -- it is charged for its own variance
+    and paid nothing. And a POSITIVE RANK IC is perfectly compatible with a
+    negative r-squared, because rank correlation is not `rho`: the ordering can
+    be right while the large-magnitude predictions lean the wrong way.
+
+    `reconstruction_error` is the check that this decomposition describes the
+    number actually reported rather than a neighbouring one. It is not exactly
+    zero because the exact identity carries the prediction's mean as well; it is
+    reported so a reader can see how much of the r-squared the two-term story
+    accounts for, instead of being told that it does.
+    """
+    sigma_y = float(y.std())
+    sigma_p = float(pred.std())
+    if sigma_y == 0.0:
+        raise ScoringError(
+            "timesfm_score_grid: the target has zero variance on these rows"
+        )
+    ratio = sigma_p / sigma_y
+    rho = (
+        float(np.corrcoef(pred, y)[0, 1])
+        if sigma_p > 0.0 and np.isfinite(sigma_p)
+        else 0.0
+    )
+    approx = 2.0 * rho * ratio - ratio * ratio
+    ss_zero = float((y**2).sum())
+    exact = 1.0 - float(((y - pred) ** 2).sum()) / ss_zero
+    return {
+        "pearson_pred_vs_target": rho,
+        "pred_std_over_target_std": ratio,
+        "r2_vs_zero_two_term_approximation": approx,
+        "r2_vs_zero_reconstruction_error": exact - approx,
+    }
+
+
 def _bootstrap(
     pred: np.ndarray, y: np.ndarray, *, seed: int, n: int
 ) -> dict[str, list[float] | None]:
@@ -394,6 +438,7 @@ def _score_block(
         entry.update(_bootstrap(p, y, seed=BOOTSTRAP_SEED, n=N_BOOTSTRAP))
         entry["pred_std"] = float(p.std())
         entry["pred_mean"] = float(p.mean())
+        entry.update(_r2_decomposition(p, y))
         models[name] = entry
 
     # The permuted-target null, run on the headline prediction. Reported as its
@@ -444,14 +489,43 @@ def _score_block(
     # persistence shows up as a number instead of as an impression.
     departure = np.abs(point_shifted[mask][:, HORIZON - 1] - anchor_mid[mask])
     realised_move = realised_terminal_mid[mask] - anchor_mid[mask]
+    # SIGN AGREEMENT IS MEASURED ON THE ROWS THAT MOVED, and the first draft of
+    # this script got it wrong in a way worth leaving on the record. Comparing
+    # `sign(pred)` with `sign(realised_move)` over ALL rows reported 13% on
+    # `oof_block_0` -- which reads as a catastrophically wrong model and is
+    # actually arithmetic: 74.8% of that block's 10-second returns are EXACTLY
+    # zero, `np.sign(0.0)` is `0.0`, and a nonzero forecast can never equal it.
+    # The all-rows number is kept beside the corrected one so the 13% cannot be
+    # re-derived by accident, and `models.metrics`' own `tie_fraction` is the
+    # number that explains it.
+    moved = realised_move != 0.0
+    signed = np.sign(pred_timesfm[mask])
+    comparable = moved & (signed != 0.0)
     persistence_diag = {
         "mean_abs_departure_from_last_value": float(departure.mean()),
         "realised_terminal_move_std": float(realised_move.std()),
         "departure_over_realised_std": float(departure.mean() / realised_move.std()),
         "fraction_within_half_a_tick": float((departure < TICK_SIZE / 2.0).mean()),
         "fraction_exactly_zero": float((departure == 0.0).mean()),
-        "forecast_sign_agrees_with_realised": float(
-            (np.sign(pred_timesfm[mask]) == np.sign(realised_move)).mean()
+        "rows_that_moved": int(moved.sum()),
+        "rows_comparable_for_sign": int(comparable.sum()),
+        "sign_agrees_on_moved_rows": (
+            float((signed[comparable] == np.sign(realised_move[comparable])).mean())
+            if int(comparable.sum()) > 0
+            else None
+        ),
+        "sign_agrees_tick_weighted_on_moved_rows": (
+            float(
+                np.abs(realised_move[comparable])[
+                    signed[comparable] == np.sign(realised_move[comparable])
+                ].sum()
+                / np.abs(realised_move[comparable]).sum()
+            )
+            if int(comparable.sum()) > 0
+            else None
+        ),
+        "sign_agrees_all_rows_including_unmoved": float(
+            (signed == np.sign(realised_move)).mean()
         ),
     }
 
