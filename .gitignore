@@ -4,3 +4,8 @@ hf-cache/
 *.ckpt
 *.pt
 *.pth
+
+# Importing a tools/ module writes bytecode beside it; mvp/.gitignore already
+# covered its own tree, the repo root did not.
+__pycache__/
+*.pyc

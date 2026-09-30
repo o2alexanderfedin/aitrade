@@ -1,0 +1,121 @@
+{
+  "blocks": {
+    "0": {
+      "bars": 62569,
+      "both_clean": 62455,
+      "both_clean_fraction": 0.9981780114753313,
+      "btc_clean": 62483,
+      "eth_clean": 62541,
+      "eth_clean_fraction": 0.9995524940465725,
+      "eth_finite": 62569,
+      "output": "/Volumes/ProjectsSSD/aihedgefund/timesfm/work/e2/eth_block_0.npz",
+      "price_max": 2545.04,
+      "price_min": 2513.24,
+      "stale_max_ns_finite": 7423000000,
+      "stale_median_ns": 265000000,
+      "stale_p99_ns": 2435639999
+    },
+    "1": {
+      "bars": 86399,
+      "both_clean": 86368,
+      "both_clean_fraction": 0.9996411995509207,
+      "btc_clean": 86398,
+      "eth_clean": 86369,
+      "eth_clean_fraction": 0.9996527737589556,
+      "eth_finite": 86399,
+      "output": "/Volumes/ProjectsSSD/aihedgefund/timesfm/work/e2/eth_block_1.npz",
+      "price_max": 2526.71,
+      "price_min": 2461.01,
+      "stale_max_ns_finite": 7991000000,
+      "stale_median_ns": 207000000,
+      "stale_p99_ns": 2239000000
+    },
+    "2": {
+      "bars": 86400,
+      "both_clean": 82887,
+      "both_clean_fraction": 0.9593402777777778,
+      "btc_clean": 82888,
+      "eth_clean": 86399,
+      "eth_clean_fraction": 0.999988425925926,
+      "eth_finite": 86400,
+      "output": "/Volumes/ProjectsSSD/aihedgefund/timesfm/work/e2/eth_block_2.npz",
+      "price_max": 2613.0,
+      "price_min": 2464.64,
+      "stale_max_ns_finite": 5243000000,
+      "stale_median_ns": 128000000,
+      "stale_p99_ns": 1287009999
+    },
+    "3": {
+      "bars": 86400,
+      "both_clean": 76582,
+      "both_clean_fraction": 0.8863657407407407,
+      "btc_clean": 76584,
+      "eth_clean": 86398,
+      "eth_clean_fraction": 0.9999768518518518,
+      "eth_finite": 86400,
+      "output": "/Volumes/ProjectsSSD/aihedgefund/timesfm/work/e2/eth_block_3.npz",
+      "price_max": 2518.6,
+      "price_min": 2357.06,
+      "stale_max_ns_finite": 5796000000,
+      "stale_median_ns": 107000000,
+      "stale_p99_ns": 1132009999
+    },
+    "4": {
+      "bars": 83960,
+      "both_clean": 76846,
+      "both_clean_fraction": 0.915269175797999,
+      "btc_clean": 76852,
+      "eth_clean": 83954,
+      "eth_clean_fraction": 0.9999285373987613,
+      "eth_finite": 83960,
+      "output": "/Volumes/ProjectsSSD/aihedgefund/timesfm/work/e2/eth_block_4.npz",
+      "price_max": 2429.27,
+      "price_min": 2368.29,
+      "stale_max_ns_finite": 7045000000,
+      "stale_median_ns": 158000000,
+      "stale_p99_ns": 1645000000
+    }
+  },
+  "dates": [
+    "2026-09-12",
+    "2026-09-13",
+    "2026-09-14",
+    "2026-09-15",
+    "2026-09-16"
+  ],
+  "downloads": [
+    {
+      "bytes": 15025584,
+      "date": "2026-09-12",
+      "sha256": "a585f5d05f41370485097ad2f4b5f28907a41058abb72bb52b8e093e993a0405",
+      "url": "https://data.binance.vision/data/futures/um/daily/trades/ETHUSDT/ETHUSDT-trades-2026-09-12.zip"
+    },
+    {
+      "bytes": 23380299,
+      "date": "2026-09-13",
+      "sha256": "8437d6148e92945a8c70e8e372e45dc9db5d4f43509c0898971db3426d0cf8a0",
+      "url": "https://data.binance.vision/data/futures/um/daily/trades/ETHUSDT/ETHUSDT-trades-2026-09-13.zip"
+    },
+    {
+      "bytes": 48462622,
+      "date": "2026-09-14",
+      "sha256": "99ed6bcbcd67f3e56121326c1da14ffc7723ce3674f44e8b6f37ffa8c168b7c4",
+      "url": "https://data.binance.vision/data/futures/um/daily/trades/ETHUSDT/ETHUSDT-trades-2026-09-14.zip"
+    },
+    {
+      "bytes": 59349102,
+      "date": "2026-09-15",
+      "sha256": "0f0d0fb28e5f1fab84c226a4054a6c860be9f96c7407bf462e1b1cd345913da0",
+      "url": "https://data.binance.vision/data/futures/um/daily/trades/ETHUSDT/ETHUSDT-trades-2026-09-15.zip"
+    },
+    {
+      "bytes": 53006128,
+      "date": "2026-09-16",
+      "sha256": "d3acf037a3740b20097c4234c2f871b271f758277749e3a54c9c0b8c3fd6a84a",
+      "url": "https://data.binance.vision/data/futures/um/daily/trades/ETHUSDT/ETHUSDT-trades-2026-09-16.zip"
+    }
+  ],
+  "max_stale_ns": 5000000000,
+  "symbol": "ETHUSDT",
+  "tape_unique_stamps": 3765861
+}
