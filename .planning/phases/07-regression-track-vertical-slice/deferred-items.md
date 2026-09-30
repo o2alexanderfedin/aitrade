@@ -125,8 +125,25 @@ phase, and whether the repo root should carry it is the repo owner's call.
 
 **Found during:** the zero-look OOF viability run (`mvp/scripts/oof_viability_check.py`,
 evidence `07-oof-viability-results.json`).
-**Status:** NOT FIXED. It is a gate and a reference band; an executor does not
-move either (the user's own standing instruction, and D-07-19 owns the guard).
+**Status:** FIXED 2026-09-30 (`21d5fcc`), by explicit instruction. Shape (a) was
+taken and then CORRECTED by measurement: the guard's reference is now
+`models.gates.mid_total_variation`, not decision-row perfect foresight. The
+tighter candidate turned out not to be a bound at all -- on this repo's fixture,
+whose path steps one tick at a time while the kernel needs 1.5, decision-row
+perfect foresight earns EXACTLY ZERO while the 10-second perfect predictor earns
+311 ticks and the fitted model earns 50, so a guard referenced to it would abort
+every ordinary run on any segment with sub-tick adjacent moves. Total variation
+is a theorem for a one-lot flip-only policy and holds on both. The label-horizon
+ceiling keeps its unchanged `ceiling_*` metric keys as a diagnostic, and
+decision-row perfect foresight is logged as the leak signal a real prediction
+actually approaches. `gate_forecast`, `gate_monetization`, `GRID`, `select_winner`
+and the all-blocks eligibility rule are byte-unchanged (`git diff a3a4d22..HEAD --
+mvp/models/sweep.py mvp/models/regression.py mvp/harness/` is empty).
+
+**The cost, stated because it is a real loss:** the bound is now strictly
+unattainable, so no PREDICTION can make the guard fire. It checks for impossible
+results, not leaks. The leak signal is the reported fraction of decision-row
+perfect foresight instead.
 
 **What was measured.** The committed frozen winner, simulated on the five
 cached OOF blocks at `x_bps=0`, earns **1.44x / 2.21x / 3.21x / 3.01x** the
@@ -190,9 +207,17 @@ edge case.
 ## `x_bps` has exactly ONE usable value for this signal, and it is 0
 
 **Found during:** the same run.
-**Status:** NOT FIXED. `x_bps` is `spec.md`'s own parameterisation ("trade when
-predicted midprice crosses TOB by X bps (X swept)") and changing its units is
-a spec change.
+**Status:** FIXED 2026-09-30 (`7ff5f45`), by explicit instruction. `x_bps` still
+means whole basis points and every existing call site is untouched; a second knob
+`x_bps_scaled` counts in units of 1e-4 bps, so a one-tick threshold (130 units on
+a $77,000 one-tick spread) is now expressible where whole basis points jump 0 ->
+77 with nothing between. Measured on a 4,000-row walk, trades go 1531, 1233, 915,
+319, 0 across the new ladder instead of 1531 then nothing. `x_bps=0` is
+byte-identical by an exact integer identity, proven by re-running
+`scripts/oof_viability_check.py` on `oof_block_1` against the committed evidence.
+Two silent wrongs became refusals: a fractional `x_bps` (which `int()` ate --
+`x_bps=0.5` returned the zero-threshold log) and a negative one (`x_bps=-1` traded
+on all 4,000 rows).
 
 `sim/kernel.py` computes `x_ticks = (bid_ticks + ask_ticks) * x_bps // 20_000`
 and `run_sim_checked` coerces `x_bps` with `int()`. On this window that makes
@@ -213,8 +238,24 @@ question for a discuss step.
 ## The simplification that dominates the P&L is not on the simplification list
 
 **Found during:** the same run.
-**Status:** NOT FIXED. `mvp.md`/`spec.md` item 7 is the monetization
-simplification list and editing it is a spec change, not an executor's edit.
+**Status:** FIXED 2026-09-30 (`916d373`, corrected in the following commit), by
+explicit instruction. Registered in `mvp/mvp.md`'s Monetization assumptions with
+its measured evidence, tied to removal-queue items 4 and 5, and guarded by
+`mvp/tests/spec/test_simplification_registry.py`. Both `spec.md` pitfalls now
+carry status notes: the mid-vs-fillable IC exists as `scripts/fill_skill_gap.py`
+(zero looks; crossing the spread removes 17% to 33% of the decision-row rank IC,
+and the spread leaves 36% to 50% of the correct calls at or below zero); the
+adverse-selection reversion histogram does not.
+
+**THIS ENTRY'S OWN CLAIM WAS WRONG and the registration says so.** "Measured, that
+is where the entire P&L comes from" is contradicted by
+`.planning/debug/07-oof-pnl-leakage-investigation.md`, committed to this branch
+hours later: the side the model takes carries a median 2.884 BTC against its 0.001
+BTC order and is at or below that size on 0.19% of rows, so the typical fill is
+NOT against a vanishing queue, and latency decay is graceful (84% retained at
+20-40 ms). What the sign depends on is ZERO FEES -- a 0.519 bp edge per round trip
+that one basis point of required overshoot takes to zero on all five blocks. The
+fill assumption needed registering; it is not the one carrying the result.
 
 The list names zero fees, taker-only, zero latency, $100 max position. What it
 does not name is the **unconditional fill at the touch**: the simulator fills

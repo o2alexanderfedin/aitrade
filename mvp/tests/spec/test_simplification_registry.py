@@ -1,25 +1,35 @@
-"""The simplification that carries the P&L is named in the list of
-simplifications, and the two spec mitigations that anticipate it say honestly
-which of them exists.
+"""Every simplification the simulator makes is in the list of simplifications,
+the prose about it says what was measured, and the two spec mitigations that
+anticipate it say honestly which of them exists.
 
 WHY THIS IS A TEST AND NOT A CONVENTION. `mvp.md`'s "Assumptions (all
 simplifications, listed for later removal)" list is the document a reader of a
 `Net P&L > 0` claim consults to find out what the claim rests on. The
 unconditional fill at the touch -- the simulator filling the whole lot at
 `ask_ticks[i]`/`bid_ticks[i]` on the same decision row whose book produced the
-feature, with no queue and no adverse selection -- was measured to be where the
-entire P&L comes from, and it was absent from that list for the whole of phases
-6 and 7. A bullet can be deleted in a rewrite without anybody noticing; a
-failing test cannot.
+feature, with no queue and no adverse selection -- was absent from that list for
+the whole of phases 6 and 7. A bullet can be deleted in a rewrite without anybody
+noticing; a failing test cannot.
 
-WHAT THIS DOES NOT DO. It does not check the prose, and it deliberately does not
-pin the measured numbers as literals in two places. What it pins is the
-STRUCTURE a reader needs: the assumption is in the assumptions list, the removal
-queue says which items remove it, the numbers in the prose are the numbers in the
-committed evidence, and each of the two `spec.md` mitigations carries a status
-note that says whether it is implemented.
+AND THE OVERCLAIM IS GUARDED TOO, which is the less obvious half. The deferred
+item that asked for this registration said the fill assumption is "where the
+entire P&L comes from", and the first draft of the bullet repeated it -- while a
+sibling commit on the same branch already carried three measurements against it
+(median 2.884 BTC resting on the taken side against a 0.001 BTC order; at or
+below that size on 0.19% of rows; 84% of the P&L retained at 20-40 ms of
+latency). What the sign depends on is ZERO FEES: a 0.519 bp edge per round trip
+that one basis point of required overshoot takes to zero on all five blocks. A
+registration that overstates its own importance misdirects the next reader as
+surely as a missing one, so both directions are asserted.
 
-NO LAKE, NO MLFLOW, NO LOOK: three files on disk and one committed JSON.
+WHAT THIS DOES NOT DO. It does not review the prose. What it pins is the
+STRUCTURE a reader needs and the NUMBERS the prose cites: the assumption is in
+the assumptions list, the removal queue says which items remove it, every quoted
+figure is recomputed from the evidence that produced it, the borrowed figures
+appear in both documents, and each of the two `spec.md` mitigations carries a
+status note saying whether it is implemented.
+
+NO LAKE, NO MLFLOW, NO LOOK: four files on disk, two of them committed JSON.
 """
 
 from __future__ import annotations
@@ -45,6 +55,24 @@ EVIDENCE_PATH: Path = _EVIDENCE_DIR / "07-fill-skill-gap.json"
 
 #: The zero-look OOF viability run, whose lag variants the same prose cites.
 VIABILITY_PATH: Path = _EVIDENCE_DIR / "07-oof-viability-results.json"
+
+#: The leakage investigation that measured what the P&L actually rests on. Its
+#: numbers are quoted in `mvp.md` and the quotation is checked against it.
+INVESTIGATION_PATH: Path = (
+    PKG_ROOT.parent / ".planning" / "debug" / ("07-oof-pnl-leakage-investigation.md")
+)
+
+#: The figures `mvp.md` borrows from that investigation, each of which is the
+#: REASON the registration says the fill assumption is secondary. A first draft
+#: of the bullet claimed the opposite -- "this is the simplification that
+#: carries the P&L" -- while these three numbers sat in a sibling commit on the
+#: same branch saying it is not.
+BORROWED_FIGURES: tuple[str, ...] = (
+    "2.884 BTC",  # median resting size on the side the model takes
+    "0.19%",  # rows where that side is at or below the 0.001 BTC order size
+    "0.519 bp",  # the realised edge per round trip
+    "84%",  # P&L retained at 20-40 ms of latency
+)
 
 
 def _section(text: str, heading: str) -> str:
@@ -86,9 +114,9 @@ def test_the_unconditional_fill_is_in_the_monetization_assumptions_list(mvp_md):
     section = _section(mvp_md, "### Monetization")
     assert "Unconditional fill at the touch" in section, (
         "mvp.md's Monetization assumptions no longer name the unconditional "
-        "fill at the touch. That is the simplification the OOF viability run "
-        "measured the whole P&L to come from; a Net P&L > 0 claim is not "
-        "readable without it"
+        "fill at the touch -- the fill mechanics the whole Stage-2 P&L is "
+        "computed under. A Net P&L > 0 claim is not readable without it, "
+        "whatever its rank among the simplifications turns out to be"
     )
     # The mechanism, in enough detail that the reader knows what is assumed
     # away rather than only that something is.
@@ -109,8 +137,8 @@ def test_the_removal_queue_says_which_items_remove_it(mvp_md):
     assert "L1-aware fills" in section and "Queue position modeling" in section
     assert "unconditional fill at the touch" in section, (
         "the removal queue does not connect items 4 and 5 to the assumption "
-        "they remove, so a reader of the queue cannot tell that the pair is "
-        "where this model's P&L lives"
+        "they remove, so a reader of the queue cannot tell which entry retires "
+        "the fill mechanics the P&L was computed under"
     )
 
 
@@ -200,6 +228,56 @@ def test_the_lag_retention_in_the_prose_is_the_lag_retention_in_the_evidence(mvp
         "a one-row delay does not cost P&L on every block, so the prose's "
         "'all five' is wrong -- which is exactly the claim this test exists to "
         "keep honest"
+    )
+
+
+def test_the_registration_does_not_claim_the_fill_assumption_carries_the_pnl(mvp_md):
+    """THE CORRECTION THIS TEST EXISTS FOR, and the one a future rewrite is most
+    likely to undo.
+
+    The deferred item this registration answers said the unconditional fill is
+    "where the entire P&L comes from", and the first draft of the bullet repeated
+    it in bold. A sibling investigation on the same branch had already measured
+    the opposite and its numbers are borrowed into the bullet: the taken side
+    carries a median 2.884 BTC against a 0.001 BTC order and is at or below the
+    order size on 0.19% of rows, so the typical fill is NOT against a vanishing
+    queue; and the realised edge is 0.519 bp per round trip, which one basis
+    point of required overshoot takes to zero on all five blocks -- so the sign
+    depends on ZERO FEES, queue item 1.
+
+    Every borrowed figure must appear in BOTH documents, so neither can drift
+    from the other, and the overclaim must not be back.
+    """
+    assert INVESTIGATION_PATH.is_file(), (
+        f"{INVESTIGATION_PATH} is missing -- mvp.md's registration borrows four "
+        "measurements from it and the borrowing is unverifiable without it"
+    )
+    investigation = INVESTIGATION_PATH.read_text()
+    section = _section(mvp_md, "### Monetization")
+    for figure in BORROWED_FIGURES:
+        assert figure in section, (
+            f"mvp.md no longer quotes {figure!r}, one of the measurements that "
+            "says the fill assumption is secondary to zero fees"
+        )
+        assert figure in investigation, (
+            f"{INVESTIGATION_PATH.name} no longer contains {figure!r}, so "
+            "mvp.md is citing a number its source does not carry"
+        )
+    lowered = section.lower()
+    for overclaim in (
+        "simplification that carries the p&l",
+        "where the entire p&l comes from",
+        "about to disappear",
+    ):
+        assert overclaim not in lowered, (
+            f"the registration says {overclaim!r} again. The measured resting "
+            "size (median 2.884 BTC against a 0.001 BTC order, at or below it "
+            "on 0.19% of rows) contradicts it, and the 0.519 bp edge against a "
+            "1 bp threshold says zero FEES is what the sign depends on"
+        )
+    assert "zero fees" in lowered, (
+        "the registration must name the simplification the sign actually "
+        "depends on, or a reader takes the fill assumption for the main risk"
     )
 
 
