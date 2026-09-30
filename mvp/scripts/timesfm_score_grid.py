@@ -39,11 +39,21 @@ fires only when it is wanted is not a control:
 
 A BOOTSTRAP CONFIDENCE INTERVAL ON EVERY HEADLINE STATISTIC, for the same
 reason. `r2_vs_zero = +0.0003` and `r2_vs_zero = -0.0003` are the same finding,
-and only an interval says so. Ordinary resampling over windows is legitimate
-HERE and would not be on the raw decision rows: the exporter's stride (20 bars)
-exceeds the horizon (10 bars), so NO TWO SCORED TARGETS OVERLAP IN TIME and the
-autocorrelation that makes naive bootstrapping wrong on overlapping forward
-returns is absent by construction.
+and only an interval says so.
+
+WHAT THESE INTERVALS ARE AND ARE NOT, because the first draft of this docstring
+claimed more than the design earns. Resampling windows independently removes one
+specific problem: the exporter's stride (20 bars) exceeds the horizon (10 bars),
+so no two scored targets overlap in time and the MECHANICAL autocorrelation of
+overlapping forward returns is absent by construction. It does NOT remove
+volatility clustering, which is a property of the market and not of the
+sampling. Both `sum((y-p)^2)` and `sum(y^2)` are dominated by the same high-vol
+stretches, so an independent resample understates the true interval width by an
+amount this script does not estimate. Every interval below should therefore be
+read as a LOWER BOUND on the uncertainty. That is sound in the direction the
+conclusion runs -- a wider interval can only make a negative r-squared more
+firmly non-positive -- and it is NOT sound for claiming a small positive one, so
+no such claim is made from these numbers.
 
 `NUMBA_CACHE_DIR` IS PINNED AT THE TOP, BEFORE ANY IMPORT, for
 `scripts/run_stage1_slice.py`'s reason in its own words: with the variable
@@ -228,10 +238,11 @@ def _bootstrap(
 ) -> dict[str, list[float] | None]:
     """Percentile intervals for `r2_vs_zero` and `rank_ic_all`.
 
-    Resamples WINDOWS with replacement. Legitimate only because the scored
-    targets do not overlap (`STRIDE > HORIZON`); on overlapping forward returns
-    this would understate the interval badly, which is why the precondition is
-    asserted by the caller rather than assumed here.
+    Resamples WINDOWS with replacement. The `STRIDE > HORIZON` precondition --
+    asserted by the caller rather than assumed here -- removes the mechanical
+    overlap autocorrelation; it does not remove volatility clustering, so these
+    are lower bounds on the interval width. See the module docstring for why that
+    is sound for the negative conclusion and not for a positive one.
 
     Returns `None` for a statistic that is undefined on the resample (a
     constant prediction has no rank correlation), rather than a number that

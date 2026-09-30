@@ -1136,6 +1136,7 @@
       }
     }
   ],
+  "bootstrap_caveat": "The stride (20 bars) exceeds the horizon (10 bars), so no two scored targets overlap in time and the mechanical overlap autocorrelation is absent. Volatility clustering is NOT removed by independent resampling, and both SSE and sum(y^2) are dominated by the same high-vol stretches, so every interval here is a LOWER BOUND on the true width. Sound in the direction this conclusion runs -- a wider interval only makes a negative r-squared more firmly non-positive -- and NOT sound for claiming a small positive one.",
   "bootstrap_seed": 20260930,
   "comparability_note": "Every model here is scored on the SAME 1-second grid rows through one shared finite mask, with n_scorable asserted equal across them. The frozen predictor's published r2_vs_zero of 0.006-0.035 was measured on EVENT-DRIVEN decision rows and must NOT be quoted beside these numbers: a 1-second grid is a different row population with a different denominator. The frozen column here is the frozen body re-scored on THIS population.",
   "experiment": "E1 zero-shot TimesFM 3.0 as a baseline to beat",
