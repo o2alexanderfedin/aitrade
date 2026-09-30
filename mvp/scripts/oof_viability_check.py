@@ -132,12 +132,13 @@ CEILING_HORIZONS: tuple[str, ...] = (
 )
 
 #: The amplitude given to a perfect SIGN predictor, in return units. 1e-4 is
-#: ~7.7 ticks at this window's midprice -- comfortably past the one-full-tick
-#: overshoot the kernel's floor/ceil rule demands, so a sign predictor at this
-#: amplitude fires on every row whose sign it knows. Chosen to be large, not
-#: tuned: the measurement it produces is "what does a perfect next-row SIGN
-#: earn when it is allowed to fire", and any amplitude past the overshoot gives
-#: the same answer.
+#: one basis point, which this script's own `x_bps=1` probe measures at 74 to
+#: 79 ticks on this window -- far past the one-full-tick overshoot the kernel's
+#: floor/ceil rule demands, so a sign predictor at this amplitude fires on
+#: every row whose sign it knows. Chosen to be large, not tuned: the
+#: measurement it produces is "what does a perfect next-row SIGN earn when it
+#: is allowed to fire", and any amplitude past the overshoot gives the same
+#: answer.
 PERFECT_SIGN_AMPLITUDE: float = 1e-4
 
 #: `x_bps` values probed on every block. 0 is the phase's only simulated
@@ -585,8 +586,15 @@ def _run_block(
     # A LEAD is genuine leakage and is simulated ON PURPOSE, as the shape
     # check a lag alone cannot give: if the P&L PEAKED at a positive lag, the
     # prediction array would already be running ahead of the book and the
-    # alignment would be wrong. Measured, it peaks at a lead, which is what a
-    # correctly aligned persistent signal looks like.
+    # alignment would be wrong. MEASURED, THE SHAPE IS NOT THE SAME ON EVERY
+    # BLOCK, and the difference is worth keeping rather than averaging away:
+    # on `oof_block_0` -- the sparse day, 70% of targets exactly zero -- a
+    # one-row lead GAINS 22.6% (+118,608 against +96,714), i.e. there is real
+    # forward information a lead gets to use early. On the four dense blocks a
+    # lead LOSES 2% to 12%, the signature of a contemporaneous state variable
+    # rather than a forecast. Either shape places the peak at offset zero or at
+    # a lead, which is what rules out the prediction array running ahead of the
+    # book; neither shape is "the P&L peaks at zero on every block".
     variants.append(("frozen_lead1", predictor, 1.0, -1))
     variants.append(("frozen_lead10", predictor, 1.0, -10))
     # THE SPREAD CONTROL the question "or does the spread eat it?" needs: the
