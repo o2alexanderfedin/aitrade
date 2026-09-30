@@ -204,6 +204,19 @@ ALLOWLISTED_SEC_TO_NS_SITES: dict[str, str] = {
         "the module's own test greps for a second, independent "
         "5_000_000_000 literal"
     ),
+    "scripts/timesfm_export_grid.py": (
+        "experiment E1's 1-second RESAMPLING GRID: a foundation model needs "
+        "regularly-spaced bars and this project's decision rows are "
+        "event-driven, so the stamps are built by flooring and ceiling "
+        "int64 ns to whole seconds (`// GRID_STEP_NS`, `* GRID_STEP_NS`) and "
+        "the bar count is cross-checked against the catalogue horizon "
+        "(`RET_10S_NS // GRID_STEP_NS == HORIZON`). The grid STEP is a unit "
+        "of the experiment, not a Binance timestamp and not a policy "
+        "threshold -- the script's one threshold is imported from "
+        "harness/row_admission.py rather than respelled. Exploratory "
+        "analysis script, never imported by a feature, a label or the "
+        "harness"
+    ),
 }
 
 MUL_CALL_NAMES = frozenset({"mul", "__mul__", "__rmul__", "__imul__", "multiply"})
