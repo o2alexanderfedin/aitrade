@@ -578,6 +578,8 @@ tag-schema section below.
 
 **Enforcement.** Standard reporting includes both mid IC and fillable-proxy IC.
 
+**Status (2026-09-30).** PARTIALLY IMPLEMENTED, and the gap was real while it lasted: every `rank_ic` committed in Phase 7 is an IC on a **mid**, and the simulator's unconditional fill at the touch is what turned it into money (now registered as a simplification in [`mvp.md`](mvp.md)'s Monetization assumptions). `scripts/fill_skill_gap.py` now measures the fillable-proxy IC at the **decision-row** resolution — what a long or short entered and closed *at the touch* realises — because recovering the book ten seconds forward would mean a second copy of the features tier's forward index outside the tier. Measured on the five cached OOF blocks: rank IC +0.079 to +0.213 on the next row's mid change against +0.052 to +0.176 on the long fill, i.e. crossing the spread removes 17% to 33% of the skill, and the spread leaves 36% to 50% of the correct calls at or below zero. NOT yet wired into the standard report or into `models/slice.py`'s metrics; it is a manually-run zero-look script whose output is committed evidence.
+
 ### Data quality
 
 **Symptoms.** Crossed / locked books, exchange outages, stale BBO between updates; sparse-trade windows silently treated as zeros; trade-side classification errors propagating into flow features; snapshot/delta resync gaps; agg-trade aggregation hiding intra-window flow.
@@ -630,6 +632,8 @@ tag-schema section below.
 **Mitigations.** Stage-2 simulator owns execution from day 1; fast-alpha-decay curve reported per signal; adverse-selection patterns flagged in trade log (e.g., immediate-after-fill price reversion histogram).
 
 **Enforcement.** Standard report includes alpha-decay curve.
+
+**Status (2026-09-30).** The adverse-selection flag is NOT IMPLEMENTED: no immediate-after-fill reversion histogram exists anywhere in this repo, and the simulator fills unconditionally at the touch on the same decision row whose book produced the feature — no queue, no partial fill, nothing that could be adversely selected. That is now a registered simplification with its measured evidence in [`mvp.md`](mvp.md)'s Monetization assumptions, and the measurement says this pitfall's own symptom is the operative case here: the frozen predictor's sign agrees with the next row's mid change 91.5% to 96.0% of the time while its 10-second R² is 0.006 to 0.035, which is a contemporaneous queue-depletion signal rather than a forecast. What DOES exist is the mid-vs-fill skill gap (see "Label engineering" above) and a lag/lead sweep standing in for the alpha-decay curve (`scripts/oof_viability_check.py`'s `frozen_lag1`/`lag10`/`lag100`/`lead1`/`lead10` variants, evidence `07-oof-viability-results.json`); neither is the histogram, and neither is in the standard report.
 
 ### Production–research drift
 

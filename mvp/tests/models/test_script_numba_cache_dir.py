@@ -1,5 +1,11 @@
-"""`scripts/run_stage1_slice.py`'s OWN invocation path keeps the numba cache
+"""EVERY numba-reaching script's OWN invocation path keeps the numba cache
 outside the package tree -- the gap `tests/features/test_time_ns.py` leaves.
+
+THREE SCRIPTS, NOT ONE, since 2026-09-30. This file covered
+`scripts/run_stage1_slice.py` alone, so `scripts/oof_viability_check.py` and
+`scripts/fill_skill_gap.py` each copied its `setdefault` expression with nothing
+checking that they had. `NUMBA_REACHING_SCRIPTS` is the list; adding a script
+that reaches numba without adding it there leaves the same hole again.
 
 That test asserts the same property, and it can only ever assert it for the
 PYTEST path: `tests/conftest.py` pins `NUMBA_CACHE_DIR` at import time, and
@@ -26,10 +32,28 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 #: `mvp/` -- this file is `mvp/tests/models/test_script_numba_cache_dir.py`.
 PKG_TREE: Path = Path(__file__).resolve().parents[2]
 
 CACHE_ARTIFACT_SUFFIXES: tuple[str, ...] = (".nbi", ".nbc")
+
+#: EVERY script that reaches numba, with a token its own `--help` must print.
+#:
+#: PARAMETERISED RATHER THAN NAMING ONE SCRIPT, added 2026-09-30 with
+#: `scripts/fill_skill_gap.py`. This file asserted the property for
+#: `run_stage1_slice` alone, so two later scripts copied the `setdefault`
+#: expression with nothing checking that they had -- and a script that forgot it
+#: writes `.nbi`/`.nbc` into `mvp/sim/__pycache__`, a gitignored directory only a
+#: repo walk finds (STATE.md records this as a Phase 4 blocker). The token is
+#: per-script because a `--help` that printed the WRONG script's usage would mean
+#: the imports this test exists to exercise never ran.
+NUMBA_REACHING_SCRIPTS: tuple[tuple[str, str], ...] = (
+    ("scripts.run_stage1_slice", "--spend-val-look"),
+    ("scripts.oof_viability_check", "--counters-only"),
+    ("scripts.fill_skill_gap", "--counters-only"),
+)
 
 
 def _env_without_numba_cache_dir() -> dict[str, str]:
@@ -47,7 +71,8 @@ def _cache_artifacts_under(root: Path) -> set[Path]:
     }
 
 
-def test_the_script_pins_numba_cache_dir_outside_the_package_tree():
+@pytest.mark.parametrize(("module_name", "_token"), NUMBA_REACHING_SCRIPTS)
+def test_the_script_pins_numba_cache_dir_outside_the_package_tree(module_name, _token):
     """The child process, with the variable UNSET in its environment, ends up
     with it set to a path that is not inside `mvp/`.
 
@@ -65,7 +90,7 @@ def test_the_script_pins_numba_cache_dir_outside_the_package_tree():
         [
             sys.executable,
             "-c",
-            "import scripts.run_stage1_slice as module; "
+            f"import {module_name} as module; "
             "import os; "
             "assert module is not None; "
             "print(os.environ['NUMBA_CACHE_DIR'])",
@@ -84,7 +109,10 @@ def test_the_script_pins_numba_cache_dir_outside_the_package_tree():
     )
 
 
-def test_running_the_script_leaves_no_numba_cache_artifact_under_mvp():
+@pytest.mark.parametrize(("module_name", "token"), NUMBA_REACHING_SCRIPTS)
+def test_running_the_script_leaves_no_numba_cache_artifact_under_mvp(
+    module_name, token
+):
     """`--help` exercises every module-scope import (the numba-reaching ones
     included) and must leave nothing behind under `mvp/`.
 
@@ -94,15 +122,15 @@ def test_running_the_script_leaves_no_numba_cache_artifact_under_mvp():
     """
     before = _cache_artifacts_under(PKG_TREE)
     completed = subprocess.run(
-        [sys.executable, "-m", "scripts.run_stage1_slice", "--help"],
+        [sys.executable, "-m", module_name, "--help"],
         cwd=PKG_TREE,
         env=_env_without_numba_cache_dir(),
         capture_output=True,
         text=True,
     )
     assert completed.returncode == 0, completed.stderr
-    assert "--spend-val-look" in completed.stdout, (
-        "--help printed something that is not this script's usage, so the "
+    assert token in completed.stdout, (
+        f"--help printed something that is not {module_name}'s usage, so the "
         "imports it was supposed to exercise may not have run"
     )
     new = _cache_artifacts_under(PKG_TREE) - before

@@ -46,6 +46,18 @@ Both stages are designed for **rolling windows with periodic re-training**; walk
 - **Exit / flip**: opposite-direction prediction crossing TOB by X bps. No time-based exit.
 - **Risk**: max position $100 notional. No risk increase from a non-zero position — once long, only short orders allowed; once short, only long.
 - **Liquidity removal not tracked**: simulator does not deduct our fills from the book or otherwise update it. Our orders are treated as non-impacting. Consistent with the small-position and zero-impact assumptions; revisited when capacity / market-impact realism is added.
+- **Unconditional fill at the touch** — *registered 2026-09-30; this is the simplification that carries the P&L, not a footnote to it.* The simulator fills the whole 0.001 BTC lot at `ask_ticks[i]` (long) or `bid_ticks[i]` (short) **on the same decision row whose book produced the feature**: no queue position, no partial fill, no adverse selection, and no check that the quote is still there when the order arrives. Removing it is queue items 4 and 5 below, and *that removal is where a "Net P&L > 0" claim on this model is most likely to be lost* — a reader of such a claim should read this bullet first.
+
+  **What was measured** (zero-look OOF viability run and skill-gap run on the five cached OOF blocks; `.planning/phases/07-regression-track-vertical-slice/evidence/07-oof-viability-results.json` and `07-fill-skill-gap.json`, produced by `scripts/oof_viability_check.py` and `scripts/fill_skill_gap.py`):
+
+  - The frozen predictor's **sign agrees with the next row's mid change 91.5% to 96.0%** of the time (82.5% to 94.6% tick-weighted) while its 10-second R² is only 0.006 to 0.035. The skill it monetises is therefore contemporaneous, not a forecast: `imb_top` at lag 0 is **top-of-book queue depletion** — the best bid shrinking toward zero is what precedes the bid ticking down. Monetising that requires being filled at a quote that is about to disappear, which is exactly what this assumption grants for free.
+  - **Crossing the spread removes 17% to 33% of the decision-row skill**: rank IC +0.079 to +0.213 against the next row's mid change, against +0.052 to +0.176 for what a long entered and closed *at the touch* actually realises.
+  - Of the rows where the mid moved the way the prediction said, **the spread leaves 36% to 50% of them at or below zero** (6,500 of 13,003 on `oof_block_0`; 74,874 of 208,448 on `oof_block_4`).
+  - Delaying the prediction by a single decision row already costs P&L on **all five** blocks — `frozen_lag1` retains 96.7% to 98.3% — and delaying it by a hundred rows retains only 28.8% to 51.5%. The edge is that shallow in time, which is why "the quote is still there when the order arrives" is the load-bearing part of this assumption rather than the fill price.
+
+  **What removing it would require**: an L1-aware fill model (does our order cross, and at what depth), a queue-position model at the touch (where in the FIFO queue our order sits, and whether the quote is consumed before we reach it), and an adverse-selection accounting of fills that happen *because* someone better informed traded. Those are queue items 4 and 5, and the measurement above says the ordering question — which simplification to remove first — should weigh them against item 1 rather than after it.
+
+  **What `spec.md` already asked for, and what exists**: its "Label engineering" pitfall requires "IC on mid and IC on a fillable proxy" and its "Forecast-vs-execution gap" pitfall requires an "immediate-after-fill price reversion histogram". The **skill-gap IC now exists** (`scripts/fill_skill_gap.py`, numbers above). The **reversion histogram does not** — see `spec.md`'s own status notes on both.
 
 ## Decision logic (explicit)
 
@@ -257,3 +269,5 @@ Order is informed by R1 and will be locked at MVP exit:
 7. Funding-rate P&L.
 
 Each removal is its own version with its own gate: net P&L > 0 must hold; Sharpe will compress and that's expected.
+
+**Items 4 and 5 together remove the "unconditional fill at the touch" assumption** (see the Monetization assumptions above), and the 2026-09-30 measurement says that pair — not item 1 — is where this model's P&L actually lives: the frozen predictor's edge is a contemporaneous queue-depletion signal read off the same book row it trades on, crossing the spread already removes 17% to 33% of its decision-row skill, and the spread leaves 36% to 50% of its correct calls at or below zero. Q2's "first simplification to remove post-MVP" should be decided against that number rather than against the order as listed here.

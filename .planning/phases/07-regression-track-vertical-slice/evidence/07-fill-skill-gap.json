@@ -1,0 +1,316 @@
+{
+  "blocks": [
+    {
+      "fraction_of_those_rows_the_spread_ate": 0.499884642005691,
+      "metrics_by_target": {
+        "fill_next_row_long_ticks": {
+          "n_scorable": 4137071,
+          "r2_vs_mean": -0.35985834168800457,
+          "r2_vs_zero": -3.651309055108243e-07,
+          "r2_vs_zero_of_constant_train_mean": -6.248809416575796e-07,
+          "rank_ic_all": 0.05246575090962411,
+          "rank_ic_non_tied": 0.04865014835918053,
+          "tie_fraction": 0.00023639913358992388
+        },
+        "fill_next_row_short_ticks_negated": {
+          "n_scorable": 4137071,
+          "r2_vs_mean": -0.3848255371206146,
+          "r2_vs_zero": 8.647115421478446e-07,
+          "r2_vs_zero_of_constant_train_mean": 6.561778793656714e-07,
+          "rank_ic_all": 0.04631908922242314,
+          "rank_ic_non_tied": 0.0422618453504965,
+          "tie_fraction": 0.00023833286883401323
+        },
+        "mid_10s_return_the_committed_label": {
+          "n_scorable": 4136549,
+          "r2_vs_mean": 0.009736076500956536,
+          "r2_vs_zero": 0.010068959869910077,
+          "r2_vs_zero_of_constant_train_mean": -0.0007357568828887384,
+          "rank_ic_all": 0.3325074101014716,
+          "rank_ic_non_tied": 0.34270329185179965,
+          "tie_fraction": 0.7023030550345227
+        },
+        "mid_next_row_change_half_ticks": {
+          "n_scorable": 4137071,
+          "r2_vs_mean": 2.3865868981065574e-07,
+          "r2_vs_zero": 2.38699935484199e-07,
+          "r2_vs_zero_of_constant_train_mean": 5.437539307706629e-12,
+          "rank_ic_all": 0.07874353866215664,
+          "rank_ic_non_tied": 0.7025794546310871,
+          "tie_fraction": 0.9965666530741194
+        }
+      },
+      "of_those_rows_the_spread_ate": 6500,
+      "rank_ic_gap_mid_next_row_minus_long_fill": 0.026277787752532526,
+      "rank_ic_gap_mid_next_row_minus_short_fill": 0.032424449439733494,
+      "rows": 4137073,
+      "rows_scored": 4137072,
+      "rows_where_the_mid_moved_the_predicted_way": 13003,
+      "segment_name": "oof_block_0",
+      "spread_ticks_mean": 1.0339135905989574,
+      "spread_ticks_min": 1
+    },
+    {
+      "fraction_of_those_rows_the_spread_ate": 0.3981881820053531,
+      "metrics_by_target": {
+        "fill_next_row_long_ticks": {
+          "n_scorable": 6864851,
+          "r2_vs_mean": -0.20639227152290274,
+          "r2_vs_zero": -1.1014462786285151e-07,
+          "r2_vs_zero_of_constant_train_mean": -3.9868040069279687e-07,
+          "rank_ic_all": 0.10285865301924423,
+          "rank_ic_non_tied": 0.09742035111423594,
+          "tie_fraction": 0.0005338790310233973
+        },
+        "fill_next_row_short_ticks_negated": {
+          "n_scorable": 6864851,
+          "r2_vs_mean": -0.209195641992163,
+          "r2_vs_zero": 8.572558920505458e-07,
+          "r2_vs_zero_of_constant_train_mean": 4.036515498517801e-07,
+          "rank_ic_all": 0.09204702494960813,
+          "rank_ic_non_tied": 0.086005466359216,
+          "tie_fraction": 0.0005410168407151153
+        },
+        "mid_10s_return_the_committed_label": {
+          "n_scorable": 6864851,
+          "r2_vs_mean": 0.03474623352527051,
+          "r2_vs_zero": 0.034759227056968656,
+          "r2_vs_zero_of_constant_train_mean": -9.241723526454138e-06,
+          "rank_ic_all": 0.3656661556466067,
+          "rank_ic_non_tied": 0.37523568416998265,
+          "tie_fraction": 0.4388969258036336
+        },
+        "mid_next_row_change_half_ticks": {
+          "n_scorable": 6864851,
+          "r2_vs_mean": 2.9767403286751204e-07,
+          "r2_vs_zero": 4.542895432058103e-07,
+          "r2_vs_zero_of_constant_train_mean": -2.9992164307657276e-10,
+          "rank_ic_all": 0.12437266163198343,
+          "rank_ic_non_tied": 0.7262652713397372,
+          "tie_fraction": 0.9925768235901988
+        }
+      },
+      "of_those_rows_the_spread_ate": 19340,
+      "rank_ic_gap_mid_next_row_minus_long_fill": 0.021514008612739208,
+      "rank_ic_gap_mid_next_row_minus_short_fill": 0.0323256366823753,
+      "rows": 6864853,
+      "rows_scored": 6864852,
+      "rows_where_the_mid_moved_the_predicted_way": 48570,
+      "segment_name": "oof_block_1",
+      "spread_ticks_mean": 1.0470215458364514,
+      "spread_ticks_min": 1
+    },
+    {
+      "fraction_of_those_rows_the_spread_ate": 0.3642401583461623,
+      "metrics_by_target": {
+        "fill_next_row_long_ticks": {
+          "n_scorable": 11291363,
+          "r2_vs_mean": -0.13103052198791598,
+          "r2_vs_zero": 3.565193857912874e-07,
+          "r2_vs_zero_of_constant_train_mean": -2.6380088735677987e-07,
+          "rank_ic_all": 0.13912029525915526,
+          "rank_ic_non_tied": 0.132064066787304,
+          "tie_fraction": 0.0009812810021252527
+        },
+        "fill_next_row_short_ticks_negated": {
+          "n_scorable": 11291363,
+          "r2_vs_mean": -0.12986041121227188,
+          "r2_vs_zero": 6.540936353660598e-07,
+          "r2_vs_zero_of_constant_train_mean": 2.611347060810232e-07,
+          "rank_ic_all": 0.14245307852375486,
+          "rank_ic_non_tied": 0.13548915867914113,
+          "tie_fraction": 0.0009577231730128595
+        },
+        "mid_10s_return_the_committed_label": {
+          "n_scorable": 11285127,
+          "r2_vs_mean": 0.01818716669926823,
+          "r2_vs_zero": 0.01837205525443386,
+          "r2_vs_zero_of_constant_train_mean": 0.00011052428006563808,
+          "rank_ic_all": 0.243905653946885,
+          "rank_ic_non_tied": 0.2432813180766248,
+          "tie_fraction": 0.12264602782051101
+        },
+        "mid_next_row_change_half_ticks": {
+          "n_scorable": 11291363,
+          "r2_vs_mean": 2.0656847055100513e-07,
+          "r2_vs_zero": 4.736324908938272e-07,
+          "r2_vs_zero_of_constant_train_mean": 2.730253800820037e-10,
+          "rank_ic_all": 0.17464460088099495,
+          "rank_ic_non_tied": 0.729185936216188,
+          "tie_fraction": 0.9853219668874342
+        }
+      },
+      "of_those_rows_the_spread_ate": 57967,
+      "rank_ic_gap_mid_next_row_minus_long_fill": 0.0355243056218397,
+      "rank_ic_gap_mid_next_row_minus_short_fill": 0.0321915223572401,
+      "rows": 11291365,
+      "rows_scored": 11291364,
+      "rows_where_the_mid_moved_the_predicted_way": 159145,
+      "segment_name": "oof_block_2",
+      "spread_ticks_mean": 1.0733630522084796,
+      "spread_ticks_min": 1
+    },
+    {
+      "fraction_of_those_rows_the_spread_ate": 0.35831523331581466,
+      "metrics_by_target": {
+        "fill_next_row_long_ticks": {
+          "n_scorable": 12142145,
+          "r2_vs_mean": -0.06836081153648732,
+          "r2_vs_zero": 2.3191697517965792e-07,
+          "r2_vs_zero_of_constant_train_mean": -1.3910601537325817e-07,
+          "rank_ic_all": 0.15619071498627138,
+          "rank_ic_non_tied": 0.14956590332253902,
+          "tie_fraction": 0.0010470143454883796
+        },
+        "fill_next_row_short_ticks_negated": {
+          "n_scorable": 12142145,
+          "r2_vs_mean": -0.07323525777009166,
+          "r2_vs_zero": 5.365407684809753e-07,
+          "r2_vs_zero_of_constant_train_mean": 1.4890609034701185e-07,
+          "rank_ic_all": 0.15213145805654574,
+          "rank_ic_non_tied": 0.14507011863391692,
+          "tie_fraction": 0.0010551677648389143
+        },
+        "mid_10s_return_the_committed_label": {
+          "n_scorable": 12137022,
+          "r2_vs_mean": 0.005892776173814562,
+          "r2_vs_zero": 0.0059443440216429,
+          "r2_vs_zero_of_constant_train_mean": -5.067207271913787e-05,
+          "rank_ic_all": 0.1961522554218184,
+          "rank_ic_non_tied": 0.19209398569821598,
+          "tie_fraction": 0.12405333038038491
+        },
+        "mid_next_row_change_half_ticks": {
+          "n_scorable": 12142145,
+          "r2_vs_mean": -8.917008109676772e-08,
+          "r2_vs_zero": 3.9299230614187053e-07,
+          "r2_vs_zero_of_constant_train_mean": -2.7996960305642915e-10,
+          "rank_ic_all": 0.18881774509019605,
+          "rank_ic_non_tied": 0.7167308560387866,
+          "tie_fraction": 0.9811300227430986
+        }
+      },
+      "of_those_rows_the_spread_ate": 77041,
+      "rank_ic_gap_mid_next_row_minus_long_fill": 0.032627030103924676,
+      "rank_ic_gap_mid_next_row_minus_short_fill": 0.03668628703365032,
+      "rows": 12142146,
+      "rows_scored": 12142145,
+      "rows_where_the_mid_moved_the_predicted_way": 215009,
+      "segment_name": "oof_block_3",
+      "spread_ticks_mean": 1.1209112458374326,
+      "spread_ticks_min": 1
+    },
+    {
+      "fraction_of_those_rows_the_spread_ate": 0.35919749769726744,
+      "metrics_by_target": {
+        "fill_next_row_long_ticks": {
+          "n_scorable": 9814110,
+          "r2_vs_mean": -0.09617813440358591,
+          "r2_vs_zero": 3.4588473163399414e-07,
+          "r2_vs_zero_of_constant_train_mean": -1.920805769994871e-07,
+          "rank_ic_all": 0.17614620807063847,
+          "rank_ic_non_tied": 0.16843458839201955,
+          "tie_fraction": 0.0013117847670344024
+        },
+        "fill_next_row_short_ticks_negated": {
+          "n_scorable": 9814110,
+          "r2_vs_mean": -0.09667589374527163,
+          "r2_vs_zero": 7.783132569549878e-07,
+          "r2_vs_zero_of_constant_train_mean": 1.9284204033631624e-07,
+          "rank_ic_all": 0.17224596417745885,
+          "rank_ic_non_tied": 0.1642444402185722,
+          "tie_fraction": 0.0013063843792254213
+        },
+        "mid_10s_return_the_committed_label": {
+          "n_scorable": 9806089,
+          "r2_vs_mean": 0.0072295839867877465,
+          "r2_vs_zero": 0.007412121573559638,
+          "r2_vs_zero_of_constant_train_mean": 7.167908884875285e-05,
+          "rank_ic_all": 0.20989062693021981,
+          "rank_ic_non_tied": 0.20696756203839736,
+          "tie_fraction": 0.1150760512167491
+        },
+        "mid_next_row_change_half_ticks": {
+          "n_scorable": 9814110,
+          "r2_vs_mean": 4.92579353639222e-07,
+          "r2_vs_zero": 5.155827088598741e-07,
+          "r2_vs_zero_of_constant_train_mean": 6.663036788978616e-11,
+          "rank_ic_all": 0.2127362779678797,
+          "rank_ic_non_tied": 0.7274144833132797,
+          "tie_fraction": 0.9777478548742575
+        }
+      },
+      "of_those_rows_the_spread_ate": 74874,
+      "rank_ic_gap_mid_next_row_minus_long_fill": 0.03659006989724123,
+      "rank_ic_gap_mid_next_row_minus_short_fill": 0.04049031379042084,
+      "rows": 9814111,
+      "rows_scored": 9814110,
+      "rows_where_the_mid_moved_the_predicted_way": 208448,
+      "segment_name": "oof_block_4",
+      "spread_ticks_mean": 1.1156233101500483,
+      "spread_ticks_min": 1
+    }
+  ],
+  "frozen_predictor_manifest_id": "e3b4b235d0fe3c025be7c7cdbf7eaa3d2d5675ad9571d6f6a30b1a45680c2d01",
+  "generated_by": "mvp/scripts/fill_skill_gap.py",
+  "in_sample_disclosure": "These five OOF blocks chose the frozen winner and the frozen body was fitted on a train cache containing all five, so every number here is in sample twice over -- a diagnostic, not a performance claim. Same disclosure as 07-oof-viability-results.json.",
+  "look_counters_after": {
+    "counts": {
+      "807125015b252014ad8ee5282a21b2eccbfe01a287122cce5512ec9885aa3548": {
+        "held_out": 0,
+        "oof_block_0": 1,
+        "oof_block_1": 1,
+        "oof_block_2": 1,
+        "oof_block_3": 1,
+        "oof_block_4": 1,
+        "train": 0,
+        "val": 0
+      },
+      "97964cb27f62aa07201e2e52f788240d4f7801582c7cac25ac21107aa9e330e2": {
+        "held_out": 0,
+        "oof_block_0": 0,
+        "oof_block_1": 0,
+        "oof_block_2": 0,
+        "oof_block_3": 0,
+        "oof_block_4": 0,
+        "train": 0,
+        "val": 0
+      }
+    },
+    "n_counters": 16,
+    "total": 5,
+    "tracking_root": "/Volumes/ProjectsSSD/aihedgefund/mlflow"
+  },
+  "look_counters_before": {
+    "counts": {
+      "807125015b252014ad8ee5282a21b2eccbfe01a287122cce5512ec9885aa3548": {
+        "held_out": 0,
+        "oof_block_0": 1,
+        "oof_block_1": 1,
+        "oof_block_2": 1,
+        "oof_block_3": 1,
+        "oof_block_4": 1,
+        "train": 0,
+        "val": 0
+      },
+      "97964cb27f62aa07201e2e52f788240d4f7801582c7cac25ac21107aa9e330e2": {
+        "held_out": 0,
+        "oof_block_0": 0,
+        "oof_block_1": 0,
+        "oof_block_2": 0,
+        "oof_block_3": 0,
+        "oof_block_4": 0,
+        "train": 0,
+        "val": 0
+      }
+    },
+    "n_counters": 16,
+    "total": 5,
+    "tracking_root": "/Volumes/ProjectsSSD/aihedgefund/mlflow"
+  },
+  "only_rank_ic_is_comparable_across_targets": "The four targets have four different units (a return, half ticks, ticks, ticks). r2_vs_zero and r2_vs_mean are emitted per target for completeness and must NOT be compared between targets; Spearman rank correlation is scale-free, which is why the spec asks for IC.",
+  "predictor_id": "ff91c9aa2a595513f407c4a01ad794ebc4b5ccd3595c61d5dabdcc426298c3ff",
+  "segment_manifest_id": "807125015b252014ad8ee5282a21b2eccbfe01a287122cce5512ec9885aa3548",
+  "target_name_fitted": "ret_10s_mid",
+  "what_this_measures": "spec.md's 'report IC on mid and IC on a fillable proxy' for the committed frozen predictor, at the DECISION-ROW resolution: the next row's mid change against what a long or a short entered and closed at the touch actually realises. NOT the 10-second-horizon fillable return, which would need the book ten seconds forward and therefore a second copy of the features tier's forward index."
+}
