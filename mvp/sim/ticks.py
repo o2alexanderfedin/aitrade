@@ -28,13 +28,20 @@ import numpy as np
 from data.time_ns import QTY_SCALE
 
 __all__ = [
+    "INT64_MAX",
     "PRICE_SCALE",
     "TICK_SIZE_SCALED",
     "LOT_STEP_SCALED",
     "MAX_NOTIONAL_SCALED",
     "MAX_NOTIONAL_SCALED_INT64_BOUND",
+    "X_BPS_DENOMINATOR",
+    "X_BPS_SCALE",
+    "X_TICKS_DENOMINATOR",
     "price_to_ticks",
     "position_size_ticks",
+    "resolve_x_bps_scaled",
+    "x_bps_scaled_int64_bound",
+    "XThresholdError",
     "ZeroLotError",
     "NotionalOverflowError",
 ]
@@ -82,6 +89,53 @@ MAX_NOTIONAL_SCALED: int = 100 * PRICE_SCALE
 #: "orders of magnitude", contrary to the review's "not reachable in
 #: practice" framing. See `06-REVIEW-FIX.md` for this correction.
 MAX_NOTIONAL_SCALED_INT64_BOUND: int = (2**63 - 1) // QTY_SCALE
+
+#: Signed int64's ceiling, named once so the two overflow bounds in this module
+#: derive from one spelling rather than two copies of `2**63 - 1`.
+INT64_MAX: int = 2**63 - 1
+
+#: The denominator of `spec.md`'s "crosses TOB by X bps" threshold, as a named
+#: constant rather than the bare `20_000` that `sim/kernel.py` and
+#: `sim/reference.py` each used to spell inline.
+#:
+#: TWENTY thousand, not ten: the threshold is derived from `bid_ticks +
+#: ask_ticks`, which is TWICE the mid, because the kernel is given the two
+#: integer book sides and never a float mid (D-06-07). The factor of two lives
+#: in this denominator instead of in a division that would leave integer
+#: arithmetic.
+X_BPS_DENOMINATOR: int = 20_000
+
+#: The unit `x_bps_scaled` counts in: one unit is `1 / X_BPS_SCALE` of a basis
+#: point, i.e. 1e-4 bps.
+#:
+#: WHY THE BPS UNIT NEEDED SUBDIVIDING AT ALL. `spec.md` parameterises Stage 2
+#: as "trade when predicted midprice crosses TOB by X bps (X swept)", and an
+#: integer X made that sweep degenerate at BTC's price: the zero-look OOF
+#: viability run measured ONE basis point at 74 to 79 ticks on the five cached
+#: blocks, while the frozen predictor clears the touch by at most a few ticks.
+#: `x_bps=1` therefore produced zero trigger rows and zero trades on every
+#: block -- not a smaller trade set, an empty one -- leaving `x_bps=0` as the
+#: only feasible value of a swept hyperparameter.
+#:
+#: 10_000 is chosen so ONE TICK of threshold is expressible with room to spare
+#: at this venue and price: at `bid + ask = 1_540_001` (a one-tick spread
+#: around $77,000) one tick is 130 units and a whole basis point is 770_000
+#: units, so the sweep axis has ~77 reachable sub-tick steps per tick instead
+#: of a single 77-tick jump. It is NOT a time scale and is deliberately outside
+#: `tools.check_ms_to_ns_site`'s `{1e3, 1e6, 1e9}` family, exactly like
+#: `PRICE_SCALE` and `data.time_ns.QTY_SCALE` already are.
+X_BPS_SCALE: int = 10_000
+
+#: `x_ticks = (bid_ticks + ask_ticks) * x_bps_scaled // X_TICKS_DENOMINATOR`,
+#: the ONE formula both the `@njit` kernel and its pure-Python twin apply.
+#:
+#: The pre-subdivision spelling is recovered EXACTLY, not approximately: for
+#: every non-negative integer `k`,
+#: `k * X_BPS_SCALE // X_TICKS_DENOMINATOR == k // X_BPS_DENOMINATOR`, because
+#: both sides are `floor(k / 20_000)`. That integer identity is what makes
+#: `x_bps=1` and `x_bps_scaled=X_BPS_SCALE` the same threshold, and what makes
+#: `x_bps=0` byte-identical to every previously committed simulation.
+X_TICKS_DENOMINATOR: int = X_BPS_DENOMINATOR * X_BPS_SCALE
 
 #: The largest discrepancy tolerated between a price and its nearest
 #: `PRICE_SCALE` grid point before it is judged "not representable at this
@@ -149,6 +203,121 @@ def price_to_ticks(price: np.ndarray) -> np.ndarray:
         )
 
     return ticks
+
+
+class XThresholdError(ValueError):
+    """The X threshold was given in a form that cannot be honoured exactly.
+
+    A named subclass rather than a bare `ValueError`, for
+    `sim.kernel.SimStatusError`'s own stated reason: a caller writing
+    `pytest.raises(ValueError)` to mean "the threshold was refused" would
+    otherwise also be satisfied by "the kernel refused a dtype".
+    """
+
+
+def resolve_x_bps_scaled(
+    x_bps: int | float | None = None, x_bps_scaled: int | float | None = None
+) -> int:
+    """The one threshold both simulator implementations actually use, in units
+    of `1 / X_BPS_SCALE` basis points.
+
+    EXACTLY ONE of the two knobs may be given; neither means a zero threshold,
+    which is every committed measurement in phases 6 and 7.
+
+    - `x_bps` is WHOLE basis points and is multiplied by `X_BPS_SCALE`.
+    - `x_bps_scaled` is already in the fine unit and is returned as given.
+
+    A FRACTIONAL `x_bps` IS REFUSED, NOT ROUNDED. `run_sim_checked` used to
+    coerce with `int(x_bps)`, so `x_bps=0.5` silently became `x_bps=0` -- and
+    zero is the one value known to trade, so the run looked healthy while
+    simulating a threshold nobody asked for. Rounding it here would repair the
+    symptom and keep the defect; the refusal names `x_bps_scaled`, which CAN
+    express half a basis point (as 5_000), so the caller has somewhere to go.
+    An exactly-integral float (`2.0`) and a numpy integer are both accepted --
+    the refusal is about losing a fraction, not about the Python type.
+
+    A NEGATIVE THRESHOLD IS REFUSED. It is not a smaller X, it is a different
+    rule: `//` floors toward minus infinity, so a negative value yields a
+    negative `x_ticks` and the kernel fires on predictions that have not
+    reached the touch at all. Measured at HEAD before this refusal existed:
+    `x_bps=-1` traded on all 4,000 rows of a walk where `x_bps=0` traded 1,531
+    times.
+    """
+    if x_bps is not None and x_bps_scaled is not None:
+        raise XThresholdError(
+            "resolve_x_bps_scaled: pass exactly one of x_bps (whole basis "
+            f"points) or x_bps_scaled (units of 1/{X_BPS_SCALE} bps); got "
+            f"x_bps={x_bps!r} and x_bps_scaled={x_bps_scaled!r}. Two spellings "
+            "of one threshold cannot be reconciled here without guessing which "
+            "the caller meant"
+        )
+    if x_bps is None and x_bps_scaled is None:
+        return 0
+    if x_bps is not None:
+        whole = _as_exact_integer(
+            x_bps,
+            "x_bps",
+            f"whole basis points only -- use x_bps_scaled for a finer "
+            f"threshold (one unit is 1/{X_BPS_SCALE} bps, so {X_BPS_SCALE // 2} "
+            "is half a basis point)",
+        )
+        scaled = whole * X_BPS_SCALE
+    else:
+        scaled = _as_exact_integer(
+            x_bps_scaled,
+            "x_bps_scaled",
+            f"already counted in units of 1/{X_BPS_SCALE} bps, so a fraction "
+            "of one unit has no meaning",
+        )
+    if scaled < 0:
+        raise XThresholdError(
+            f"resolve_x_bps_scaled: negative threshold ({scaled} at "
+            f"1/{X_BPS_SCALE} bps) -- a negative X is not a smaller threshold "
+            "but a different rule: the floor division yields a negative "
+            "x_ticks and the decision fires on a prediction that has not "
+            "reached the touch, i.e. it trades inside the spread"
+        )
+    return int(scaled)
+
+
+def _as_exact_integer(value: int | float, name: str, remedy: str) -> int:
+    """`value` as a Python `int`, refusing anything that would lose a fraction.
+
+    Accepts `int`, numpy integers and exactly-integral floats; refuses a
+    fractional float and a non-numeric value, naming the remedy.
+    """
+    try:
+        as_int = int(value)
+    except (TypeError, ValueError) as error:
+        raise XThresholdError(
+            f"resolve_x_bps_scaled: {name}={value!r} is not a number -- {remedy}"
+        ) from error
+    if as_int != value:
+        raise XThresholdError(
+            f"resolve_x_bps_scaled: {name}={value!r} is not an integer and "
+            f"would be TRUNCATED to {as_int} -- {remedy}"
+        )
+    return as_int
+
+
+def x_bps_scaled_int64_bound(book_sum: int) -> int:
+    """The largest `x_bps_scaled` for which `(bid_ticks + ask_ticks) *
+    x_bps_scaled` cannot overflow int64, given the largest `bid_ticks +
+    ask_ticks` a frame carries.
+
+    WHY THIS IS CHECKED AND NOT ASSUMED, in `MAX_NOTIONAL_SCALED_INT64_BOUND`'s
+    register: that product is int64 inside the `@njit` body, where an overflow
+    WRAPS rather than raising, and a wrapped product can land NEGATIVE -- which
+    is `resolve_x_bps_scaled`'s refused negative-threshold rule arrived at
+    silently, on a run that reports trades and a P&L. Unreachable by a real
+    sweep (it takes an X of order 1e8 basis points) and cheap to refuse.
+    """
+    if book_sum <= 0:
+        raise XThresholdError(
+            f"x_bps_scaled_int64_bound: book_sum={book_sum} is not positive, so "
+            "it is not a sum of two tick counts"
+        )
+    return INT64_MAX // int(book_sum)
 
 
 class NotionalOverflowError(ValueError):

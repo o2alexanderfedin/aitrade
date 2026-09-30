@@ -64,15 +64,35 @@ tie-break asymmetry" finding is the bug report it closes.
 
 `X_price` is derived from the integer `bid_ticks`/`ask_ticks` the kernel
 is given, never from a float `mid`: `x_ticks = (bid_ticks[i] +
-ask_ticks[i]) * x_bps // 20_000` (twice the mid, one floor division) --
-ONE formula, applied as `+x_ticks` on the long side and `-x_ticks` on the
-short side, unchanged by this fix (`x_ticks`'s own symmetry was never in
-question -- only the two `pred_ticks` comparisons it is added to/
-subtracted from were asymmetric). `test_quantised_threshold_is_symmetric_at_0_4_ticks`
+ask_ticks[i]) * x_bps_scaled // X_TICKS_DENOMINATOR` (twice the mid, one
+floor division) -- ONE formula, applied as `+x_ticks` on the long side and
+`-x_ticks` on the short side, unchanged by the quantisation fix
+(`x_ticks`'s own symmetry was never in question -- only the two
+`pred_ticks` comparisons it is added to/subtracted from were asymmetric).
+`test_quantised_threshold_is_symmetric_at_0_4_ticks`
 still proves the partial-tick-overshoot case with worked arithmetic,
 re-derived under the new floor/ceil rule (its own numeric conclusions
 are unchanged -- both an ask-side and a bid-side 0.4-tick overshoot still
 produce zero trades, by a different mechanism than before).
+
+THE THRESHOLD IS COUNTED IN 1e-4 BASIS POINTS, NOT IN WHOLE ONES (added
+2026-09-29, after the zero-look OOF viability run measured the integer
+knob's granularity). `x_bps_scaled` is in units of `1 / X_BPS_SCALE` bps;
+`run_sim_checked` still takes `x_bps` for whole basis points and scales
+it through `sim.ticks.resolve_x_bps_scaled`. WHY: at BTC's price one
+whole basis point is 74 to 79 ticks (measured on the five cached OOF
+blocks), and the frozen predictor clears the touch by at most a few
+ticks -- so `x_bps=1` produced ZERO trigger rows and ZERO trades on every
+block, leaving `spec.md`'s swept X with exactly one feasible value. The
+recovery of the previous spelling is an EXACT integer identity, not an
+approximation: `k * X_BPS_SCALE // X_TICKS_DENOMINATOR == k // 20_000`
+for every non-negative `k`, so `x_bps=0` -- every committed figure in
+phases 6 and 7 -- is byte-identical, and `x_bps=1` is the same 74-to-79
+ticks it always was. `tests/sim/test_x_threshold.py` is where both the
+identity and the new granularity are asserted; that file also carries the
+sweep in which the denominator is load-bearing, because every pre-existing
+kernel-vs-twin comparison runs at `x_bps=0` and `0 * anything //
+anything` is 0 whatever the denominator is.
 
 D-06-08/Q13: position size is recomputed FRESH at every entry/flip from
 the CURRENT fill price (`ask_ticks[i]` for a long fill, `bid_ticks[i]` for
@@ -157,6 +177,10 @@ from sim.ticks import (
     MAX_NOTIONAL_SCALED_INT64_BOUND,
     PRICE_SCALE,
     TICK_SIZE_SCALED,
+    X_TICKS_DENOMINATOR,
+    XThresholdError,
+    resolve_x_bps_scaled,
+    x_bps_scaled_int64_bound,
 )
 
 __all__ = [
@@ -258,7 +282,7 @@ def run_sim(
     bid_ticks,
     ask_ticks,
     pred,
-    x_bps,
+    x_bps_scaled,
     max_notional_scaled,
     lot_step_scaled,
     fee_bps,
@@ -352,8 +376,13 @@ def run_sim(
         a = ask_ticks[i]
         # ONE formula, applied identically as +x_ticks (long) / -x_ticks
         # (short) -- the symmetry this buys is proven in
-        # test_quantised_threshold_is_symmetric_at_0_4_ticks.
-        x_ticks = (b + a) * x_bps // 20_000
+        # test_quantised_threshold_is_symmetric_at_0_4_ticks. `x_bps_scaled`
+        # is in units of 1/X_BPS_SCALE bps (see the module docstring's
+        # "THE THRESHOLD IS COUNTED IN 1e-4 BASIS POINTS" section); at
+        # x_bps_scaled=0 this is 0 whatever the denominator is, which is why
+        # `tests/sim/test_x_threshold.py` had to add a nonzero-threshold
+        # sweep for the denominator to be load-bearing anywhere.
+        x_ticks = (b + a) * x_bps_scaled // X_TICKS_DENOMINATOR
 
         long_trigger = pred_ticks_floor > a + x_ticks
         short_trigger = pred_ticks_ceil < b - x_ticks
@@ -486,7 +515,8 @@ def run_sim_checked(
     ask_ticks: np.ndarray,
     pred: np.ndarray,
     *,
-    x_bps: int = 0,
+    x_bps: int | float | None = None,
+    x_bps_scaled: int | float | None = None,
     max_notional_scaled: int = MAX_NOTIONAL_SCALED,
     lot_step_scaled: int = LOT_STEP_SCALED,
     fee_bps: int = 0,
@@ -496,6 +526,15 @@ def run_sim_checked(
     """`run_sim` over bare numpy decision-row arrays, raising
     `SimStatusError` on a negative status. This is what everything outside
     this module calls.
+
+    THE THRESHOLD TAKES TWO SPELLINGS AND EXACTLY ONE MAY BE GIVEN:
+    `x_bps` in whole basis points, or `x_bps_scaled` in units of
+    `1 / sim.ticks.X_BPS_SCALE` bps for the sub-basis-point thresholds a
+    real Stage-2 sweep needs (see the module docstring, and
+    `sim.ticks.resolve_x_bps_scaled` for the refusals). Neither given is a
+    zero threshold, which is what every committed figure in phases 6 and 7
+    was measured at -- and `x_bps=0`, `x_bps_scaled=0` and the default are
+    byte-identical by an exact integer identity, not by a tolerance.
 
     `fee_bps`/`latency_ns` default to 0 HERE (D-06-16), not on `run_sim`
     itself -- numba `@njit` does not reliably support keyword defaults
@@ -518,6 +557,26 @@ def run_sim_checked(
     if pred.dtype != np.float64:
         raise ValueError("run_sim_checked: pred must be float64")
 
+    threshold_scaled = resolve_x_bps_scaled(x_bps=x_bps, x_bps_scaled=x_bps_scaled)
+    if threshold_scaled and bid_ticks.shape[0]:
+        # `(b + a) * x_bps_scaled` is int64 INSIDE the @njit body, where an
+        # overflow wraps silently and can land negative -- i.e. the
+        # negative-threshold rule `resolve_x_bps_scaled` refuses, arrived at
+        # without a refusal. Checked once here, against this frame's own
+        # largest book sum, and skipped entirely at a zero threshold so the
+        # committed x_bps=0 path does no extra work at all.
+        book_sum = int(bid_ticks.max()) + int(ask_ticks.max())
+        bound = x_bps_scaled_int64_bound(book_sum)
+        if threshold_scaled > bound:
+            raise XThresholdError(
+                f"run_sim_checked: x_bps_scaled={threshold_scaled} exceeds "
+                f"{bound}, the largest threshold for which (bid_ticks + "
+                f"ask_ticks) * x_bps_scaled stays inside int64 at this frame's "
+                f"largest book sum ({book_sum}) -- the @njit body would WRAP "
+                "that product, and a wrapped product can land negative, which "
+                "trades inside the spread on every row"
+            )
+
     if state is None:
         state = new_state()
 
@@ -530,7 +589,7 @@ def run_sim_checked(
         bid_ticks,
         ask_ticks,
         pred,
-        int(x_bps),
+        threshold_scaled,
         int(max_notional_scaled),
         int(lot_step_scaled),
         int(fee_bps),

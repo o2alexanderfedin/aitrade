@@ -26,7 +26,13 @@ import math
 import numpy as np
 
 from sim.outputs import SimResult, new_trade_log
-from sim.ticks import PRICE_SCALE, TICK_SIZE_SCALED, position_size_ticks
+from sim.ticks import (
+    PRICE_SCALE,
+    TICK_SIZE_SCALED,
+    X_TICKS_DENOMINATOR,
+    position_size_ticks,
+    resolve_x_bps_scaled,
+)
 
 __all__ = ["run_reference_sim"]
 
@@ -37,7 +43,8 @@ def run_reference_sim(
     ask_ticks: np.ndarray,
     pred: np.ndarray,
     *,
-    x_bps: int = 0,
+    x_bps: int | float | None = None,
+    x_bps_scaled: int | float | None = None,
     max_notional_scaled: int | None = None,
     lot_step_scaled: int | None = None,
     fee_bps: int = 0,
@@ -51,8 +58,20 @@ def run_reference_sim(
     (see `tests/sim/test_kernel.py`'s strategy docstring); this twin is
     not required to reproduce the kernel's specific status-code vocabulary,
     only its arithmetic on the happy path.
+
+    `x_bps` (whole basis points) and `x_bps_scaled` (units of
+    `1 / sim.ticks.X_BPS_SCALE` bps) are the kernel's own two spellings of one
+    threshold, resolved through the same `sim.ticks.resolve_x_bps_scaled` the
+    kernel uses -- `sim.ticks` is the one module this twin is allowed to share
+    with the thing it checks (this module's own docstring, and the precedent
+    that it calls `position_size_ticks` directly). The int64 overflow bound is
+    NOT re-checked here: plain Python ints do not wrap, so this twin would
+    happily compute a product the kernel must refuse, and that asymmetry is
+    exactly what `run_sim_checked`'s own guard exists to prevent from reaching
+    the kernel at all.
     """
     n = int(etime.shape[0])
+    threshold_scaled = resolve_x_bps_scaled(x_bps=x_bps, x_bps_scaled=x_bps_scaled)
     trade_log = new_trade_log(n)
     equity_scaled = np.empty(n, dtype=np.int64)
 
@@ -88,7 +107,7 @@ def run_reference_sim(
 
         b = int(bid_ticks[i])
         a = int(ask_ticks[i])
-        x_ticks = (b + a) * int(x_bps) // 20_000
+        x_ticks = (b + a) * threshold_scaled // X_TICKS_DENOMINATOR
 
         long_trigger = pred_ticks_floor > a + x_ticks
         short_trigger = pred_ticks_ceil < b - x_ticks

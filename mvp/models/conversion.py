@@ -29,8 +29,8 @@ mid": a raw price level in the design matrix smuggles the day's trend into the
 fit, while the same column is REQUIRED to turn a return back into a price. The
 simulator itself never sees it -- `run_sim_checked` takes `bid_ticks`,
 `ask_ticks` and `pred`, and derives its threshold offset from the two book
-sides (`x_ticks = (b + a) * x_bps // 20_000`), so the kernel needs no mid at
-all.
+sides (`x_ticks = (b + a) * x_bps_scaled // X_TICKS_DENOMINATOR`), so the
+kernel needs no mid at all.
 
 AND `mid` MUST NEVER GO THROUGH `sim.ticks.price_to_ticks`. At a one-tick
 spread the mid sits exactly on a half tick -- 98.8% of real rows -- and
