@@ -421,7 +421,11 @@ def _clean_mask(grid: pl.DataFrame) -> np.ndarray:
 
 
 def _admissible_anchors(
-    clean: np.ndarray, anchor_ok: np.ndarray, *, stride: int
+    clean: np.ndarray,
+    anchor_ok: np.ndarray,
+    *,
+    stride: int,
+    admit_unclean: bool = False,
 ) -> np.ndarray:
     """Anchor bar indices at which a whole window is usable, every `stride`.
 
@@ -438,6 +442,15 @@ def _admissible_anchors(
 
     Implemented as a cumulative sum over `~clean` so the all-clean test is O(1)
     per candidate rather than O(CONTEXT).
+
+    `admit_unclean=True` IS THE SENSITIVITY ARM, not an option anyone should
+    use for a reported number. It keeps every window whose ANCHOR is usable and
+    drops the all-clean span requirement -- i.e. it admits the windows whose
+    512-bar context contains a forward-filled plateau across a capture hole, and
+    the windows whose 10-bar target straddles one. Exists so "the exclusion is
+    load-bearing" is a measurement rather than an assertion: run both and
+    compare. The anchor requirements are NOT relaxed, because a window with a
+    null feature or a null label has nothing to score at all.
     """
     n = clean.shape[0]
     unclean_cumsum = np.concatenate(
@@ -449,7 +462,10 @@ def _admissible_anchors(
     lo = candidates - (CONTEXT - 1)
     hi = candidates + HORIZON + 1
     span_unclean = unclean_cumsum[hi] - unclean_cumsum[lo]
-    return candidates[(span_unclean == 0) & anchor_ok[candidates]]
+    span_ok = (
+        np.ones(candidates.shape[0], dtype=bool) if admit_unclean else span_unclean == 0
+    )
+    return candidates[span_ok & anchor_ok[candidates]]
 
 
 def _export_block(
@@ -463,6 +479,7 @@ def _export_block(
     cache_root: Path,
     export_root: Path,
     stride: int,
+    admit_unclean: bool,
 ) -> dict[str, Any]:
     """One OOF block: cached frame in, one `.npz` and one summary dict out."""
     started = time.monotonic()
@@ -519,7 +536,10 @@ def _export_block(
     )
     del grid, features
 
-    anchors = _admissible_anchors(clean, anchor_ok, stride=stride)
+    anchors = _admissible_anchors(
+        clean, anchor_ok, stride=stride, admit_unclean=admit_unclean
+    )
+    strict = _admissible_anchors(clean, anchor_ok, stride=stride)
     if anchors.size == 0:
         raise ZeroLookViolation(
             f"timesfm_export_grid: {segment_name} yielded zero admissible "
@@ -554,6 +574,9 @@ def _export_block(
         "clean_fraction": float(clean.mean()),
         "anchor_ok_points": int(anchor_ok.sum()),
         "admissible_anchors": int(anchors.size),
+        "admit_unclean": bool(admit_unclean),
+        "admissible_anchors_strict": int(strict.size),
+        "anchors_the_gap_exclusion_removed": int(anchors.size - strict.size),
         "stale_ns_max": int(stale_ns.max()),
         "stale_ns_p50": float(np.percentile(stale_ns, 50)),
         "stale_ns_p99": float(np.percentile(stale_ns, 99)),
@@ -604,6 +627,15 @@ def main(argv: list[str] | None = None) -> int:
         help="comma-separated subset of oof_block names (default: all five)",
     )
     parser.add_argument("--stride", type=int, default=STRIDE)
+    parser.add_argument(
+        "--admit-unclean",
+        action="store_true",
+        help=(
+            "SENSITIVITY ARM ONLY: keep windows whose context or target spans a "
+            "capture hole, so the cost of excluding them can be measured "
+            "instead of asserted. Never for a reported number."
+        ),
+    )
     args = parser.parse_args(argv)
 
     registry_root = LAKE_REGISTRY_ROOT
@@ -695,6 +727,7 @@ def main(argv: list[str] | None = None) -> int:
                 cache_root=cache_root,
                 export_root=export_root,
                 stride=int(args.stride),
+                admit_unclean=bool(args.admit_unclean),
             )
         )
         mid_check = _counters(registry_root, tracking_root)
@@ -715,6 +748,7 @@ def main(argv: list[str] | None = None) -> int:
         "max_stale_ns": MAX_STALE_NS,
         "stride_bars": int(args.stride),
         "stride_exceeds_horizon": bool(int(args.stride) > HORIZON),
+        "admit_unclean": bool(args.admit_unclean),
         "segment_manifest_id": SEGMENT_MANIFEST_ID,
         "frozen_predictor_manifest_id": FROZEN_PREDICTOR_MANIFEST_ID,
         "predictor_id": predictor.predictor_id,

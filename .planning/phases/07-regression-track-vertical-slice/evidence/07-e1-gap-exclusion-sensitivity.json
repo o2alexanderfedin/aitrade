@@ -1,0 +1,106 @@
+{
+  "answer": "276 windows in 19,153 -- 1.4%. Every r2_vs_zero moves only in the fourth decimal and the verdict is identical on every block, so the headline does not rest on the exclusion. It stays in because a 512-bar context containing a forward-filled 100-minute plateau is not a midprice series whatever it scores.",
+  "generated_by": "manual comparison of two runs of scripts/timesfm_export_grid.py",
+  "per_block": [
+    {
+      "block": "oof_block_0",
+      "frozen_r2_loose": 0.00335351938459294,
+      "frozen_r2_strict": 0.0031954192810674797,
+      "n_scorable_loose": 3097,
+      "n_scorable_strict": 3011,
+      "r2_delta": 2.2364795217333366e-05,
+      "r2_vs_zero_loose": -0.008915360188427979,
+      "r2_vs_zero_strict": -0.008937724983645312,
+      "rank_ic_loose": 0.0335272721658583,
+      "rank_ic_strict": 0.03433533820901265,
+      "windows_admitting_gap_spanning": 3098,
+      "windows_strict": 3012,
+      "windows_the_exclusion_removed": 86
+    },
+    {
+      "block": "oof_block_1",
+      "frozen_r2_loose": 0.02954265621636043,
+      "frozen_r2_strict": 0.0295427257410229,
+      "n_scorable_loose": 4293,
+      "n_scorable_strict": 4292,
+      "r2_delta": -1.56008539420327e-12,
+      "r2_vs_zero_loose": -0.053218391821994615,
+      "r2_vs_zero_strict": -0.05321839182043453,
+      "rank_ic_loose": 0.05739757329903251,
+      "rank_ic_strict": 0.05739589238830827,
+      "windows_admitting_gap_spanning": 4294,
+      "windows_strict": 4293,
+      "windows_the_exclusion_removed": 1
+    },
+    {
+      "block": "oof_block_2",
+      "frozen_r2_loose": 0.01709752527931596,
+      "frozen_r2_strict": 0.01690461493631934,
+      "n_scorable_loose": 4118,
+      "n_scorable_strict": 4063,
+      "r2_delta": 0.0002302468373447386,
+      "r2_vs_zero_loose": -0.044016086453998016,
+      "r2_vs_zero_strict": -0.044246333291342754,
+      "rank_ic_loose": 0.01253609682644711,
+      "rank_ic_strict": 0.013810292066736654,
+      "windows_admitting_gap_spanning": 4119,
+      "windows_strict": 4064,
+      "windows_the_exclusion_removed": 55
+    },
+    {
+      "block": "oof_block_3",
+      "frozen_r2_loose": 0.009650667881034747,
+      "frozen_r2_strict": 0.00945019752323406,
+      "n_scorable_loose": 3810,
+      "n_scorable_strict": 3749,
+      "r2_delta": -1.3407421220135163e-05,
+      "r2_vs_zero_loose": -0.020713314528404636,
+      "r2_vs_zero_strict": -0.0206999071071845,
+      "rank_ic_loose": 0.004452136282215433,
+      "rank_ic_strict": 0.004749171449654756,
+      "windows_admitting_gap_spanning": 3811,
+      "windows_strict": 3750,
+      "windows_the_exclusion_removed": 61
+    },
+    {
+      "block": "oof_block_4",
+      "frozen_r2_loose": 0.008888727400638285,
+      "frozen_r2_strict": 0.00870316738021737,
+      "n_scorable_loose": 3830,
+      "n_scorable_strict": 3757,
+      "r2_delta": -0.0009868677329722964,
+      "r2_vs_zero_loose": -0.0836329283124373,
+      "r2_vs_zero_strict": -0.082646060579465,
+      "rank_ic_loose": 0.008042507413587053,
+      "rank_ic_strict": 0.00654532944411041,
+      "windows_admitting_gap_spanning": 3831,
+      "windows_strict": 3758,
+      "windows_the_exclusion_removed": 73
+    }
+  ],
+  "question": "What did the decision to exclude windows whose 512-bar context or 10-bar target spans a capture hole actually cost, and would the conclusion have differed without it?",
+  "verdict_admitting_gap_spanning": {
+    "blocks_where_frozen_r2_ci95_entirely_above_zero": [
+      "oof_block_1",
+      "oof_block_2",
+      "oof_block_3",
+      "oof_block_4"
+    ],
+    "blocks_where_timesfm_r2_ci95_entirely_above_zero": [],
+    "blocks_where_timesfm_r2_exceeds_zero_point_estimate": [],
+    "n_blocks": 5,
+    "timesfm_beats_constant_zero": false
+  },
+  "verdict_strict": {
+    "blocks_where_frozen_r2_ci95_entirely_above_zero": [
+      "oof_block_1",
+      "oof_block_2",
+      "oof_block_3",
+      "oof_block_4"
+    ],
+    "blocks_where_timesfm_r2_ci95_entirely_above_zero": [],
+    "blocks_where_timesfm_r2_exceeds_zero_point_estimate": [],
+    "n_blocks": 5,
+    "timesfm_beats_constant_zero": false
+  }
+}
