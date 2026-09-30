@@ -6,6 +6,20 @@
     "3": 3702,
     "4": 3653
   },
+  "bootstrap_width_diagnostic": {
+    "contrast": "btc_momentum_over_imb_alone",
+    "independent_bootstrap_ci95": [
+      -0.005027314767270661,
+      0.028166096583320616
+    ],
+    "independent_width": 0.03319341135059128,
+    "moving_block_ci95": [
+      -0.008712693414200582,
+      0.033043992028823355
+    ],
+    "moving_block_width": 0.04175668544302394,
+    "width_ratio_block_over_independent": 1.2579811397504983
+  },
   "designs": {
     "btc_mom": [
       "btc_ret_10"
@@ -183,6 +197,32 @@
     5,
     10
   ],
+  "marginal_value_intervals": {
+    "best_with_eth_over_best_without": {
+      "ci95": [
+        -0.010897406143958266,
+        0.011068639054796648
+      ],
+      "fraction_above_zero": 0.4775,
+      "point": 2.280404392949409e-05
+    },
+    "btc_momentum_over_imb_alone": {
+      "ci95": [
+        -0.008712693414200582,
+        0.033043992028823355
+      ],
+      "fraction_above_zero": 0.855,
+      "point": 0.011305899456363393
+    },
+    "eth_over_imb_plus_btc_momentum": {
+      "ci95": [
+        -0.01003139086965359,
+        0.011028198394468716
+      ],
+      "fraction_above_zero": 0.4745,
+      "point": 3.2238493821369586e-06
+    }
+  },
   "marginal_value_out_of_sample": {
     "all_btc_lags_added_to_imb": 0.008067568233457001,
     "btc_momentum_added_to_imb": 0.0113058994563634,

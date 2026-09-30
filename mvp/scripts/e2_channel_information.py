@@ -116,6 +116,63 @@ def _fit_predict(
     return a_apply @ beta
 
 
+#: Windows per resampled block, matching `scripts/e2_score_arms.py`. Anchors are
+#: 20 bars apart and the horizon is 10, so windows do not mechanically overlap --
+#: but volatility clusters, so neighbouring windows share a regime and an
+#: independent bootstrap would report an interval narrower than the truth.
+BOOTSTRAP_BLOCK: int = 50
+N_BOOTSTRAP: int = 2000
+BOOTSTRAP_SEED: int = 20260930
+
+
+def _moving_block_indices(
+    rng: np.random.Generator, size: int, *, block: int
+) -> np.ndarray:
+    if size <= block:
+        return rng.integers(0, size, size=size)
+    n_blocks = int(np.ceil(size / block))
+    starts = rng.integers(0, size - block + 1, size=n_blocks)
+    offsets = np.arange(block, dtype=np.int64)
+    return (starts[:, None] + offsets[None, :]).reshape(-1)[:size]
+
+
+def _paired_delta_r2_interval(
+    a: np.ndarray, b: np.ndarray, y: np.ndarray, *, block: int = BOOTSTRAP_BLOCK
+) -> dict[str, Any]:
+    """Interval for `r2(a) - r2(b)` on the SAME rows, both already out of sample.
+
+    The COEFFICIENTS are held fixed and only the SCORING rows are resampled, so
+    this measures how precisely the difference between two fitted designs is
+    known on data like this -- not the variability of refitting them, which
+    leave-one-block-out already exercises across five disjoint held-out sets.
+    """
+    rng = np.random.default_rng(BOOTSTRAP_SEED)
+    draws = np.empty(N_BOOTSTRAP, dtype=np.float64)
+    for i in range(N_BOOTSTRAP):
+        idx = _moving_block_indices(rng, y.shape[0], block=block)
+        t = y[idx]
+        ss = float((t**2).sum())
+        draws[i] = (
+            (float(((t - b[idx]) ** 2).sum()) - float(((t - a[idx]) ** 2).sum())) / ss
+            if ss
+            else np.nan
+        )
+    finite = draws[np.isfinite(draws)]
+    return {
+        "point": float(
+            (float(((y - b) ** 2).sum()) - float(((y - a) ** 2).sum()))
+            / float((y**2).sum())
+        ),
+        "ci95": [
+            float(np.percentile(finite, 2.5)),
+            float(np.percentile(finite, 97.5)),
+        ]
+        if finite.size
+        else None,
+        "fraction_above_zero": float(np.mean(finite > 0.0)) if finite.size else None,
+    }
+
+
 def _r2_vs_zero(pred: np.ndarray, y: np.ndarray) -> float:
     ss = float((y**2).sum())
     return 1.0 - float(((y - pred) ** 2).sum()) / ss if ss else float("nan")
@@ -178,6 +235,8 @@ def main(argv: list[str] | None = None) -> int:
             },
         }
 
+    lobo_pred: dict[str, np.ndarray] = {}
+    lobo_y = np.concatenate([targets[b] for b in BLOCKS])
     for design, cols in DESIGNS.items():
         oos_pred: list[np.ndarray] = []
         oos_y: list[np.ndarray] = []
@@ -195,6 +254,7 @@ def main(argv: list[str] | None = None) -> int:
             oos_y.append(targets[held])
         pooled_pred = np.concatenate(oos_pred)
         pooled_y = np.concatenate(oos_y)
+        lobo_pred[design] = pooled_pred
         report["designs_leave_one_block_out"][design] = {
             "pooled_r2_vs_zero": _r2_vs_zero(pooled_pred, pooled_y),
             "pooled_rank_ic": _rank_ic(pooled_pred, pooled_y),
@@ -232,6 +292,59 @@ def main(argv: list[str] | None = None) -> int:
         "all_btc_lags_added_to_imb": lobo["imb+btc_all"]["pooled_r2_vs_zero"]
         - lobo["imb"]["pooled_r2_vs_zero"],
     }
+    # The marginal numbers above are point estimates. These are the two that
+    # carry the conclusion, with intervals, so "Ethereum adds nothing" is a
+    # measurement with a width rather than a small number stated confidently.
+    report["marginal_value_intervals"] = {
+        "eth_over_imb_plus_btc_momentum": _paired_delta_r2_interval(
+            lobo_pred["imb+btc_mom+eth"], lobo_pred["imb+btc_mom"], lobo_y
+        ),
+        "best_with_eth_over_best_without": _paired_delta_r2_interval(
+            lobo_pred["imb+eth"], lobo_pred["imb+btc_mom"], lobo_y
+        ),
+        "btc_momentum_over_imb_alone": _paired_delta_r2_interval(
+            lobo_pred["imb+btc_mom"], lobo_pred["imb"], lobo_y
+        ),
+    }
+    # WHERE THE WIDTH COMES FROM. A wide interval has two possible causes with
+    # different consequences: volatility clustering, which blocking is there to
+    # respect, or a heavy-tailed target, which no resampling scheme can narrow.
+    # Running the SAME contrast with block=1 -- an independent bootstrap --
+    # separates them. If the two widths are close, the tail dominates and five
+    # days simply cannot resolve an effect this size.
+    independent = _paired_delta_r2_interval(
+        lobo_pred["imb+btc_mom"], lobo_pred["imb"], lobo_y, block=1
+    )
+    blocked = report["marginal_value_intervals"]["btc_momentum_over_imb_alone"]
+
+    def _width(entry: dict[str, Any]) -> float | None:
+        ci = entry["ci95"]
+        return float(ci[1] - ci[0]) if ci else None
+
+    report["bootstrap_width_diagnostic"] = {
+        "contrast": "btc_momentum_over_imb_alone",
+        "independent_bootstrap_ci95": independent["ci95"],
+        "independent_width": _width(independent),
+        "moving_block_ci95": blocked["ci95"],
+        "moving_block_width": _width(blocked),
+        "width_ratio_block_over_independent": (
+            _width(blocked) / _width(independent)
+            if _width(independent) and _width(blocked)
+            else None
+        ),
+    }
+    print(
+        f"  width diagnostic: independent {_width(independent):+.6f}  "
+        f"moving-block {_width(blocked):+.6f}  ratio "
+        f"{report['bootstrap_width_diagnostic']['width_ratio_block_over_independent']:.3f}",
+        flush=True,
+    )
+
+    for key, value in report["marginal_value_intervals"].items():
+        ci = value["ci95"]
+        span = f"[{ci[0]:+.6f}, {ci[1]:+.6f}]" if ci else "none"
+        print(f"  {key:34s} {value['point']:+.6f}  95% {span}", flush=True)
+
     text = json.dumps(report, indent=2, sort_keys=True)
     if args.out is not None:
         args.out.parent.mkdir(parents=True, exist_ok=True)
