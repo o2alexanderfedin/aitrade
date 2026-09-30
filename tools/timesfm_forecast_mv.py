@@ -30,6 +30,9 @@ the same anchors from the same 512 bars. Only the extra channels change:
              exactly zero.
     eth      the prevailing Ethereum trade price on the same stamps.
     imb_eth  both, as two channels.
+    btc_dup  a DUPLICATE of the target series, carrying no new information at
+             all. The control that separates "a second stream helped" from
+             "Ethereum helped".
 
 The channels are `past_only_covariates`: known over the context and NOT over
 the horizon, which is the honest shape for a live signal. The library masks
@@ -94,6 +97,15 @@ ARMS: dict[str, tuple[str, ...]] = {
     "imb": ("imb",),
     "eth": ("eth",),
     "imb_eth": ("imb", "eth"),
+    # THE DISCRIMINATING CONTROL, and the arm that decides what "several
+    # correlated streams helped" actually means. `btc_dup` hands the model a
+    # DUPLICATE of its own target as a second channel: no new information
+    # whatsoever, only a second copy for the cross-variate attention block to
+    # read. If it gains as much as the Ethereum arm, then what helped was the
+    # architecture getting a second view of one series, not anything Ethereum
+    # knows. A permutation null cannot answer this -- it destroys the alignment
+    # and so tests a different thing.
+    "btc_dup": ("btc",),
 }
 
 #: Seed for `--permute`. Fixed so the null is reproducible.
@@ -138,6 +150,7 @@ def _channels(
     names: tuple[str, ...],
     imb: np.ndarray,
     eth: np.ndarray,
+    mid: np.ndarray,
     anchors: np.ndarray,
 ) -> list[np.ndarray] | None:
     """One `(channels, CONTEXT)` covariate array per anchor, or `None`.
@@ -160,6 +173,9 @@ def _channels(
                 rows.append(np.asarray(imb[lo:hi], dtype=np.float64))
             elif name == "eth":
                 rows.append(np.asarray(eth[lo:hi] - eth[k], dtype=np.float64))
+            elif name == "btc":
+                # Bit-identical to the target channel, shifted the same way.
+                rows.append(np.asarray(mid[lo:hi] - mid[k], dtype=np.float64))
             else:
                 raise SystemExit(f"timesfm_forecast_mv: unknown channel {name!r}")
         block = np.ascontiguousarray(np.vstack(rows), dtype=np.float64)
@@ -393,7 +409,11 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(f"timesfm_forecast_mv: block {block} has no anchors")
         contexts, levels = _contexts(arrays["mid"], anchors)
         covariates = _channels(
-            names=names, imb=arrays["imb"], eth=arrays["eth"], anchors=anchors
+            names=names,
+            imb=arrays["imb"],
+            eth=arrays["eth"],
+            mid=arrays["mid"],
+            anchors=anchors,
         )
         if covariates is not None and args.permute:
             order = rng.permutation(len(covariates))

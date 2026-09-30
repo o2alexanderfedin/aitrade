@@ -107,6 +107,19 @@ def _r2_vs_zero(pred: np.ndarray, realised: np.ndarray) -> float:
     return 1.0 - float(np.sum((pred - realised) ** 2)) / sse_zero
 
 
+#: Arms that hand the model a RE-PRESENTATION of its own target rather than new
+#: information. They exist because the multivariate experiment's headline control
+#: is "a duplicate channel buys nothing", and that claim needs a mechanism: is
+#: the model invariant to any monotone copy of the target, or only to a bit-exact
+#: one? `dup_neg` and `dup_rev` are the contrast -- a genuinely different series
+#: built from the same numbers, which SHOULD move the forecast.
+REDUNDANCY_ARMS: tuple[str, ...] = ("dup", "dup_x2", "dup_plus", "dup_neg", "dup_rev")
+
+#: Constant offset for `dup_plus`, in price units. Large against a 10-second
+#: move and small against the mid, so it tests the offset and nothing else.
+DUP_OFFSET: float = 1000.0
+
+
 def _build(
     mid: np.ndarray, imb: np.ndarray, anchors: np.ndarray, arm: str
 ) -> tuple[list[np.ndarray], list[np.ndarray] | None, np.ndarray]:
@@ -143,6 +156,16 @@ def _build(
             # cov[t] = mid[t + HORIZON]: the last context position holds the
             # exact value the model is asked to forecast.
             cov = mid[lo + HORIZON : hi + HORIZON] - level
+        elif arm == "dup":
+            cov = np.asarray(window - level, dtype=np.float64)
+        elif arm == "dup_x2":
+            cov = 2.0 * (window - level)
+        elif arm == "dup_plus":
+            cov = (window - level) + DUP_OFFSET
+        elif arm == "dup_neg":
+            cov = -(window - level)
+        elif arm == "dup_rev":
+            cov = np.asarray((window - level)[::-1], dtype=np.float64)
         else:
             raise SystemExit(f"timesfm_covariate_probe: unknown arm {arm!r}")
         cov = np.ascontiguousarray(cov, dtype=np.float64)
@@ -207,6 +230,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--device", default="mps")
     parser.add_argument("--batch", type=int, default=32)
     parser.add_argument("--chunk", type=int, default=256)
+    parser.add_argument(
+        "--redundancy",
+        action="store_true",
+        help=(
+            "replace the information arms with the target-copy arms, which "
+            "measure what a REDUNDANT channel does rather than an informative one"
+        ),
+    )
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args(argv)
 
@@ -227,8 +258,11 @@ def main(argv: list[str] | None = None) -> int:
 
     forecaster = _load(args.device, args.batch)
 
+    wanted: tuple[str, ...] = ("none", "none_repeat", "noise", "imb", "leak")
+    if args.redundancy:
+        wanted = ("none", "none_repeat", *REDUNDANCY_ARMS)
     arms: dict[str, np.ndarray] = {}
-    for arm in ("none", "none_repeat", "noise", "imb", "leak"):
+    for arm in wanted:
         contexts, covariates, levels = _build(
             mid, imb, anchors, "none" if arm == "none_repeat" else arm
         )
@@ -265,12 +299,26 @@ def main(argv: list[str] | None = None) -> int:
 
     # The two gates. Both are stated as VERDICTS in the report rather than
     # raised on, so a failure is recorded rather than only printed.
-    report["gate_covariate_is_forwarded"] = bool(
-        report["arms"]["noise"]["max_abs_return_diff_vs_none"] > noise_floor
-    )
-    report["gate_perfect_covariate_is_exploitable"] = bool(
-        report["arms"]["leak"]["r2_vs_zero"] > report["arms"]["none"]["r2_vs_zero"]
-    )
+    if "noise" in arms:
+        report["gate_covariate_is_forwarded"] = bool(
+            report["arms"]["noise"]["max_abs_return_diff_vs_none"] > noise_floor
+        )
+    if "leak" in arms:
+        report["gate_perfect_covariate_is_exploitable"] = bool(
+            report["arms"]["leak"]["r2_vs_zero"] > report["arms"]["none"]["r2_vs_zero"]
+        )
+    if args.redundancy:
+        # An EXACT copy is expected to be bit-identical: every per-variate
+        # computation is the same, and variate attention over two identical
+        # tokens returns that token. The other copies are the test of whether the
+        # invariance is really that narrow.
+        report["exact_duplicate_is_bit_identical"] = bool(
+            report["arms"]["dup"]["max_abs_return_diff_vs_none"] == 0.0
+        )
+        report["monotone_copy_is_nearly_invisible"] = {
+            arm: report["arms"][arm]["max_abs_return_diff_vs_none"]
+            for arm in REDUNDANCY_ARMS
+        }
 
     text = json.dumps(report, indent=2, sort_keys=True)
     print(text)

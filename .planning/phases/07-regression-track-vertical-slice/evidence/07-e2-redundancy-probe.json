@@ -1,0 +1,77 @@
+{
+  "arms": {
+    "dup": {
+      "exceeds_noise_floor": false,
+      "max_abs_return_diff_vs_none": 0.0,
+      "mean_abs_return_diff_vs_none": 0.0,
+      "pred_std": 9.094188831591246e-06,
+      "r2_vs_zero": 0.0011007541120352515,
+      "rank_ic": -0.08148637926040422
+    },
+    "dup_neg": {
+      "exceeds_noise_floor": true,
+      "max_abs_return_diff_vs_none": 6.339939322219657e-05,
+      "mean_abs_return_diff_vs_none": 2.6518210168879376e-06,
+      "pred_std": 1.384501378052299e-05,
+      "r2_vs_zero": -0.02119057851831596,
+      "rank_ic": 0.09372507793438603
+    },
+    "dup_plus": {
+      "exceeds_noise_floor": true,
+      "max_abs_return_diff_vs_none": 1.8837252080405875e-06,
+      "mean_abs_return_diff_vs_none": 5.960650480921897e-08,
+      "pred_std": 9.054029564550969e-06,
+      "r2_vs_zero": 0.0010385685865332839,
+      "rank_ic": -0.07788733281746958
+    },
+    "dup_rev": {
+      "exceeds_noise_floor": true,
+      "max_abs_return_diff_vs_none": 4.690381379446329e-05,
+      "mean_abs_return_diff_vs_none": 1.9259725345908973e-06,
+      "pred_std": 1.0417193275758398e-05,
+      "r2_vs_zero": -0.017549786251382038,
+      "rank_ic": 0.03229437958621292
+    },
+    "dup_x2": {
+      "exceeds_noise_floor": true,
+      "max_abs_return_diff_vs_none": 5.4756293277336e-08,
+      "mean_abs_return_diff_vs_none": 9.211517108982659e-10,
+      "pred_std": 9.094232058164944e-06,
+      "r2_vs_zero": 0.0011007053596003846,
+      "rank_ic": -0.08134189986455245
+    },
+    "none": {
+      "exceeds_noise_floor": false,
+      "max_abs_return_diff_vs_none": 0.0,
+      "mean_abs_return_diff_vs_none": 0.0,
+      "pred_std": 9.094188831591246e-06,
+      "r2_vs_zero": 0.0011007541120352515,
+      "rank_ic": -0.08148637926040422
+    },
+    "none_repeat": {
+      "exceeds_noise_floor": false,
+      "max_abs_return_diff_vs_none": 0.0,
+      "mean_abs_return_diff_vs_none": 0.0,
+      "pred_std": 9.094188831591246e-06,
+      "r2_vs_zero": 0.0011007541120352515,
+      "rank_ic": -0.08148637926040422
+    }
+  },
+  "block": 0,
+  "context_bars": 512,
+  "device": "mps",
+  "exact_duplicate_is_bit_identical": true,
+  "horizon_bars": 10,
+  "monotone_copy_is_nearly_invisible": {
+    "dup": 0.0,
+    "dup_neg": 6.339939322219657e-05,
+    "dup_plus": 1.8837252080405875e-06,
+    "dup_rev": 4.690381379446329e-05,
+    "dup_x2": 5.4756293277336e-08
+  },
+  "noise_floor_max_abs_return_diff": 0.0,
+  "noise_seed": 20260930,
+  "peak_rss_bytes": 2868379648,
+  "realised_std": 6.817941876740478e-05,
+  "windows": 256
+}
