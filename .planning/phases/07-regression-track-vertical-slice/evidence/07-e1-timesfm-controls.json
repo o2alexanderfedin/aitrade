@@ -1,0 +1,47 @@
+{
+  "batch": 32,
+  "blocks": [],
+  "checkpoint": "google/timesfm-3.0-pytorch",
+  "context_bars": 512,
+  "controls": {
+    "block": "oof_block_0",
+    "device": "mps",
+    "device_control_max_abs_return_diff": 2.2214541317566727e-10,
+    "device_control_mean_abs_return_diff": 5.5961972902918156e-11,
+    "float32_ulp_at_mid": 0.0078125,
+    "n_windows": 64,
+    "peak_rss_bytes": 3072770048,
+    "realised_return_std": 2.962718170504607e-05,
+    "shift_control_max_abs_return_diff": 1.2228411017445318e-05,
+    "shift_control_mean_abs_return_diff": 6.834013815300299e-07
+  },
+  "device": "mps",
+  "device_availability": {
+    "cpu": true,
+    "cuda": false,
+    "mps": true
+  },
+  "env": {
+    "HF_HOME": "/Volumes/ProjectsSSD/aihedgefund/timesfm/hf-cache",
+    "HUGGINGFACE_HUB_CACHE": "/Volumes/ProjectsSSD/aihedgefund/timesfm/hf-cache",
+    "TOKENIZERS_PARALLELISM": "false"
+  },
+  "export_root": "/Volumes/ProjectsSSD/aihedgefund/timesfm/work/e1",
+  "generated_by": "tools/timesfm_forecast.py",
+  "horizon_bars": 10,
+  "numpy_version": "2.5.3",
+  "out_root": "/Volumes/ProjectsSSD/aihedgefund/timesfm/work/e1/forecasts",
+  "python_version": "3.12.2",
+  "quantile_levels": [
+    0.1,
+    0.2,
+    0.3,
+    0.4,
+    0.5,
+    0.6,
+    0.7,
+    0.8,
+    0.9
+  ],
+  "torch_version": "2.14.0"
+}

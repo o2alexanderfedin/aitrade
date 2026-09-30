@@ -1,0 +1,85 @@
+{
+  "batch": 64,
+  "blocks": [
+    {
+      "block": "oof_block_0",
+      "n_windows": 3012,
+      "npz_bytes": 1113951,
+      "npz_path": "/Volumes/ProjectsSSD/aihedgefund/timesfm/work/e1/fc-shifted/oof_block_0.npz",
+      "peak_rss_bytes": 2875195392,
+      "seconds": 16.734879542025737,
+      "windows_per_second": 179.98336901296875
+    },
+    {
+      "block": "oof_block_1",
+      "n_windows": 4293,
+      "npz_bytes": 1661997,
+      "npz_path": "/Volumes/ProjectsSSD/aihedgefund/timesfm/work/e1/fc-shifted/oof_block_1.npz",
+      "peak_rss_bytes": 2875195392,
+      "seconds": 23.811301209032536,
+      "windows_per_second": 180.2925410212988
+    },
+    {
+      "block": "oof_block_2",
+      "n_windows": 4064,
+      "npz_bytes": 1708470,
+      "npz_path": "/Volumes/ProjectsSSD/aihedgefund/timesfm/work/e1/fc-shifted/oof_block_2.npz",
+      "peak_rss_bytes": 2875195392,
+      "seconds": 22.7315952910576,
+      "windows_per_second": 178.7819969502422
+    },
+    {
+      "block": "oof_block_3",
+      "n_windows": 3750,
+      "npz_bytes": 1581617,
+      "npz_path": "/Volumes/ProjectsSSD/aihedgefund/timesfm/work/e1/fc-shifted/oof_block_3.npz",
+      "peak_rss_bytes": 2875195392,
+      "seconds": 21.218429708038457,
+      "windows_per_second": 176.7331537535663
+    },
+    {
+      "block": "oof_block_4",
+      "n_windows": 3758,
+      "npz_bytes": 1581851,
+      "npz_path": "/Volumes/ProjectsSSD/aihedgefund/timesfm/work/e1/fc-shifted/oof_block_4.npz",
+      "peak_rss_bytes": 2875195392,
+      "seconds": 21.122406624956056,
+      "windows_per_second": 177.9153326004024
+    }
+  ],
+  "checkpoint": "google/timesfm-3.0-pytorch",
+  "context_bars": 512,
+  "contexts": "shifted",
+  "device": "mps",
+  "device_availability": {
+    "cpu": true,
+    "cuda": false,
+    "mps": true
+  },
+  "env": {
+    "HF_HOME": "/Volumes/ProjectsSSD/aihedgefund/timesfm/hf-cache",
+    "HUGGINGFACE_HUB_CACHE": "/Volumes/ProjectsSSD/aihedgefund/timesfm/hf-cache",
+    "TOKENIZERS_PARALLELISM": "false"
+  },
+  "export_root": "/Volumes/ProjectsSSD/aihedgefund/timesfm/work/e1",
+  "generated_by": "tools/timesfm_forecast.py",
+  "horizon_bars": 10,
+  "mps_driver_allocated_bytes": 1493925888,
+  "numpy_version": "2.5.3",
+  "out_root": "/Volumes/ProjectsSSD/aihedgefund/timesfm/work/e1/fc-shifted",
+  "peak_rss_bytes": 2875195392,
+  "python_version": "3.12.2",
+  "quantile_levels": [
+    0.1,
+    0.2,
+    0.3,
+    0.4,
+    0.5,
+    0.6,
+    0.7,
+    0.8,
+    0.9
+  ],
+  "torch_version": "2.14.0",
+  "total_seconds": 108.11653600004502
+}
