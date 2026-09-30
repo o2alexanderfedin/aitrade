@@ -1,6 +1,61 @@
 """The two gates of D-07-18, and the perfect-foresight ceiling as CODE
 rather than as a number somebody remembers (D-07-19, D-07-32, D-07-35).
 
+THE GUARD'S REFERENCE IS NO LONGER THE LABEL-HORIZON CEILING (changed
+2026-09-29, after the zero-look OOF viability run measured what that quantity
+actually is). `perfect_foresight_ceiling` feeds the realised future mid AT ONE
+LABEL'S HORIZON into a rule that fires only when the predicted price clears
+the touch by a FULL tick -- and at a one-tick spread the future mid sits a
+half tick off the grid, so a horizon-h perfect predictor fires only on moves
+of about 1.5 ticks within h. The P&L it reports therefore FALLS as h grows.
+Measured on `oof_block_3`, same rows, same rule, only the label changed:
+
+    perfect foresight at      trades   closed_pnl_ticks
+    ret_1s_mid                11,394          1,579,033
+    ret_10s_mid                6,643            702,556   <- was the guard's
+    ret_1min_mid               3,027            285,144
+    ret_10min_mid                941             86,019
+    next DECISION ROW         14,972          2,580,239   <- is the guard's
+    mid's total variation          --          2,763,605   (the theorem)
+
+A threshold that moves 30x with a choice of label is not a bound on anything,
+and the frozen winner earned 2.55x it while staying below 81.7% of the mid's
+total variation on every one of the five blocks. So `guard_against_ceiling`
+now takes `mid_total_variation`, and the label-horizon figure is still
+measured and still reported, as a DIAGNOSTIC under its own unchanged keys.
+
+WHY TOTAL VARIATION AND NOT DECISION-ROW PERFECT FORESIGHT, which is tighter
+on real data and which this module also computes. Decision-row perfect
+foresight is NOT A BOUND -- measured, on this repo's own fixture, and that
+measurement is why the guard is not referenced to it. The fixture's price path
+steps by exactly 0 or +/-1 tick per row at a constant one-tick spread, so the
+next row's mid is at most one tick away while the kernel needs the predicted
+price to clear the touch by a FULL tick from a half-tick mid, i.e. 1.5 ticks.
+Decision-row perfect foresight therefore earns EXACTLY ZERO there, while the
+10-second-horizon perfect predictor earns 311 ticks and the fitted model earns
+50. A guard referenced to it would abort on every result on any segment whose
+adjacent-row mid moves are sub-tick. On the real blocks it fires on 0.12% of
+rows -- it lives entirely in a thin tail of multi-tick jumps, and a tripwire
+must not depend on that tail existing.
+
+    `mid_total_variation` IS a theorem for a one-lot flip-only policy. Every
+    closed leg earns `bid_exit - ask_entry` (long) or `bid_entry - ask_exit`
+    (short), each of which is the mid-to-mid move MINUS half a spread at each
+    end; the legs are disjoint in time; so the total cannot exceed the sum of
+    |mid moves| over the path. With a spread of at least one tick it is
+    STRICTLY below, by at least one tick per leg.
+
+THE PRICE OF THE THEOREM, STATED PLAINLY: because it is strictly unattainable,
+NO PREDICTION FED THROUGH THIS RULE CAN MAKE THE GUARD FIRE. The guard is
+therefore a check on genuinely impossible results -- a P&L earned on a
+different row set than the bound was measured over, a fill counted at more
+than one lot, a trade log walked past `fill_count` -- and not the leak
+detector it was described as. The leak signal survives as a REPORTED ratio:
+`decision_row_perfect_foresight` is what a real prediction can actually
+approach (the frozen winner reached 87.5% of it on `oof_block_3`), so a model
+that passes it is the thing to investigate, and the slice logs that fraction
+rather than raising on it.
+
 WHY THE CEILING LIVES HERE. Phase 6 measured 2,192 trades / 294,554 ticks /
 $29.4554 on the real 2026-09-13 partition and committed only the OUTPUT, to
 `.planning/phases/06-event-driven-simulator/evidence/06-06-real-day-oracle.json`;
@@ -93,9 +148,11 @@ __all__ = [
     "USD_PER_BTC_TO_TRADED_LOT_DIVISOR",
     "CeilingExceededError",
     "closed_pnl_ticks",
+    "decision_row_perfect_foresight",
     "gate_forecast",
     "gate_monetization",
     "guard_against_ceiling",
+    "mid_total_variation",
     "perfect_foresight_ceiling",
     "ticks_to_usd_at_traded_lot",
     "ticks_to_usd_per_btc",
@@ -240,11 +297,210 @@ def _label_returns(frame: pl.DataFrame, label_column: str) -> tuple[np.ndarray, 
     return np.ascontiguousarray(values, dtype=np.float64), null_count
 
 
+def _require_simulatable(frame: pl.DataFrame, caller: str) -> np.ndarray:
+    """The two refusals every perfect-predictor measurement in this module
+    shares, plus the frame's `mid` as a contiguous float64 array.
+
+    A zero-row frame is refused rather than measured: a bound of zero over zero
+    rows makes `guard_against_ceiling` fire on every reported P&L, and a bound
+    that rejects everything is worse than no bound.
+    """
+    if frame.height == 0:
+        raise ValueError(
+            f"{caller}: the frame has no rows -- a bound of zero over zero rows "
+            "would make guard_against_ceiling fire on every reported P&L"
+        )
+    if MID_COLUMN not in frame.columns:
+        raise ValueError(
+            f"{caller}: frame has no {MID_COLUMN!r} column, so a predicted "
+            "RETURN cannot be converted to the price the kernel wants"
+        )
+    return np.ascontiguousarray(frame[MID_COLUMN].to_numpy(), dtype=np.float64)
+
+
+def _simulate_at_one_lot(
+    frame: pl.DataFrame, pred_price: np.ndarray, caller: str
+) -> tuple[SimResult, int]:
+    """`run_sim_checked` at a zero threshold over the frame's own decision
+    rows, refusing a trade log whose fills are not all exactly one lot step.
+
+    The "realised at the traded lot" figure every caller reports presumes one
+    lot; a two-lot fill would make that label quietly wrong. All fills were
+    exactly one lot on both real candidate `val` windows, measured.
+    """
+    arrays = sim_arrays(frame)
+    result = run_sim_checked(
+        arrays["etime"],
+        arrays["bid_ticks"],
+        arrays["ask_ticks"],
+        pred_price,
+        x_bps=0,
+    )
+    k = int(result.fill_count)
+    quantities = result.trade_log["qty_scaled"][:k]
+    if k and not bool(np.all(quantities == LOT_STEP_SCALED)):
+        offending = int(np.flatnonzero(quantities != LOT_STEP_SCALED)[0])
+        raise ValueError(
+            f"{caller}: fill {offending} traded "
+            f"{int(quantities[offending])} at QTY_SCALE, not the one "
+            f"{LOT_STEP_SCALED} lot step every fill is assumed to be -- the "
+            "'realised at the traded lot' figure below multiplies by one lot "
+            "and would be wrong by that fill's size"
+        )
+    return result, closed_pnl_ticks(result)
+
+
+def _pnl_report(frame: pl.DataFrame, result: SimResult, ticks: int) -> dict[str, Any]:
+    """The labelled numbers one perfect-predictor simulation produced.
+
+    ONE reporting convention for all of them, so the label-horizon ceiling and
+    the decision-row bound can never differ by how they were summarised -- the
+    same reason `models.conversion` is one function and not two call sites.
+    `closed_plus_unrealised_usd_at_traded_lot` INCLUDES the open leg's mark at
+    the last row and is therefore a different number from the closed figure
+    (measured on the approved `val` window: 1,120,460 closed against 1,120,530
+    closed plus unrealised).
+    """
+    return {
+        "rows_walked": int(frame.height),
+        "trades": int(result.counters["trades"]),
+        "flips": int(result.counters["flips"]),
+        "rows_in_market": int(result.counters["rows_in_market"]),
+        "closed_pnl_ticks": int(ticks),
+        "closed_pnl_usd_per_btc": ticks_to_usd_per_btc(ticks),
+        "closed_pnl_usd_at_traded_lot": ticks_to_usd_at_traded_lot(ticks),
+        "closed_plus_unrealised_usd_at_traded_lot": (
+            int(result.equity_scaled[-1]) * TICK_SIZE_SCALED / PRICE_SCALE / QTY_SCALE
+        ),
+    }
+
+
+def mid_total_variation(frame: pl.DataFrame) -> dict[str, Any]:
+    """THE GUARD'S REFERENCE, and the only quantity here that is a theorem: no
+    one-lot flip-only policy can extract more ticks than the midprice
+    travelled, and the spread is paid on top.
+
+    Every closed leg earns `bid_exit - ask_entry` (long) or
+    `bid_entry - ask_exit` (short) in ticks, each of which is the mid-to-mid
+    move minus half a spread at each end; the legs are disjoint in time; so the
+    sum cannot exceed the sum of |mid moves| over the whole path, and with a
+    spread of at least one tick it is STRICTLY below it, by at least one tick
+    per leg. The module docstring states what that unattainability costs: no
+    prediction can make the guard fire, so the guard checks for impossible
+    results and the leak signal is a reported ratio against
+    `decision_row_perfect_foresight` instead.
+
+    COMPUTED IN EXACT INTEGER HALF-TICKS, NEVER AS A FLOAT SUM. The mid of a
+    one-tick spread is a half tick, so `bid_ticks + ask_ticks` -- twice the mid
+    -- is the integer the differences are taken on, exactly as
+    `sim/kernel.py` derives its own threshold from the two book sides rather
+    than from a float mid. A float accumulation over sixteen million rows would
+    make the reported bound depend on summation order.
+
+    Returns `total_variation_half_ticks` (the exact int64), its halved
+    `total_variation_ticks`, `bound_ticks`, the two USD conventions at that
+    many ticks, and `rows_walked`.
+
+    `bound_ticks` IS WHAT THE GUARD TAKES, and it is `half_ticks // 2` -- the
+    FLOOR, never a float. `guard_against_ceiling` compares integers, and an odd
+    half-tick count makes the true variation a half tick above this; flooring
+    makes the bound half a tick TIGHTER than the theorem, which can only make
+    the guard fire earlier and never later. Passing the float would put a
+    binary-inexact value on one side of a `>=` in the one comparison that
+    decides whether a run halts.
+
+    A ZERO-VARIATION FRAME IS REFUSED. A perfectly flat path admits no P&L at
+    all, so a bound of zero would make the guard raise on any result including
+    `0` -- the same vacuity `_require_simulatable` refuses a zero-row frame for.
+    """
+    _require_simulatable(frame, "mid_total_variation")
+    arrays = sim_arrays(frame)
+    book_sum = arrays["bid_ticks"] + arrays["ask_ticks"]
+    half_ticks = int(np.abs(np.diff(book_sum)).sum())
+    if half_ticks == 0:
+        raise ValueError(
+            f"mid_total_variation: the midprice never moved across all "
+            f"{frame.height} rows, so the total variation is 0 -- a bound of "
+            "zero makes guard_against_ceiling raise on every reported P&L, "
+            "including a P&L of exactly zero"
+        )
+    ticks = half_ticks / 2.0
+    return {
+        "rows_walked": int(frame.height),
+        "total_variation_half_ticks": half_ticks,
+        "total_variation_ticks": ticks,
+        "bound_ticks": half_ticks // 2,
+        "total_variation_usd_per_btc": ticks * TICK_SIZE_SCALED / PRICE_SCALE,
+        "total_variation_usd_at_traded_lot": (
+            ticks * TICK_SIZE_SCALED / PRICE_SCALE / USD_PER_BTC_TO_TRADED_LOT_DIVISOR
+        ),
+    }
+
+
+def decision_row_perfect_foresight(frame: pl.DataFrame) -> dict[str, Any]:
+    """THE REPORTED LEAK SIGNAL, never the guard's reference: what the flip-only
+    rule earns when the prediction is the NEXT DECISION ROW'S realised mid --
+    perfect foresight at the finest resolution this data has.
+
+    WHAT IT IS FOR. Unlike the theorem, this is a number a real prediction can
+    approach: the frozen winner reached 87.5% of it on `oof_block_3` and 64% to
+    91% across the five blocks. So the fraction of it a model reports is the
+    quantity worth looking at when asking whether a label leaked, and the slice
+    LOGS that fraction. It is strictly better than the label-horizon ceiling for
+    that job, because it is a property of the price path and the rule alone
+    rather than of a modelling choice that moves it 30x.
+
+    IT IS NOT A BOUND AND MUST NOT BE GIVEN TO THE GUARD. Measured on this
+    repo's own fixture: zero ticks, while the 10-second-horizon perfect
+    predictor earns 311 on the same rows and the fitted model earns 50. The
+    kernel needs 1.5 ticks of movement from a half-tick mid and the fixture's
+    path steps one tick at a time, so the finest horizon sees nothing. On the
+    real blocks it fires on 0.12% of rows -- a thin tail of multi-tick jumps.
+    Neither is it a bound in theory: a predictor that LIED about the next mid
+    could steer the flip sequence into a more profitable path, declining a small
+    adverse flip to hold for a larger move.
+
+    THE PREDICTION IS BUILT AS A RETURN AND CONVERTED BY THE ONE SITE
+    (D-07-33), not written as a price: `next_mid / mid - 1` through
+    `models.conversion.neutral_fill_null_predictions`, so this bound and the
+    P&L it bounds can never differ by a conversion. The float round trip
+    (`mid * (1 + (next_mid / mid - 1))`) is not the identity to the last bit,
+    and that is deliberate -- it is the exact construction the zero-look OOF
+    run measured 2,580,239 ticks with on `oof_block_3`, and feeding `next_mid`
+    straight in as a price would both break D-07-33 and silently change the
+    number.
+
+    THE LAST ROW HAS NO NEXT ROW and is held flat (`next_mid = mid`, a zero
+    return, the measured-neutral value that triggers neither side) rather than
+    dropped: dropping it would measure the bound over a different row set than
+    the P&L it bounds, which is the exact defect D-07-05's shared cached frame
+    exists to prevent.
+    """
+    caller = "decision_row_perfect_foresight"
+    mid = _require_simulatable(frame, caller)
+    next_mid = np.empty_like(mid)
+    next_mid[:-1] = mid[1:]
+    next_mid[-1] = mid[-1]
+    pred_return = np.ascontiguousarray(next_mid / mid - 1.0, dtype=np.float64)
+    pred_price, filled = neutral_fill_null_predictions(pred_return, mid)
+    if filled:
+        raise ValueError(
+            f"{caller}: {filled} of {frame.height} next-row returns were "
+            "non-finite, which for a ratio of two midprices means a mid that is "
+            "zero or not finite -- that is a broken book, not a missing "
+            "prediction, and substituting the neutral mid would hide it"
+        )
+    result, ticks = _simulate_at_one_lot(frame, pred_price, caller)
+    return _pnl_report(frame, result, ticks)
+
+
 def perfect_foresight_ceiling(
     frame: pl.DataFrame, *, label_column: str = TARGET_COLUMN
 ) -> dict[str, Any]:
-    """Phase 6's measurement, landed as code: what the flip-only rule earns
-    on this frame when the prediction IS the realised future mid.
+    """Phase 6's measurement, landed as code, and NOW A DIAGNOSTIC RATHER THAN
+    THE GUARD'S REFERENCE (see the module docstring): what the flip-only rule
+    earns on this frame when the prediction IS the realised future mid at one
+    label's horizon.
 
     `frame` is the ADMITTED segment frame -- the exact rows the simulator
     will walk, in their own order. Not a raw partition.
@@ -271,85 +527,74 @@ def perfect_foresight_ceiling(
       one above (measured on the approved `val` window: 1,120,460 closed
       against 1,120,530 closed plus unrealised).
 
-    Refuses a trade log whose fills are not all exactly one lot step: the
-    "realised at the traded lot" figure presumes it, and a two-lot fill would
-    make that label quietly wrong. All fills were exactly one lot on both
-    real candidate windows, measured.
+    THE KEY SET AND EVERY VALUE ARE UNCHANGED by the 2026-09-29 guard change.
+    The simulation and the reporting moved into `_simulate_at_one_lot` and
+    `_pnl_report`, shared with `decision_row_perfect_foresight` so the two can
+    never differ by how they were summarised -- and the proof that nothing
+    moved is a re-run of `scripts/oof_viability_check.py` on `oof_block_1`,
+    whose committed evidence carries this dict verbatim (2,192 trades /
+    294,554 ticks / $29.4554).
     """
-    if frame.height == 0:
-        raise ValueError(
-            "perfect_foresight_ceiling: the frame has no rows -- a ceiling of "
-            "zero over zero rows would make guard_against_ceiling fire on every "
-            "reported P&L"
-        )
-    if MID_COLUMN not in frame.columns:
-        raise ValueError(
-            f"perfect_foresight_ceiling: frame has no {MID_COLUMN!r} column, so "
-            "a predicted RETURN cannot be converted to the price the kernel wants"
-        )
+    mid = _require_simulatable(frame, "perfect_foresight_ceiling")
     pred_return, null_label_rows = _label_returns(frame, label_column)
-    mid = np.ascontiguousarray(frame[MID_COLUMN].to_numpy(), dtype=np.float64)
     pred_price, filled = neutral_fill_null_predictions(pred_return, mid)
     if filled != null_label_rows:
         raise ValueError(
             f"perfect_foresight_ceiling: {null_label_rows} null labels but "
             f"{filled} neutral substitutions -- the two counts are the same rows"
         )
-
-    arrays = sim_arrays(frame)
-    result = run_sim_checked(
-        arrays["etime"],
-        arrays["bid_ticks"],
-        arrays["ask_ticks"],
-        pred_price,
-        x_bps=0,
-    )
-    k = int(result.fill_count)
-    quantities = result.trade_log["qty_scaled"][:k]
-    if k and not bool(np.all(quantities == LOT_STEP_SCALED)):
-        offending = int(np.flatnonzero(quantities != LOT_STEP_SCALED)[0])
-        raise ValueError(
-            f"perfect_foresight_ceiling: fill {offending} traded "
-            f"{int(quantities[offending])} at QTY_SCALE, not the one "
-            f"{LOT_STEP_SCALED} lot step every fill is assumed to be -- the "
-            "'realised at the traded lot' figure below multiplies by one lot "
-            "and would be wrong by that fill's size"
-        )
-
-    ticks = closed_pnl_ticks(result)
+    result, ticks = _simulate_at_one_lot(frame, pred_price, "perfect_foresight_ceiling")
     return {
-        "rows_walked": int(frame.height),
         "null_label_rows_filled": int(filled),
-        "trades": int(result.counters["trades"]),
-        "flips": int(result.counters["flips"]),
-        "rows_in_market": int(result.counters["rows_in_market"]),
-        "closed_pnl_ticks": ticks,
-        "closed_pnl_usd_per_btc": ticks_to_usd_per_btc(ticks),
-        "closed_pnl_usd_at_traded_lot": ticks_to_usd_at_traded_lot(ticks),
-        "closed_plus_unrealised_usd_at_traded_lot": (
-            int(result.equity_scaled[-1]) * TICK_SIZE_SCALED / PRICE_SCALE / QTY_SCALE
-        ),
+        **_pnl_report(frame, result, ticks),
     }
 
 
-def guard_against_ceiling(
-    pnl_ticks: int, ceiling_ticks: int, segment_name: str
-) -> None:
+def guard_against_ceiling(pnl_ticks: int, bound_ticks: int, segment_name: str) -> None:
     """D-07-19: raise when a reported P&L reaches the segment's measured
-    perfect-foresight ceiling. At the ceiling is already too high -- equality
-    means the model matched perfect foresight tick for tick, which no
-    forecast of a 10-second return does.
+    P&L bound. At the bound is already too high -- the bound is the midprice's
+    own total variation at unit size, which no policy paying a spread can
+    reach, so equality is already impossible.
+
+    `bound_ticks` MUST BE `mid_total_variation`'s `bound_ticks`, not
+    `perfect_foresight_ceiling`'s `closed_pnl_ticks` (changed 2026-09-29; the
+    module docstring has the measurement that forced it). The parameter was
+    called `ceiling_ticks` and the caller passed the label-horizon ceiling,
+    which the frozen winner exceeded by up to 3.21x on four of five OOF blocks
+    while staying below the total variation on all five -- so the guard fired on
+    a correct result and would have aborted plan 07-11 after the val look was
+    already spent.
+
+    WHAT THIS GUARD DOES AND DOES NOT CATCH. Because the bound is strictly
+    unattainable, no prediction fed through the decision rule can reach it: this
+    is a check on IMPOSSIBLE results -- a P&L earned over a different row set
+    than the bound was measured on, a fill counted at more than one lot, a trade
+    log walked past `fill_count` -- and not a leak detector. The leak signal is
+    the reported fraction of `decision_row_perfect_foresight`, which a real
+    prediction genuinely approaches.
+
+    The function's NAME is unchanged on purpose: `scripts/oof_viability_check.py`
+    is a committed evidence producer whose output is the byte-identity
+    instrument for the Stage-2 threshold change, and renaming an import it
+    holds would break the one thing that can prove nothing else moved.
     """
-    if int(pnl_ticks) >= int(ceiling_ticks):
+    if int(pnl_ticks) >= int(bound_ticks):
         raise CeilingExceededError(
             f"{segment_name}: reported {int(pnl_ticks)} closed_pnl_ticks at or "
-            f"above the measured perfect-foresight ceiling "
-            f"{int(ceiling_ticks)} -- INVESTIGATE. The two likeliest causes, in "
-            "order: a prediction table misaligned with the decision rows, or a "
-            "label leaking into a feature. (The ceiling is a strong sanity "
-            "bound, not a theorem: perfect foresight through the flip-only rule "
-            "at x_bps=0 is one particular policy, not the path's P&L maximum, "
-            "so this is a reason to investigate rather than a proof of "
+            f"above the measured P&L bound {int(bound_ticks)} -- INVESTIGATE. "
+            "The two likeliest causes, in order: a prediction table misaligned "
+            "with the decision rows, or a label leaking into a feature. "
+            "(Expected to be `mid_total_variation`, the midprice's own total "
+            "variation at unit size, which IS a theorem for a one-lot "
+            "flip-only policy -- every leg pays at least a one-tick spread, so "
+            "no policy reaches it and this result is not merely improbable. "
+            "That also means no PREDICTION can produce it: look for a P&L "
+            "earned over different rows than the bound, a fill of more than one "
+            "lot, or a trade log walked past fill_count, before looking for a "
+            "leak. If the number above is a LABEL-HORIZON ceiling, the guard is "
+            "being fed the quantity that was measured to move 30x with a choice "
+            "of label and it is the input that is wrong, not the result -- "
+            "which is a reason to investigate rather than a proof of "
             "impossibility.)"
         )
 

@@ -2,6 +2,16 @@
 both measured degenerate predictors rejected -- each for its own stated
 reason.
 
+THE GUARD'S REFERENCE CHANGED ON 2026-09-29 and section 1b is where the change
+is measured rather than asserted. The old reference, the label-horizon
+`perfect_foresight_ceiling`, is not a bound: the frozen winner exceeded it by
+up to 3.21x on four of five OOF blocks. The new one is `mid_total_variation`,
+which is. The tighter candidate -- `decision_row_perfect_foresight` -- is NOT a
+bound either and this file is where that is proved: on this fixture's
+one-tick-step path it earns exactly ZERO while the 10-second perfect predictor
+earns 311 ticks and the fitted model earns 50, so a guard referenced to it
+would abort every ordinary run here. It survives as a reported leak signal.
+
 TWO KINDS OF FIXTURE HERE, DELIBERATELY.
 
 The GATE tests feed `gate_forecast` the REAL MEASURED metric rows from
@@ -36,9 +46,11 @@ from harness.accessor import materialize
 from models.gates import (
     CeilingExceededError,
     closed_pnl_ticks,
+    decision_row_perfect_foresight,
     gate_forecast,
     gate_monetization,
     guard_against_ceiling,
+    mid_total_variation,
     perfect_foresight_ceiling,
     ticks_to_usd_at_traded_lot,
     ticks_to_usd_per_btc,
@@ -150,10 +162,21 @@ def test_a_fabricated_pnl_at_the_ceiling_raises_and_one_tick_below_does_not():
     `test_position_size_at_the_int64_overflow_bound_succeeds_one_tick_over_raises`:
     the boundary VALUE is exercised, not a value near it.
 
-    At the ceiling is already too high. Equality means the model matched
-    perfect foresight tick for tick over millions of rows, which no forecast
-    of a 10-second return does -- so the interesting case is the one that is
-    exactly equal, and it must raise.
+    At the bound is already too high. Equality means the model matched a
+    quantity that pays no spread, which nothing trading a one-tick book can do
+    -- so the interesting case is the one that is exactly equal, and it must
+    raise.
+
+    THE "NOT A THEOREM" ASSERTION THIS TEST USED TO MAKE HAS INVERTED, and the
+    inversion is the 2026-09-29 change rather than a weakening. The guard's
+    reference used to be the label-horizon `perfect_foresight_ceiling`, which
+    genuinely was not a theorem -- and which the frozen winner exceeded by up to
+    3.21x on four of five OOF blocks, i.e. the caveat turned out to be the
+    operative case. The reference is now `mid_total_variation`, which IS a
+    theorem, so the message must now say so; what it must ALSO say, and what
+    this test still checks, is that "not a theorem" now applies to the number a
+    caller might wrongly pass IN. `models/gates.py`'s module docstring carries
+    the measurement.
     """
     ceiling = 1_120_460  # the approved val window's measured ceiling (C4)
     guard_against_ceiling(ceiling - 1, ceiling, "val")  # must not raise
@@ -163,9 +186,10 @@ def test_a_fabricated_pnl_at_the_ceiling_raises_and_one_tick_below_does_not():
     print("guard at the ceiling:", message)
     assert "val" in message and str(ceiling) in message
     assert "INVESTIGATE" in message
-    assert "not a theorem" in message and "impossibility" in message, (
-        "the message must say the ceiling is not a theorem; 'INVESTIGATE' "
-        "alone leaves a reader to conclude the opposite"
+    assert "IS a theorem" in message and "impossibility" in message, (
+        "the message must say the bound IS a theorem for a one-lot flip-only "
+        "policy, and must still keep the word 'impossibility' for the case "
+        "where a LABEL-HORIZON ceiling was passed in by mistake"
     )
     assert "misaligned" in message and "leaking" in message, (
         "the two likeliest causes are named in the message so the reader does "
@@ -176,6 +200,266 @@ def test_a_fabricated_pnl_at_the_ceiling_raises_and_one_tick_below_does_not():
     # A ValueError catch still works -- CeilingExceededError is a subclass.
     with pytest.raises(ValueError):
         guard_against_ceiling(ceiling, ceiling, "val")
+
+
+# --------------------------------------------------------------------------
+# 1b. The quantity the guard is actually given, and the two it is not
+# --------------------------------------------------------------------------
+
+
+def test_the_guard_fires_at_the_total_variation_bound_and_one_tick_below_it_does_not(
+    lake_root, registry_root, tracking_root
+):
+    """THE GUARD'S TEETH, on the bound it is now given, measured from the
+    fixture's own rows rather than from a literal.
+
+    The old reference could not be shown to fire on anything real: the frozen
+    winner earned up to 3.21x the label-horizon ceiling on four of five OOF
+    blocks, so the guard fired on correct results while missing the failure it
+    exists for. This asserts the firing point on the quantity that replaces it,
+    at the boundary VALUE and one tick below -- and asserts the message names
+    the quantity it expects, so a caller who hands it something else can tell
+    from the failure alone.
+    """
+    val = _val_frame(lake_root, registry_root, tracking_root)
+    variation = mid_total_variation(val)
+    bound_ticks = int(variation["bound_ticks"])
+    print(
+        f"mid total variation over {variation['rows_walked']} rows: "
+        f"{variation['total_variation_half_ticks']} half ticks = "
+        f"{variation['total_variation_ticks']} ticks, guard takes "
+        f"{bound_ticks}"
+    )
+    assert bound_ticks > 0
+
+    guard_against_ceiling(bound_ticks - 1, bound_ticks, "val")  # must not raise
+    with pytest.raises(CeilingExceededError) as excinfo:
+        guard_against_ceiling(bound_ticks, bound_ticks, "val")
+    message = str(excinfo.value)
+    print("guard at the total-variation bound:", message)
+    assert str(bound_ticks) in message and "INVESTIGATE" in message
+    assert "mid_total_variation" in message and "theorem" in message, (
+        "the message must name the quantity it expects and say that it IS a "
+        "theorem, or a caller who passes a label-horizon ceiling cannot tell "
+        "from the failure"
+    )
+    assert "fill_count" in message and "different rows" in message, (
+        "because the bound is unattainable, no PREDICTION can produce this "
+        "result -- the message must send the reader to the accounting failures "
+        "that can, before it sends them looking for a leak"
+    )
+
+
+def test_perfect_foresight_is_strictly_below_the_theorem_and_the_ceiling_is_below_both(
+    lake_root, registry_root, tracking_root
+):
+    """The orderings that make the replacement a fix rather than a swap, and the
+    measurement that rules out the tighter candidate.
+
+    THE FIXTURE'S PATH STEPS ONE TICK AT A TIME, and the kernel needs the
+    predicted price to clear the touch by a full tick from a half-tick mid --
+    1.5 ticks. So DECISION-ROW PERFECT FORESIGHT EARNS EXACTLY ZERO HERE, while
+    the 10-second-horizon perfect predictor earns 311 ticks on the same rows and
+    the fitted model earns 50. That is why the guard is referenced to the
+    theorem and not to decision-row perfect foresight: the tighter quantity is
+    not a bound, and on this frame it would abort a perfectly ordinary result.
+
+    On the five real OOF blocks the ordering is the other way round
+    (2,580,239 decision-row against 702,556 at the 10-second horizon on
+    `oof_block_3`), which is the whole point: the ordering between the two
+    perfect predictors is a property of the DATA's tick granularity, so neither
+    can serve as a bound. Only the total variation holds on both.
+    """
+    val = _val_frame(lake_root, registry_root, tracking_root)
+    ceiling = perfect_foresight_ceiling(val)
+    decision_row = decision_row_perfect_foresight(val)
+    variation = mid_total_variation(val)
+    print(
+        f"label-horizon ceiling {ceiling['closed_pnl_ticks']:,} ticks "
+        f"({ceiling['trades']} trades); decision-row perfect foresight "
+        f"{decision_row['closed_pnl_ticks']:,} ticks "
+        f"({decision_row['trades']} trades); mid total variation "
+        f"{variation['total_variation_ticks']:,} ticks"
+    )
+    # The theorem, against BOTH perfect predictors. This is the claim the guard
+    # rests on and it must hold whichever of the two is larger.
+    assert ceiling["closed_pnl_ticks"] < variation["total_variation_ticks"], (
+        "the label-horizon perfect predictor reached the mid's total variation, "
+        "which the one-tick minimum spread makes impossible"
+    )
+    assert decision_row["closed_pnl_ticks"] < variation["total_variation_ticks"], (
+        "decision-row perfect foresight reached the mid's total variation, "
+        "which the one-tick minimum spread makes impossible"
+    )
+    # Anti-vacuity for the theorem: it must not hold merely because everything
+    # is zero.
+    assert ceiling["closed_pnl_ticks"] > 0 and ceiling["trades"] > 0
+
+    # And the measurement that disqualifies the tighter candidate.
+    assert decision_row["trades"] == 0, (
+        "decision-row perfect foresight now trades on the fixture, so the "
+        "measurement this test records -- a one-tick-step path defeats the "
+        "finest-horizon perfect predictor entirely -- no longer holds and the "
+        "reason the guard is not referenced to it needs re-deriving"
+    )
+    assert decision_row["closed_pnl_ticks"] < ceiling["closed_pnl_ticks"], (
+        "on a one-tick-step path the finest horizon must earn LESS than the "
+        "10-second one; if it does not, the granularity argument is wrong"
+    )
+    assert decision_row["rows_walked"] == variation["rows_walked"] == val.height
+
+
+def test_a_flat_path_is_refused_rather_than_bounded_at_zero():
+    """A perfectly flat midprice admits no P&L, so its total variation is 0 --
+    and a bound of zero makes the guard raise on every result including exactly
+    zero. Refused, in the same register as the zero-row frame."""
+    flat = pl.DataFrame(
+        {
+            "etime": [1, 2, 3],
+            "bid_price": [77_000.0, 77_000.0, 77_000.0],
+            "ask_price": [77_000.1, 77_000.1, 77_000.1],
+            "mid": [77_000.05, 77_000.05, 77_000.05],
+        },
+        schema={
+            "etime": pl.Int64,
+            "bid_price": pl.Float64,
+            "ask_price": pl.Float64,
+            "mid": pl.Float64,
+        },
+    )
+    with pytest.raises(ValueError, match="never moved"):
+        mid_total_variation(flat)
+    # Anti-vacuity: one moving row and it computes.
+    moved = flat.with_columns(
+        pl.Series("bid_price", [77_000.0, 77_000.0, 77_000.1]),
+        pl.Series("ask_price", [77_000.1, 77_000.1, 77_000.2]),
+        pl.Series("mid", [77_000.05, 77_000.05, 77_000.15]),
+    )
+    assert mid_total_variation(moved)["total_variation_half_ticks"] == 2
+
+
+def test_the_mid_total_variation_is_exact_integer_arithmetic_on_hand_built_rows(
+    lake_root, registry_root, tracking_root
+):
+    """The theorem's arithmetic, on four rows whose answer can be counted by
+    hand, and then the invariant on the fixture.
+
+    Mid in ticks is a HALF tick at a one-tick spread, so the exact integer is
+    `bid_ticks + ask_ticks` -- twice the mid -- and the variation is reported in
+    those half-ticks as well as halved. A float accumulation would make a
+    sixteen-million-row bound depend on summation order.
+
+        book_sum:    1_540_001, 1_540_003, 1_540_001, 1_540_011
+        |diffs|:             2,         2,        10          -> 14 half-ticks
+        ticks:                                                    7.0
+    """
+    frame = pl.DataFrame(
+        {
+            "etime": [1, 2, 3, 4],
+            "bid_price": [77_000.0, 77_000.1, 77_000.0, 77_000.5],
+            "ask_price": [77_000.1, 77_000.2, 77_000.1, 77_000.6],
+            "mid": [77_000.05, 77_000.15, 77_000.05, 77_000.55],
+        },
+        schema={
+            "etime": pl.Int64,
+            "bid_price": pl.Float64,
+            "ask_price": pl.Float64,
+            "mid": pl.Float64,
+        },
+    )
+    hand = mid_total_variation(frame)
+    print(f"hand-built variation: {hand}")
+    assert hand["total_variation_half_ticks"] == 14
+    assert isinstance(hand["total_variation_half_ticks"], int)
+    assert hand["total_variation_ticks"] == 7.0
+    # `bound_ticks` is what the guard compares against and it is the FLOOR of
+    # half the half-ticks -- asserted as its own literal, because every other
+    # assertion in this file would pass on a bound that forgot to halve.
+    assert hand["bound_ticks"] == 7
+    assert isinstance(hand["bound_ticks"], int)
+    assert hand["total_variation_usd_per_btc"] == pytest.approx(0.70, rel=1e-12)
+    assert hand["total_variation_usd_at_traded_lot"] == pytest.approx(0.0007, rel=1e-12)
+
+    val = _val_frame(lake_root, registry_root, tracking_root)
+    real = mid_total_variation(val)
+    assert real["total_variation_half_ticks"] > 0
+    assert real["total_variation_ticks"] * 2.0 == real["total_variation_half_ticks"]
+
+
+def test_the_decision_row_bound_holds_the_last_row_flat_and_refuses_an_empty_frame():
+    """The last row has no next row. It is held flat -- a zero return, the
+    measured-neutral value -- rather than dropped, because a bound measured
+    over a different row set than the P&L it bounds is not a bound on it.
+
+    Asserted by construction: a two-row frame whose second row is the last
+    produces AT MOST one fill, and the fill cannot land on the final row
+    because its prediction is its own mid.
+    """
+    frame = pl.DataFrame(
+        {
+            "etime": [1, 2],
+            "bid_price": [77_000.0, 77_002.0],
+            "ask_price": [77_000.1, 77_002.1],
+            "mid": [77_000.05, 77_002.05],
+        },
+        schema={
+            "etime": pl.Int64,
+            "bid_price": pl.Float64,
+            "ask_price": pl.Float64,
+            "mid": pl.Float64,
+        },
+    )
+    bound = decision_row_perfect_foresight(frame)
+    print(f"two-row bound: {bound}")
+    assert bound["rows_walked"] == 2
+    assert bound["trades"] == 1, (
+        "row 0 must enter long on row 1's higher mid; a different count means "
+        "the next-row shift is off by one"
+    )
+    # One fill cannot close a leg, so the CLOSED P&L is zero while the open
+    # leg's mark is not -- the distinction `_pnl_report` keeps separate.
+    assert bound["closed_pnl_ticks"] == 0
+    assert bound["closed_plus_unrealised_usd_at_traded_lot"] > 0.0
+
+    empty = pl.DataFrame(
+        schema={
+            "etime": pl.Int64,
+            "bid_price": pl.Float64,
+            "ask_price": pl.Float64,
+            "mid": pl.Float64,
+        }
+    )
+    with pytest.raises(ValueError, match="no rows"):
+        decision_row_perfect_foresight(empty)
+    with pytest.raises(ValueError, match="no rows"):
+        mid_total_variation(empty)
+    with pytest.raises(ValueError, match="no 'mid' column"):
+        decision_row_perfect_foresight(frame.drop("mid"))
+
+
+def test_the_decision_row_bound_routes_its_prediction_through_the_one_conversion_site(
+    lake_root, registry_root, tracking_root, monkeypatch
+):
+    """D-07-33 applied to the NEW quantity too, proved behaviourally: replace
+    `models.conversion.neutral_fill_null_predictions` with something that
+    refuses, and the bound must fail.
+
+    Without this, the bound could compute `mid * (1 + ret)` inline and produce
+    the SAME NUMBERS -- so no value assertion in this file could see it, and
+    the guard's reference and the P&L it bounds would be one edit away from
+    being converted by two different rules. That is precisely how Phase 6 lost
+    a plan.
+    """
+    val = _val_frame(lake_root, registry_root, tracking_root)
+
+    def _refuse(*args, **kwargs):
+        raise RuntimeError("the one conversion site was called")
+
+    monkeypatch.setattr(
+        "models.gates.neutral_fill_null_predictions", _refuse, raising=True
+    )
+    with pytest.raises(RuntimeError, match="the one conversion site was called"):
+        decision_row_perfect_foresight(val)
 
 
 # --------------------------------------------------------------------------

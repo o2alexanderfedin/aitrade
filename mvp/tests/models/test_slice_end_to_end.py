@@ -54,6 +54,7 @@ from mlflow.tracking import MlflowClient
 
 from harness import budget, negative_log
 from models import cache, slice as slice_module
+from models.conversion import neutral_fill_null_predictions
 from models.frozen import read_frozen_predictor
 from models.gates import CeilingExceededError, perfect_foresight_ceiling
 from models.predictions import load_prediction_table, predictions_dataset
@@ -70,6 +71,7 @@ from models.slice import (
     run_slice,
 )
 from models.sweep import SelectionError, selection_path
+from sim.ticks import PRICE_SCALE, TICK_SIZE_SCALED
 from tests.fixtures.model_span import build_model_span_fixture
 from tracking.mlflow_utils import (
     MANDATORY_TAG_KEYS,
@@ -666,31 +668,78 @@ def test_the_val_look_is_spent_exactly_once_across_the_whole_slice(
 def test_the_ceiling_guard_fires_on_a_fabricated_pnl_inside_the_slice(
     tmp_path, lake_root, registry_root, monkeypatch, tracking_root
 ):
-    """Forced to report the perfect-foresight P&L itself, the slice RAISES
-    rather than reporting it.
+    """THE GUARD'S TEETH, and the only construction that can produce them.
 
-    The fabrication is at the simulator, not at the guard: the kernel is
-    handed perfect foresight's own prediction while the slice believes it is
-    scoring the model, so `guard_against_ceiling` is reached with the two
-    numbers equal -- which is already too high, because equality means the
-    model matched perfect foresight tick for tick.
+    The fabrication is at the simulator, not at the guard: the slice believes it
+    is scoring the model while the kernel walks a DIFFERENT PRICE PATH -- the
+    val frame's own book with every deviation from its first row tripled -- fed
+    perfect foresight's prediction on that path. The P&L that comes back was
+    earned over rows the bound was never measured on, which is failure mode #1
+    in the guard's own message, and it exceeds what any policy on the real path
+    could produce. The guard raises and no run is opened.
+
+    WHY THE FABRICATION HAD TO BECOME THIS (changed 2026-09-29 with the guard's
+    reference; `models/gates.py`'s module docstring has the measurement). The
+    guard's bound is now `mid_total_variation`, which is a THEOREM: every closed
+    leg pays at least a one-tick spread, so perfect foresight on the REAL path
+    comes in strictly below it and the previous fabrication -- perfect foresight
+    on the real rows -- can no longer reach the guard by construction, not by
+    accident. Nor can any other prediction. That is the price of a bound that is
+    actually a bound, and it is why the widened path is the honest construction:
+    the results this guard exists to catch are the impossible ones.
+
+    The tighter candidate cannot be used instead: decision-row perfect foresight
+    earns exactly ZERO on this rig's one-tick-step path while the model earns 50
+    ticks, so a guard referenced to it would abort every ordinary run here --
+    asserted in `tests/models/test_gates.py`.
     """
     rig = _rig(tmp_path, lake_root, registry_root, tracking_root)
     _selected, _frozen, scored = _select_freeze_val(rig)
+    bound_ticks = int(scored.metrics["mid_total_variation_bound_ticks"])
     ceiling_ticks = int(scored.metrics["ceiling_closed_pnl_ticks"])
-    assert ceiling_ticks > 0
+    real_pnl = int(scored.metrics["sim_closed_pnl_ticks"])
+    assert 0 < real_pnl < bound_ticks, (
+        f"the honest run's {real_pnl} ticks is not strictly inside the "
+        f"{bound_ticks}-tick bound, so this rig cannot show the guard "
+        "distinguishing an ordinary result from an impossible one"
+    )
 
-    val = pl.read_parquet(_val_cache(rig))
-    mid = val["mid"].to_numpy()
-    perfect = mid * (1.0 + val[TARGET_NAME].fill_null(0.0).to_numpy())
     real_sim = slice_module.run_sim_checked
+    widening = 3
 
     def fabricated(etime, bid_ticks, ask_ticks, _pred, **kwargs):
-        return real_sim(etime, bid_ticks, ask_ticks, perfect, **kwargs)
+        # The same book, with every deviation from row 0 tripled -- a path whose
+        # total variation is three times the one the bound was measured on.
+        base_bid = int(bid_ticks[0])
+        wide_bid = base_bid + widening * (bid_ticks - base_bid)
+        wide_ask = wide_bid + (ask_ticks - bid_ticks)
+        wide_mid = (wide_bid + wide_ask) * (TICK_SIZE_SCALED / PRICE_SCALE) / 2.0
+        next_mid = np.empty_like(wide_mid)
+        next_mid[:-1] = wide_mid[1:]
+        next_mid[-1] = wide_mid[-1]
+        perfect, substituted = neutral_fill_null_predictions(
+            np.ascontiguousarray(next_mid / wide_mid - 1.0, dtype=np.float64),
+            np.ascontiguousarray(wide_mid, dtype=np.float64),
+        )
+        assert substituted == 0
+        return real_sim(
+            etime,
+            np.ascontiguousarray(wide_bid, dtype=np.int64),
+            np.ascontiguousarray(wide_ask, dtype=np.int64),
+            perfect,
+            **kwargs,
+        )
 
     monkeypatch.setattr(slice_module, "run_sim_checked", fabricated)
-    with pytest.raises(CeilingExceededError, match=str(ceiling_ticks)):
+    with pytest.raises(CeilingExceededError, match=str(bound_ticks)) as excinfo:
         _run(rig, MODE_VAL, VAL_HASH)
+    message = str(excinfo.value)
+    print("slice guard:", message)
+    assert str(ceiling_ticks) not in message, (
+        "the guard named the label-horizon ceiling, which means the slice is "
+        "still handing it the quantity that moves 30x with a choice of label"
+    )
+    assert "mid_total_variation" in message
 
 
 def test_the_slice_reports_n_pred_missing_as_a_metric(

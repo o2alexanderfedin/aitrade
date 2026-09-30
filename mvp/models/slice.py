@@ -53,8 +53,14 @@ produced no run because the model underperformed would fail SC3 on top of
 SC1. A failing `gate_monetization` is recorded as a negative result FIRST
 (runs cannot nest), then run 3 opens and logs the failing numbers.
 `guard_against_ceiling` is the one exception and is not a gate: a P&L at the
-perfect-foresight ceiling is an investigation halt, so it raises and no run
-is opened for it.
+perfect-foresight bound is an investigation halt, so it raises and no run
+is opened for it. That bound is `mid_total_variation` -- the one quantity here
+that is a theorem -- and NOT the label-horizon `perfect_foresight_ceiling`
+(changed 2026-09-29; see `models/gates.py`'s module docstring for the
+measurement that forced it). The ceiling is still measured here and still
+logged under its own unchanged `ceiling_*` keys, and
+`decision_row_perfect_foresight` is logged beside it as the leak signal a real
+prediction can approach -- both as diagnostics, neither as a halt.
 
 REUSE BEFORE WRITING, AT STEPS 2 AND 7. Both `write_normalization_artifact`
 and `write_prediction_table` enforce write-once with a PARENT-directory glob
@@ -98,9 +104,11 @@ from models.conversion import neutral_fill_null_predictions
 from models.frozen import read_frozen_predictor, write_frozen_predictor
 from models.gates import (
     closed_pnl_ticks,
+    decision_row_perfect_foresight,
     gate_forecast,
     gate_monetization,
     guard_against_ceiling,
+    mid_total_variation,
     perfect_foresight_ceiling,
     ticks_to_usd_at_traded_lot,
 )
@@ -1151,9 +1159,20 @@ def run_slice(
         assert_table_aligned(val, reread.table)
         table = reread.table
 
-    # ---- STEP 8: ceiling, simulator, gates, guard -----------------------
-    # The ceiling comes from the CACHED val frame. A second `materialize`
-    # here would spend a look for a number that is a property of the data.
+    # ---- STEP 8: bound, ceiling, simulator, gates, guard ----------------
+    # Every one of the three comes from the CACHED val frame. A second
+    # `materialize` here would spend a look for a number that is a property of
+    # the data.
+    #
+    # THREE QUANTITIES, ONE OF WHICH THE GUARD TAKES. `variation` is the mid's
+    # own total variation -- the theorem -- and is the guard's reference;
+    # `bound` is decision-row perfect foresight, reported as the leak signal a
+    # real prediction can actually approach; `ceiling` is the label-horizon
+    # figure, kept as a diagnostic under its own unchanged metric keys. Each
+    # walks the frame once and keeps only integers, so the trade log of one is
+    # freed before the next allocates.
+    bound = decision_row_perfect_foresight(val)
+    variation = mid_total_variation(val)
     ceiling = perfect_foresight_ceiling(val, label_column=TARGET_NAME)
     stored_pred = np.asarray(table["pred"].to_numpy(), dtype=np.float64)
     mid = np.ascontiguousarray(
@@ -1228,13 +1247,36 @@ def run_slice(
                 if int(ceiling["closed_pnl_ticks"]) != 0
                 else float("nan")
             ),
+            # THE GUARD'S OWN REFERENCE, logged so a reader of the run can see
+            # which number it was judged against rather than inferring it.
+            "mid_total_variation_ticks": float(variation["total_variation_ticks"]),
+            "mid_total_variation_bound_ticks": float(variation["bound_ticks"]),
+            "pnl_fraction_of_mid_total_variation": (
+                float(pnl_ticks) / float(variation["total_variation_ticks"])
+            ),
+            # THE LEAK SIGNAL, reported and never raised on: unlike the theorem
+            # above, this is a number a real prediction approaches (the frozen
+            # winner reached 87.5% of it on oof_block_3), and unlike the ceiling
+            # it does not move with a choice of label. It is NOT a bound -- it is
+            # exactly 0 on the fixture rig, where the model earns 50 ticks -- so
+            # a fraction above 1 is a finding to investigate, not an impossibility.
+            "decision_row_pf_trades": float(bound["trades"]),
+            "decision_row_pf_closed_pnl_ticks": float(bound["closed_pnl_ticks"]),
+            "decision_row_pf_pnl_usd": float(bound["closed_pnl_usd_at_traded_lot"]),
+            "pnl_fraction_of_decision_row_pf": (
+                float(pnl_ticks) / float(bound["closed_pnl_ticks"])
+                if int(bound["closed_pnl_ticks"]) != 0
+                else float("nan")
+            ),
             "forecast_gate_passed": float(forecast_passed),
             "monetization_gate_passed": float(monetization_passed),
         }
     )
-    # NOT a gate: a P&L at the ceiling is an investigation halt, so it raises
-    # and opens no run.
-    guard_against_ceiling(pnl_ticks, int(ceiling["closed_pnl_ticks"]), VAL_SEGMENT_NAME)
+    # NOT a gate: a P&L at the bound is an investigation halt, so it raises and
+    # opens no run. The bound is the mid's total variation -- a theorem -- never
+    # the label-horizon ceiling and never decision-row perfect foresight, which
+    # is zero on a sub-tick path (see `models/gates.py`'s module docstring).
+    guard_against_ceiling(pnl_ticks, int(variation["bound_ticks"]), VAL_SEGMENT_NAME)
 
     # A failing gate is recorded BEFORE run 3 opens, because runs cannot
     # nest (D-07-30). One record, on the frozen body's own recipe, so it is
