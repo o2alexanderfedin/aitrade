@@ -118,3 +118,117 @@ a decision for the discuss step of a later plan, not an executor's.
 
 NOT staged, NOT modified, NOT deleted. It is outside `mvp/` and outside this
 phase, and whether the repo root should carry it is the repo owner's call.
+
+---
+
+## `perfect_foresight_ceiling` is not a bound, and `guard_against_ceiling` will abort 07-11 AFTER the val look is spent
+
+**Found during:** the zero-look OOF viability run (`mvp/scripts/oof_viability_check.py`,
+evidence `07-oof-viability-results.json`).
+**Status:** NOT FIXED. It is a gate and a reference band; an executor does not
+move either (the user's own standing instruction, and D-07-19 owns the guard).
+
+**What was measured.** The committed frozen winner, simulated on the five
+cached OOF blocks at `x_bps=0`, earns **1.44x / 2.21x / 3.21x / 3.01x** the
+`ret_10s_mid` perfect-foresight ceiling on blocks 1, 2, 3 and 4 (block 0 is
+0.77x). `guard_against_ceiling` therefore raises `CeilingExceededError` on
+four of five blocks.
+
+**Why that is the ceiling and not a leak.** `perfect_foresight_ceiling` feeds
+the REALISED FUTURE MID at one label's horizon into the flip-only rule. That
+input is a price, and `sim/kernel.py`'s symmetric floor/ceil quantisation
+fires only when the predicted price clears the touch by a FULL tick. At a
+one-tick spread the future mid sits a half tick off the tick grid, so a
+horizon-h perfect predictor fires only on moves of ~1.5 ticks within h -- and
+the P&L it reports falls monotonically with h. Measured on `oof_block_3`, same
+rows, same rule, only the label changed:
+
+| perfect foresight at | trades | closed_pnl_ticks |
+|---|---|---|
+| `ret_1s_mid` | 11,394 | 1,579,033 |
+| `ret_10s_mid` (the guard's input) | 6,643 | 702,556 |
+| `ret_1min_mid` | 3,027 | 285,144 |
+| `ret_10min_mid` | 941 | 86,019 |
+| next DECISION ROW (pred = next row's mid) | 14,972 | 2,580,239 |
+| mid's own total variation (a true bound) | -- | 2,763,605 |
+
+A threshold that moves 30x with a choice of label is not a physical bound.
+Against the two numbers that are bounds for a one-lot flip-only policy, the
+model's 2,257,251 ticks is **87.5%** of decision-row perfect foresight and
+**81.7%** of total variation -- below both, on every block.
+
+**The measurement that says the simulator is not what is wrong.**
+`oof_block_1` is 2026-09-13, and its ceiling comes out at **2,192 trades /
+294,554 closed ticks / $29.4554** -- byte-identical to Phase 6's committed
+real-day measurement and to `STATE.md`'s reference for that day. The ceiling
+code and the whole sim path reproduce a previously-committed number exactly.
+
+**What this means for 07-11, concretely.** In `models/slice.py`'s `mode="val"`,
+`guard_against_ceiling` is called at step 8, AFTER `materialize_once("val")`
+has spent the look and AFTER `write_prediction_table` has issued its manifest,
+and BEFORE run 3 opens. If `val` behaves like these blocks -- the model earns
+~0.14 ticks per admitted row, so ~2.3M ticks over val's 16,294,059 rows
+against the quoted 1,120,460-tick ceiling -- then **07-11 spends the look,
+writes the table, and raises, logging no MLflow run and no metrics.**
+`--resume-from-cache` re-reads the cache and hits the same guard, because the
+guard is a function of the data. The look would not be lost, but the plan as
+written cannot complete.
+
+**Not fixed, and the repair is a decision not an edit.** Three shapes were
+visible from the evidence and none is an executor's call: (a) bound against
+perfect foresight at the DECISION-ROW resolution, or against the mid's total
+variation, instead of at the label's horizon; (b) keep the horizon ceiling as
+a reported diagnostic and stop raising on it; (c) keep it as a raise but state
+in `models/gates.py` that it bounds only a horizon-matched policy. The module
+docstring already concedes the direction -- "perfect foresight fed to the
+flip-only rule at x_bps=0 is ONE PARTICULAR POLICY, not the P&L maximum" --
+so this is that caveat turning out to be the operative case rather than the
+edge case.
+
+---
+
+## `x_bps` has exactly ONE usable value for this signal, and it is 0
+
+**Found during:** the same run.
+**Status:** NOT FIXED. `x_bps` is `spec.md`'s own parameterisation ("trade when
+predicted midprice crosses TOB by X bps (X swept)") and changing its units is
+a spec change.
+
+`sim/kernel.py` computes `x_ticks = (bid_ticks + ask_ticks) * x_bps // 20_000`
+and `run_sim_checked` coerces `x_bps` with `int()`. On this window that makes
+one basis point worth **74 to 79 ticks**, measured. The frozen model's
+predictions clear the touch by at most a few ticks, so at `x_bps=1` there are
+**zero trigger rows and zero trades on every one of the five blocks** -- not a
+smaller trade set, an empty one.
+
+So Stage 2's "X swept" has one feasible point at this signal's amplitude. The
+knob that DOES vary the trade set continuously is the coefficient amplitude
+itself (measured: 49,912 trades at `coef=6.75e-6` rising monotonically to
+75,862 at `3.10e-5` on `oof_block_3`). Whether the sweep axis should become
+sub-basis-point, or ticks, or the amplitude itself, is a Stage-2 design
+question for a discuss step.
+
+---
+
+## The simplification that dominates the P&L is not on the simplification list
+
+**Found during:** the same run.
+**Status:** NOT FIXED. `mvp.md`/`spec.md` item 7 is the monetization
+simplification list and editing it is a spec change, not an executor's edit.
+
+The list names zero fees, taker-only, zero latency, $100 max position. What it
+does not name is the **unconditional fill at the touch**: the simulator fills
+0.001 BTC at `ask_ticks[i]` or `bid_ticks[i]` on the same row whose book
+produced the feature, with no queue and no adverse selection. Measured, that is
+where the entire P&L comes from -- the sign of the frozen prediction agrees
+with the sign of the NEXT row's mid change **91.5% to 96.0%** of the time
+(82.5% to 94.6% tick-weighted), which is top-of-book queue depletion: the best
+bid shrinking toward zero is what precedes the bid ticking down. Monetising it
+requires being filled at a quote that is about to disappear.
+
+`spec.md` already anticipates this in its pitfalls -- "track mid-vs-fill skill
+gap explicitly (report IC on mid and IC on a fillable proxy)" and
+"adverse-selection patterns flagged in trade log (e.g., immediate-after-fill
+price reversion histogram)". Neither is implemented. This entry exists so the
+first reader of a `Net P&L > 0` claim on this model knows which assumption is
+carrying it.
