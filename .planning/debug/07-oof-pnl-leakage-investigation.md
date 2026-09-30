@@ -35,11 +35,20 @@ is ~0.95.
 5. The profit degrades gracefully with latency (84% retained at ~20-40 ms), which
    no one-instant artifact does.
 
-**The profit is an artifact of an unconditional-fill assumption** — the model
-fires on 91-94% of rows and the kernel fills, at that row's own touch, with no
-queue, no latency and no adverse selection. That simplification is real and
-belongs in the register. It is not a defect, and nothing about it invalidates a
-number this phase produced.
+**The profit is an artifact of ZERO FEES, not of the fill assumption.** The edge
+is 6,250,827 ticks over 155,927 trades = **40.09 ticks per round trip = 0.519 bp**
+of a ~$77,000 mid. The viability script's own `x_bps=1` probe already shows what
+that means: a 1 bp entry threshold (74-79 ticks) produces **zero trades and zero
+P&L on all five blocks**. The model's whole predicted excursion beyond the touch
+is under one basis point, so any friction of that order erases it.
+
+Fill and latency are *not* what carry it, and I have numbers against both: a
+one-row (~1 ms) lag costs 2.5%, a 20-40 ms lag costs 16%, and the side the model
+takes has a median 2.884 BTC resting against its 0.001 BTC order — at or below the
+order size on only 0.19% of rows. The unconditional fill and zero latency remain
+unregistered simplifications and should be registered, but they are secondary; the
+sign of this P&L depends on the zero-fee simplification. None of this is a defect,
+and none of it invalidates a number this phase produced.
 
 ---
 
@@ -243,20 +252,38 @@ row's own feature. Both sides of that come from information set `t`.
 H2 posited would be a feature computed from a *later* book state, and section 2
 shows it is not.
 
-What *is* an unregistered simplification, and is the actual explanation of the
-P&L: the fill is **unconditional**. The kernel fills whenever the trigger fires,
-with no queue position, no latency and no adverse selection. The model fires on
-91-94% of rows, so it is effectively always positioned, flipping at the moments
-`imb_top` changes sign — and it collects the forward move each time, for free.
+Two things *are* unregistered simplifications here. The fill is
+**unconditional** — the kernel fills whenever the trigger fires, with no queue
+position and no adverse selection — and latency is zero. Both should be
+registered. But neither is what carries the P&L, and I have measurements against
+both.
 
-One measurement that bounds how bad that assumption is, on the 2 h real slice
-(749,932 decision rows): the side the model takes (the ask when `imb_top > 0`,
-the bid when `imb_top < 0`) has a **median 2.884 BTC resting** against a 0.001
-BTC order, and rests at or below the order size on only **0.19%** of rows. The
-untaken side's median is 14.996 BTC (5.2x). So the typical fill is *not* against
-a vanishing queue — I expected it would be and it is not. **This does not settle
-whether the P&L survives a fill model**; it only rules out the crudest version of
-that objection.
+On the 2 h real slice (749,932 decision rows), the side the model takes (the ask
+when `imb_top > 0`, the bid when `imb_top < 0`) has a **median 2.884 BTC
+resting** against a 0.001 BTC order, and rests at or below the order size on only
+**0.19%** of rows. The untaken side's median is 14.996 BTC (5.2x). So the typical
+fill is *not* against a vanishing queue — I expected it would be and it is not.
+Latency degrades the P&L gracefully (section 7: 84% retained at 20-40 ms).
+
+What the sign of the P&L actually depends on is **zero fees**. The realised edge
+is 40.09 ticks per round trip (6,250,827 / 155,927), which is **0.519 bp** of a
+~$77,000 mid. The viability script's `x_bps=1` probe is already in the evidence
+file and settles it:
+
+| block | x=0 ticks | x=0 trades | x=1 ticks | x=1 trades | x_ticks at 1 bp |
+|---|---|---|---|---|---|
+| oof_block_0 | 96,714 | 3,566 | **0** | **0** | 77 |
+| oof_block_1 | 423,240 | 10,673 | **0** | **0** | 76-77 |
+| oof_block_2 | 1,469,367 | 32,241 | **0** | **0** | 76-79 |
+| oof_block_3 | 2,257,251 | 61,970 | **0** | **0** | 74-78 |
+| oof_block_4 | 2,004,255 | 47,477 | **0** | **0** | 75-76 |
+| TOTAL | 6,250,827 | 155,927 | **0** | **0** | |
+
+One basis point of required overshoot beyond the touch produces zero trades on
+every block. The model's entire predicted excursion lives inside one tick of
+significance. **This does not settle whether the P&L survives a fill model** —
+that is out of scope — but it does identify which simplification the sign hangs
+on, and it is not the fill.
 
 ## 5. Re-deriving the CI leakage proof rather than trusting it green
 
@@ -395,9 +422,11 @@ labels read nothing after `t+h`.
 
 The +$625.08 remains what the viability script already declared it to be — in
 sample twice over (these five blocks selected the winner; the frozen body was
-fitted on a train cache containing all five) — and is now also known to rest on
-an **unconditional fill at the touch with zero latency**, which should be
-registered as a simplification rather than carried implicitly.
+fitted on a train cache containing all five) — and is now also known to be
+**0.519 bp per round trip, positive only under zero fees**: the existing
+`x_bps=1` probe produces zero trades on all five blocks. Unconditional fill and
+zero latency should also be registered, but the measurements above show they are
+not what the sign depends on.
 
 ## In bold: what I did NOT check
 
@@ -407,11 +436,19 @@ registered as a simplification rather than carried implicitly.
   and latency decay (84% at 20-40 ms), which bound the objection but do not
   answer it. Queue position, partial fills, and adverse selection against a
   quote that is *about to be taken by someone else* are untested.
+- **The venue's actual fee schedule.** I did not look it up. The statement I
+  stand behind is the measured one: the edge is 0.519 bp per round trip and a
+  1 bp threshold zeroes it. Whether Binance USDS-M taker fees are 2 bp or 5 bp
+  per side changes the margin, not the conclusion, but I did not verify them.
 - **Whether curated `etime` is the right clock.** I took `etime` as given
-  (Phase 3's question). If exchange `E`/`T` were mis-assigned at ingest, every
-  statement here inherits that error. Note the ms resolution: ~7 book updates
-  share one `etime` value, so within-millisecond ordering rests entirely on
-  `seq`, which I did not audit against `update_id` monotonicity.
+  (Phase 3's question). If the exchange `E`/`T` field were mis-assigned at
+  ingest, every statement here inherits that error. What I *did* close: the
+  within-millisecond ordering. `etime` has ms resolution and ~7 book updates
+  share one value, so the order rests on `seq` — and over all 17,167,290
+  bookTicker rows of 2026-09-13, sorting by `(etime, seq)` leaves the venue's own
+  `update_id` **strictly increasing, zero violations**. The reconstruction's
+  "last update at or before t" is therefore the venue's last update too, not an
+  artifact of the ingest's row numbering.
 - **`features/build.py`'s chunking and the partition writer.** I re-derived the
   path `project -> merge -> decision_row_index -> kernel` on real data, and
   confirmed it reproduces the cached frame. I did **not** exercise `build.py`'s
