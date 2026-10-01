@@ -1,0 +1,36 @@
+{
+  "built_at": 1790835666583277000,
+  "code_hash": "d9ec46f2e9a331a06be53ceaaef5a3c16b1d2297",
+  "dataset": "BTCUSDT.predictions",
+  "etime_range": [
+    1789605516747000000,
+    1789775999712000000
+  ],
+  "inputs": [
+    {
+      "manifest_id": "807125015b252014ad8ee5282a21b2eccbfe01a287122cce5512ec9885aa3548",
+      "path": "/Volumes/ProjectsSSD/aihedgefund/repo/mvp/data/lake_registry/segments/807125015b252014ad8ee5282a21b2eccbfe01a287122cce5512ec9885aa3548.json",
+      "predictor_id": "ff91c9aa2a595513f407c4a01ad794ebc4b5ccd3595c61d5dabdcc426298c3ff",
+      "role": "scored_segment",
+      "segment_name": "val",
+      "sha256": "c2082b47bc02f25a43566cc40333cf4c92bb6e7faa69f6b508f68b927a1639c0"
+    }
+  ],
+  "manifest_id": "f40701838e555bcf811a57f1e24ab2eaa22d2412c100118e308ff22b3a43a106",
+  "partitions": [
+    {
+      "etime_max": 1789775999712000000,
+      "etime_min": 1789605516747000000,
+      "mtime_ns": 1790835666458805453,
+      "path": "predictions/symbol=BTCUSDT/segment_manifest=807125015b252014ad8ee5282a21b2eccbfe01a287122cce5512ec9885aa3548/segment=val/predictor=ff91c9aa2a595513/part-1790835666098050000.parquet",
+      "rows": 16294059,
+      "sha256": "485b22cb08fb2a0609a3e85669aba39d6589da411952714a184e43b927c7ad70",
+      "size_bytes": 181851924
+    }
+  ],
+  "row_count": 16294059,
+  "schema_version": 1,
+  "stream": "predictions",
+  "symbol": "BTCUSDT",
+  "tier": "predictions"
+}
