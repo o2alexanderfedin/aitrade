@@ -1,0 +1,136 @@
+{
+  "day_boundary_note": "The simulator starts and ends flat, so a per-day run forces a close at midnight and a fresh open after it. The per-day P&Ls therefore do not sum to the pooled P&L; the residual is reported. Forecast metrics are row-wise and do reconcile, which this script checks.",
+  "days": {
+    "2026-09-17": {
+      "ceiling_closed_pnl_ticks": 515071.0,
+      "ceiling_pnl_usd": 51.5071,
+      "decision_row_pf_closed_pnl_ticks": 1078558.0,
+      "mid_total_variation_ticks": 1125782.0,
+      "n_admitted": 8434640.0,
+      "n_pred_missing": 1.0,
+      "n_scorable": 8430612,
+      "pnl_fraction_of_ceiling": 1.9248045415098112,
+      "pnl_fraction_of_decision_row_pf": 0.9192004509725021,
+      "pnl_fraction_of_mid_total_variation": 0.8806420781288029,
+      "r2_vs_mean": 0.024275457317585847,
+      "r2_vs_zero": 0.024280360963722547,
+      "r2_vs_zero_of_constant_train_mean": -7.605760778739423e-06,
+      "rank_ic_all": 0.29127228888549617,
+      "rank_ic_non_tied": 0.2926247397103034,
+      "sim_closed_pnl_ticks": 991411.0,
+      "sim_flips": 25410.0,
+      "sim_trades": 25411.0,
+      "tie_fraction": 0.17623133409531835,
+      "utc_date": "2026-09-17"
+    },
+    "2026-09-18": {
+      "ceiling_closed_pnl_ticks": 605389.0,
+      "ceiling_pnl_usd": 60.5389,
+      "decision_row_pf_closed_pnl_ticks": 1834216.0,
+      "mid_total_variation_ticks": 1918878.0,
+      "n_admitted": 7859419.0,
+      "n_pred_missing": 0.0,
+      "n_scorable": 7854833,
+      "pnl_fraction_of_ceiling": 2.7211412827124377,
+      "pnl_fraction_of_decision_row_pf": 0.8981215952755837,
+      "pnl_fraction_of_mid_total_variation": 0.8584959544066897,
+      "r2_vs_mean": 0.00811189148110103,
+      "r2_vs_zero": 0.009745173243038696,
+      "r2_vs_zero_of_constant_train_mean": 0.0002858398236758042,
+      "rank_ic_all": 0.20955665666990567,
+      "rank_ic_non_tied": 0.20699661758075105,
+      "sim_closed_pnl_ticks": 1647349.0,
+      "sim_flips": 45135.0,
+      "sim_trades": 45136.0,
+      "tie_fraction": 0.09764956174115987,
+      "utc_date": "2026-09-18"
+    }
+  },
+  "generated_by": "mvp/scripts/val_per_day_report.py",
+  "looks_spent_by_this_script": 0,
+  "pooled": {
+    "ceiling_closed_pnl_ticks": 1120460.0,
+    "ceiling_pnl_usd": 112.046,
+    "decision_row_pf_closed_pnl_ticks": 2913363.0,
+    "mid_total_variation_ticks": 3044660.0,
+    "n_admitted": 16294059.0,
+    "n_pred_missing": 1.0,
+    "n_scorable": 16285445,
+    "pnl_fraction_of_ceiling": 2.35506845402781,
+    "pnl_fraction_of_decision_row_pf": 0.9057436371643355,
+    "pnl_fraction_of_mid_total_variation": 0.8666846215997845,
+    "r2_vs_mean": 0.013563359281659748,
+    "r2_vs_zero": 0.014151305572264405,
+    "r2_vs_zero_of_constant_train_mean": 0.00019688603089518253,
+    "rank_ic_all": 0.24851772029981803,
+    "rank_ic_non_tied": 0.2463008632016707,
+    "sim_closed_pnl_ticks": 2638760.0,
+    "sim_flips": 70545.0,
+    "sim_trades": 70546.0,
+    "tie_fraction": 0.13832959430951994
+  },
+  "pooled_crosscheck": {
+    "n_admitted": {
+      "agrees": true,
+      "mlflow_run": 16294059.0,
+      "recomputed_here": 16294059.0
+    },
+    "n_scorable": {
+      "agrees": true,
+      "mlflow_run": 16285445.0,
+      "recomputed_here": 16285445.0
+    },
+    "r2_vs_mean": {
+      "agrees": true,
+      "mlflow_run": 0.013563359281659748,
+      "recomputed_here": 0.013563359281659748
+    },
+    "r2_vs_zero": {
+      "agrees": true,
+      "mlflow_run": 0.014151305572264405,
+      "recomputed_here": 0.014151305572264405
+    },
+    "r2_vs_zero_of_constant_train_mean": {
+      "agrees": true,
+      "mlflow_run": 0.00019688603089518253,
+      "recomputed_here": 0.00019688603089518253
+    },
+    "rank_ic_all": {
+      "agrees": true,
+      "mlflow_run": 0.24851772029981803,
+      "recomputed_here": 0.24851772029981803
+    },
+    "rank_ic_non_tied": {
+      "agrees": true,
+      "mlflow_run": 0.2463008632016707,
+      "recomputed_here": 0.2463008632016707
+    },
+    "sim_closed_pnl_ticks": {
+      "agrees": true,
+      "mlflow_run": 2638760.0,
+      "recomputed_here": 2638760.0
+    },
+    "sim_trades": {
+      "agrees": true,
+      "mlflow_run": 70546.0,
+      "recomputed_here": 70546.0
+    },
+    "tie_fraction": {
+      "agrees": true,
+      "mlflow_run": 0.13832959430951994,
+      "recomputed_here": 0.13832959430951994
+    }
+  },
+  "predictor_id": "ff91c9aa2a595513f407c4a01ad794ebc4b5ccd3595c61d5dabdcc426298c3ff",
+  "predictor_manifest_id": "e3b4b235d0fe3c025be7c7cdbf7eaa3d2d5675ad9571d6f6a30b1a45680c2d01",
+  "reconciliation": {
+    "scorable_rows_pooled": 16285445.0,
+    "scorable_rows_reconcile": true,
+    "scorable_rows_sum_of_days": 16285445.0,
+    "sim_ticks_pooled": 2638760.0,
+    "sim_ticks_residual_from_day_boundary": 0.0,
+    "sim_ticks_sum_of_days": 2638760.0
+  },
+  "segment": "val",
+  "train_target_mean": 1.2207031283365225e-06
+}
