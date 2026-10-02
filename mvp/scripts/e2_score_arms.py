@@ -214,6 +214,16 @@ def _shrunk_out_of_block(
     `rho^2` by construction and would prove nothing.
     """
     blocks = len(per_block_pred)
+    if blocks < 2:
+        # One window cannot hold out a block from itself. On the validation
+        # window the honest version is `_shrunk_from_oof`: fit the amplitude on
+        # the TRAINING-period blocks and apply it here.
+        return {
+            "unavailable": (
+                "a single scored window has no other block to fit the amplitude "
+                "on; see shrunk_from_oof_blocks"
+            )
+        }
     scales: dict[str, float] = {}
     scaled: list[np.ndarray] = []
     for held in range(blocks):
@@ -231,8 +241,61 @@ def _shrunk_out_of_block(
     return entry
 
 
-def _load_arm(work: Path, tag: str, block: int) -> dict[str, np.ndarray]:
-    path = work / "e2" / f"fc-{tag}-e2" / f"oof_block_{block}.npz"
+def _shrunk_from_oof(
+    work: Path, tag: str, val_pred: np.ndarray, val_y: np.ndarray
+) -> dict[str, Any]:
+    """Validation rescaled by an amplitude fitted on the TRAINING-period blocks.
+
+    This is the fully out-of-sample calibration and the one worth reporting. The
+    ordering is untouched -- only the single amplitude changes -- and that one
+    number is estimated on 2026-09-12..16, days the validation window does not
+    contain. So a positive r-squared here is not borrowed from the rows it is
+    measured on.
+
+    Returns an `unavailable` marker rather than raising when the arm has no
+    out-of-sample counterpart, which is the case for the many-currency bundles:
+    the extra tapes were only built for the validation days.
+    """
+    preds: list[np.ndarray] = []
+    targets: list[np.ndarray] = []
+    for block in BLOCKS:
+        arm_path = work / "e2" / f"fc-{tag}-e2" / f"oof_block_{block}.npz"
+        grid_path = work / "e1" / f"oof_block_{block}.npz"
+        if not arm_path.is_file() or not grid_path.is_file():
+            return {
+                "unavailable": (
+                    f"arm {tag!r} has no out-of-sample run, so its amplitude "
+                    "cannot be fitted away from the validation window"
+                )
+            }
+        with np.load(grid_path) as data:
+            mid = np.asarray(data["mid"], dtype=np.float64)
+        with np.load(arm_path) as data:
+            anchors = np.asarray(data["anchors"], dtype=np.int64)
+            point = np.asarray(data["point"], dtype=np.float64)
+        anchor_mid = mid[anchors]
+        preds.append(point[:, HORIZON - 1] / anchor_mid - 1.0)
+        targets.append(mid[anchors + HORIZON] / anchor_mid - 1.0)
+    scale = _least_squares_scale(np.concatenate(preds), np.concatenate(targets))
+    entry = _metrics(scale * val_pred, val_y)
+    entry["scale_fitted_on_oof_blocks"] = scale
+    entry["oof_rows_used_to_fit_the_scale"] = int(sum(part.shape[0] for part in preds))
+    return entry
+
+
+def _load_arm(
+    work: Path,
+    tag: str,
+    block: int | str,
+    *,
+    val: bool = False,
+    anchors: str = "e2",
+) -> dict[str, np.ndarray]:
+    path = (
+        work / "e3" / f"fc-{tag}-val-{anchors}" / "oof_block_val.npz"
+        if val
+        else work / "e2" / f"fc-{tag}-{anchors}" / f"oof_block_{block}.npz"
+    )
     if not path.is_file():
         raise ScoringError(f"e2_score_arms: no forecast at {path}")
     with np.load(path) as data:
@@ -245,40 +308,88 @@ def _load_arm(work: Path, tag: str, block: int) -> dict[str, np.ndarray]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--timesfm-root", type=Path, default=DEFAULT_TIMESFM_ROOT)
+    parser.add_argument(
+        "--anchors",
+        default="e2",
+        help="which anchor set's runs to score; arms are only comparable within one",
+    )
+    parser.add_argument(
+        "--arms",
+        default="",
+        help=(
+            "comma-separated arm tags to score, baseline FIRST. Defaults to the "
+            "nine-arm set used on the OOF blocks."
+        ),
+    )
+    parser.add_argument(
+        "--val",
+        action="store_true",
+        help=(
+            "score E3's VALIDATION window instead of the five OOF blocks. On "
+            "that window the frozen predictor's column is OUT OF SAMPLE too, so "
+            "the comparison against it needs no caveat for the first time"
+        ),
+    )
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args(argv)
     work = args.timesfm_root / "work"
+    blocks: tuple[int | str, ...] = ("val",) if args.val else BLOCKS
+    arm_tags: tuple[str, ...] = (
+        tuple(t for t in str(args.arms).split(",") if t) if args.arms else ARM_TAGS
+    )
+    if arm_tags[0] != "none":
+        raise ScoringError(
+            "e2_score_arms: the first arm must be `none`, the paired baseline "
+            f"every other arm is differenced against; got {arm_tags[0]!r}"
+        )
+    covariate_arms: tuple[str, ...] = tuple(
+        t for t in arm_tags if t != "none" and not t.endswith("-perm")
+    )
 
     report: dict[str, Any] = {
         "experiment": "E2 -- multivariate TimesFM 3.0 on the 10 s Bitcoin mid",
         "generated_by": "mvp/scripts/e2_score_arms.py",
-        "arms": list(ARM_TAGS),
+        "arms": list(arm_tags),
         "baseline_arm": "none",
         "bootstrap_block_windows": BOOTSTRAP_BLOCK,
         "n_bootstrap": N_BOOTSTRAP,
         "bootstrap_seed": BOOTSTRAP_SEED,
         "horizon_bars": HORIZON,
+        "window": "val" if args.val else "five OOF blocks",
+        "frozen_column_is_out_of_sample": bool(args.val),
         "comparability_note": (
-            "Every arm forecast the same anchors, asserted per block. The frozen "
-            "predictor's column is IN SAMPLE and sits on a time-weighted "
-            "1-second population, not the event-weighted decision rows its "
-            "published 0.006-0.035 range was measured on; the two must not be "
-            "quoted side by side."
+            "Every arm forecast the same anchors, asserted per block. On the "
+            "five OOF blocks the frozen predictor's column is IN SAMPLE -- those "
+            "are the blocks its grid was selected on. On the val window it is "
+            "OUT OF SAMPLE: the body was committed to git before those days were "
+            "read, and TimesFM is zero-shot, so neither model has an advantage "
+            "and the comparison needs no caveat. In BOTH cases the rows are a "
+            "time-weighted 1-second grid, not the event-weighted decision rows "
+            "the published r-squared range was measured on, so no number here "
+            "may be quoted beside that range."
         ),
         "blocks": {},
         "pooled": {},
     }
 
-    pooled: dict[str, list[np.ndarray]] = {tag: [] for tag in ARM_TAGS}
+    pooled: dict[str, list[np.ndarray]] = {tag: [] for tag in arm_tags}
     pooled["frozen"] = []
     pooled_y: list[np.ndarray] = []
 
-    for block in BLOCKS:
-        with np.load(work / "e1" / f"oof_block_{block}.npz") as data:
+    for block in blocks:
+        grid_path = (
+            work / "e3" / "val.npz"
+            if args.val
+            else work / "e1" / f"oof_block_{block}.npz"
+        )
+        with np.load(grid_path) as data:
             mid = np.asarray(data["mid"], dtype=np.float64)
             frozen = np.asarray(data["pred_frozen"], dtype=np.float64)
 
-        arms = {tag: _load_arm(work, tag, block) for tag in ARM_TAGS}
+        arms = {
+            tag: _load_arm(work, tag, block, val=args.val, anchors=args.anchors)
+            for tag in arm_tags
+        }
         anchors = arms["none"]["anchors"]
         for tag, payload in arms.items():
             if not np.array_equal(payload["anchors"], anchors):
@@ -292,7 +403,7 @@ def main(argv: list[str] | None = None) -> int:
 
         entry: dict[str, Any] = {"windows": int(anchors.shape[0]), "arms": {}}
         base_pred = arms["none"]["point"][:, HORIZON - 1] / anchor_mid - 1.0
-        for tag in ARM_TAGS:
+        for tag in arm_tags:
             pred = arms[tag]["point"][:, HORIZON - 1] / anchor_mid - 1.0
             row = _metrics(pred, y)
             if tag != "none":
@@ -304,7 +415,17 @@ def main(argv: list[str] | None = None) -> int:
                     np.mean((y - pred) ** 2 < (y - base_pred) ** 2)
                 )
                 row.update(
-                    _paired_interval(pred, base_pred, y, seed=BOOTSTRAP_SEED + block)
+                    _paired_interval(
+                        pred,
+                        base_pred,
+                        y,
+                        # The per-window seed must differ between blocks and be
+                        # stable for a given one; `block` is an int for an OOF
+                        # block and the string "val", so it is hashed to an
+                        # offset rather than added.
+                        seed=BOOTSTRAP_SEED
+                        + (block if isinstance(block, int) else len(str(block))),
+                    )
                 )
             entry["arms"][tag] = row
             pooled[tag].append(pred)
@@ -312,7 +433,7 @@ def main(argv: list[str] | None = None) -> int:
         pooled["frozen"].append(frozen[anchors])
         pooled_y.append(y)
         report["blocks"][str(block)] = entry
-        best = max(COVARIATE_ARMS, key=lambda t: entry["arms"][t]["rank_ic"])
+        best = max(covariate_arms, key=lambda t: entry["arms"][t]["rank_ic"])
         print(
             f"  block {block}  n={entry['windows']:>5}  "
             f"none r2={entry['arms']['none']['r2_vs_zero']:+.6f} "
@@ -324,7 +445,7 @@ def main(argv: list[str] | None = None) -> int:
 
     y_all = np.concatenate(pooled_y)
     base_all = np.concatenate(pooled["none"])
-    for tag in (*ARM_TAGS, "frozen"):
+    for tag in (*arm_tags, "frozen"):
         pred_all = np.concatenate(pooled[tag])
         row = _metrics(pred_all, y_all)
         if tag not in ("none", "frozen"):
@@ -338,6 +459,10 @@ def main(argv: list[str] | None = None) -> int:
             row.update(_paired_interval(pred_all, base_all, y_all, seed=BOOTSTRAP_SEED))
         if tag != "frozen":
             row["shrunk_out_of_block"] = _shrunk_out_of_block(pooled[tag], pooled_y)
+            if args.val:
+                row["shrunk_from_oof_blocks"] = _shrunk_from_oof(
+                    work, tag, pred_all, y_all
+                )
         report["pooled"][tag] = row
 
     # The verdict is derived from the numbers, not written beside them. An arm
@@ -346,7 +471,9 @@ def main(argv: list[str] | None = None) -> int:
     # of that makes it beat forecasting a constant zero, which is reported
     # separately and on purpose.
     verdicts: dict[str, Any] = {}
-    for tag in COVARIATE_ARMS:
+    for tag in covariate_arms:
+        if f"{tag}-perm" not in report["pooled"]:
+            continue
         row = report["pooled"][tag]
         null = report["pooled"][f"{tag}-perm"]
         ci_r2 = row.get("delta_r2_vs_zero_ci95")
@@ -396,7 +523,7 @@ def main(argv: list[str] | None = None) -> int:
         / "evidence"
         / "07-e2-channel-information.json"
     )
-    if info_path.is_file():
+    if info_path.is_file() and not args.val:
         info = json.loads(info_path.read_text(encoding="utf-8"))
         lobo = info["designs_leave_one_block_out"]
         report["reference_least_squares_out_of_sample"] = {

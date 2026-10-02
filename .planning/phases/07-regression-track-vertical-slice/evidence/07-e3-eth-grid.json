@@ -1,0 +1,40 @@
+{
+  "blocks": {
+    "val": {
+      "bars": 170483,
+      "both_clean": 148167,
+      "both_clean_fraction": 0.8691013180199786,
+      "btc_clean": 148168,
+      "eth_clean": 170482,
+      "eth_clean_fraction": 0.999994134312512,
+      "eth_finite": 170483,
+      "output": "/Volumes/ProjectsSSD/aihedgefund/timesfm/work/e3/eth_val.npz",
+      "price_max": 2644.68,
+      "price_min": 2412.56,
+      "stale_max_ns_finite": 5252000000,
+      "stale_median_ns": 125000000,
+      "stale_p99_ns": 1421000000
+    }
+  },
+  "dates": [
+    "2026-09-17",
+    "2026-09-18"
+  ],
+  "downloads": [
+    {
+      "bytes": 38684793,
+      "date": "2026-09-17",
+      "sha256": "16d939cbf5aa8cb0ae94c1df4cc2b1b0a3d2c8850faf91d2e7bd99f2786af434",
+      "url": "https://data.binance.vision/data/futures/um/daily/trades/ETHUSDT/ETHUSDT-trades-2026-09-17.zip"
+    },
+    {
+      "bytes": 62594806,
+      "date": "2026-09-18",
+      "sha256": "3a7608a7138366ac3d8a9597c5328a56da7ecb13ab2808302c3cba6e6ab52d66",
+      "url": "https://data.binance.vision/data/futures/um/daily/trades/ETHUSDT/ETHUSDT-trades-2026-09-18.zip"
+    }
+  ],
+  "max_stale_ns": 5000000000,
+  "symbol": "ETHUSDT",
+  "tape_unique_stamps": 1857452
+}

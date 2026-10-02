@@ -88,6 +88,12 @@ DATES: tuple[str, ...] = (
 #: Blocks E1 exported.
 BLOCKS: tuple[int, ...] = (0, 1, 2, 3, 4)
 
+#: The VALIDATION days, served by `--val`. Experiment E3 scores TimesFM on the
+#: one window where neither it nor the project's own model has seen the data, so
+#: the Ethereum channel has to reach those two days as well. Same join, same
+#: staleness threshold, same cross-check -- only the dates and the grid differ.
+DATES_VAL: tuple[str, ...] = ("2026-09-17", "2026-09-18")
+
 #: Same admission threshold as the Bitcoin grid, imported not restated.
 MAX_STALE_NS: int = STALE_BOOK_MAX_AGE_NS
 
@@ -258,12 +264,24 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="check the downloads and the units, then stop before any join",
     )
+    parser.add_argument(
+        "--val",
+        action="store_true",
+        help=(
+            "build the channel for the VALIDATION days against E3's val grid "
+            "instead of the five OOF blocks"
+        ),
+    )
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args(argv)
 
+    global DATES
+    if args.val:
+        DATES = DATES_VAL
+
     work = args.timesfm_root / "work"
     raw_dir = work / "e2" / "eth-raw"
-    out_dir = work / "e2"
+    out_dir = work / ("e3" if args.val else "e2")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print("== downloads ==", flush=True)
@@ -288,16 +306,26 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     print("== blocks ==", flush=True)
-    for block in BLOCKS:
-        src = work / "e1" / f"oof_block_{block}.npz"
+    targets: tuple[tuple[str, Path, Path], ...]
+    if args.val:
+        targets = (("val", work / "e3" / "val.npz", out_dir / "eth_val.npz"),)
+    else:
+        targets = tuple(
+            (
+                str(b),
+                work / "e1" / f"oof_block_{b}.npz",
+                out_dir / f"eth_block_{b}.npz",
+            )
+            for b in BLOCKS
+        )
+    for label, src, dst in targets:
         if not src.is_file():
-            raise SystemExit(f"e2_eth_grid: no E1 export at {src}")
+            raise SystemExit(f"e2_eth_grid: no grid export at {src}")
         with np.load(src) as data:
             grid_ns = np.asarray(data["grid_ns"], dtype=np.int64)
             btc_clean = np.asarray(data["clean"], dtype=bool)
         price, stale = _join(grid_ns, tape)
         clean = np.isfinite(price) & (stale <= MAX_STALE_NS)
-        dst = out_dir / f"eth_block_{block}.npz"
         np.savez_compressed(
             dst,
             grid_ns=grid_ns,
@@ -314,7 +342,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
         finite = np.isfinite(price)
         both = clean & btc_clean
-        report["blocks"][str(block)] = {
+        report["blocks"][label] = {
             "bars": int(grid_ns.shape[0]),
             "eth_finite": int(finite.sum()),
             "eth_clean": int(clean.sum()),
@@ -331,9 +359,9 @@ def main(argv: list[str] | None = None) -> int:
             "price_max": float(np.nanmax(price)) if finite.any() else None,
             "output": str(dst),
         }
-        row = report["blocks"][str(block)]
+        row = report["blocks"][label]
         print(
-            f"  block {block}  bars {row['bars']:>7}  eth_clean "
+            f"  {label:>7s}  bars {row['bars']:>7}  eth_clean "
             f"{row['eth_clean_fraction']:.6f}  both {row['both_clean_fraction']:.6f}"
             f"  stale_p99 {row['stale_p99_ns']}",
             flush=True,

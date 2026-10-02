@@ -106,6 +106,77 @@ ARMS: dict[str, tuple[str, ...]] = {
     # knows. A permutation null cannot answer this -- it destroys the alignment
     # and so tests a different thing.
     "btc_dup": ("btc",),
+    # MANY CURRENCIES AT ONCE -- the thing the original idea actually proposed.
+    # `multi6` is the LIQUID bundle: every added instrument is clean on at least
+    # 99.5% of validation bars, so requiring them all costs under one point of
+    # coverage. `multi10` adds the thin ones (ADA, LINK, AVAX, LTC, TRX), which
+    # buys five more markets at the price of 21 points of coverage -- a different
+    # row population, so it gets its own re-run baseline and is never compared
+    # across anchor sets.
+    "multi6": ("eth", "sol", "bnb", "xrp", "doge"),
+    "imb_multi6": ("imb", "eth", "sol", "bnb", "xrp", "doge"),
+    "multi10": (
+        "eth",
+        "sol",
+        "bnb",
+        "xrp",
+        "doge",
+        "ada",
+        "link",
+        "avax",
+        "ltc",
+        "trx",
+    ),
+    "imb_multi10": (
+        "imb",
+        "eth",
+        "sol",
+        "bnb",
+        "xrp",
+        "doge",
+        "ada",
+        "link",
+        "avax",
+        "ltc",
+        "trx",
+    ),
+}
+
+#: Channel name -> the Binance symbol whose prevailing trade price it carries.
+#: `scripts/e3_multi_asset_grid.py` writes one `price_<SYMBOL>` and one
+#: `clean_<SYMBOL>` array per symbol into `work/e3/multi_val.npz`.
+EXTRA_SYMBOLS: dict[str, str] = {
+    "sol": "SOLUSDT",
+    "bnb": "BNBUSDT",
+    "xrp": "XRPUSDT",
+    "doge": "DOGEUSDT",
+    "ada": "ADAUSDT",
+    "link": "LINKUSDT",
+    "avax": "AVAXUSDT",
+    "ltc": "LTCUSDT",
+    "trx": "TRXUSDT",
+}
+
+#: Anchor sets. Each one intersects the clean masks of exactly the channels an
+#: arm will read, because a window with a hole in ANY channel it is handed is a
+#: window where that channel is a flat carry across a gap. Arms are only ever
+#: compared within one anchor set.
+ANCHOR_BUNDLES: dict[str, tuple[str, ...]] = {
+    "e1": (),
+    "e2": ("eth",),
+    "multi6": ("eth", "sol", "bnb", "xrp", "doge"),
+    "multi10": (
+        "eth",
+        "sol",
+        "bnb",
+        "xrp",
+        "doge",
+        "ada",
+        "link",
+        "avax",
+        "ltc",
+        "trx",
+    ),
 }
 
 #: Seed for `--permute`. Fixed so the null is reproducible.
@@ -148,9 +219,7 @@ def _check_anchor_rule(
 def _channels(
     *,
     names: tuple[str, ...],
-    imb: np.ndarray,
-    eth: np.ndarray,
-    mid: np.ndarray,
+    arrays: dict[str, np.ndarray],
     anchors: np.ndarray,
 ) -> list[np.ndarray] | None:
     """One `(channels, CONTEXT)` covariate array per anchor, or `None`.
@@ -170,14 +239,21 @@ def _channels(
         rows: list[np.ndarray] = []
         for name in names:
             if name == "imb":
-                rows.append(np.asarray(imb[lo:hi], dtype=np.float64))
-            elif name == "eth":
-                rows.append(np.asarray(eth[lo:hi] - eth[k], dtype=np.float64))
+                rows.append(np.asarray(arrays["imb"][lo:hi], dtype=np.float64))
             elif name == "btc":
                 # Bit-identical to the target channel, shifted the same way.
+                mid = arrays["mid"]
                 rows.append(np.asarray(mid[lo:hi] - mid[k], dtype=np.float64))
+            elif name in arrays:
+                # A price channel: shifted by its own anchor value, for the same
+                # float32 precision reason the target is.
+                series = arrays[name]
+                rows.append(np.asarray(series[lo:hi] - series[k], dtype=np.float64))
             else:
-                raise SystemExit(f"timesfm_forecast_mv: unknown channel {name!r}")
+                raise SystemExit(
+                    f"timesfm_forecast_mv: channel {name!r} is not available on "
+                    "this window -- run scripts/e3_multi_asset_grid.py first"
+                )
         block = np.ascontiguousarray(np.vstack(rows), dtype=np.float64)
         if block.shape != (len(names), CONTEXT):
             raise SystemExit(
@@ -270,10 +346,23 @@ def _forecast(
     return point, quantiles
 
 
-def _block_arrays(work: Path, block: int) -> dict[str, np.ndarray]:
-    src = work / "e1" / f"oof_block_{block}.npz"
+def _block_arrays(work: Path, block: int | str) -> dict[str, np.ndarray]:
+    """The grid, the channels and the stored anchors for one scored window.
+
+    `block="val"` reads experiment E3's VALIDATION grid instead of an
+    out-of-sample block. That window is the only one where neither the frozen
+    model nor TimesFM has seen the data: the frozen body was committed to git
+    before those days were ever read, and TimesFM is zero-shot. Everything else
+    about the run is unchanged.
+    """
+    if block == "val":
+        src = work / "e3" / "val.npz"
+        eth_src = work / "e3" / "eth_val.npz"
+    else:
+        src = work / "e1" / f"oof_block_{block}.npz"
+        eth_src = work / "e2" / f"eth_block_{block}.npz"
     if not src.is_file():
-        raise SystemExit(f"timesfm_forecast_mv: no E1 export at {src}")
+        raise SystemExit(f"timesfm_forecast_mv: no grid export at {src}")
     with np.load(src) as data:
         out = {
             "grid_ns": np.asarray(data["grid_ns"], dtype=np.int64),
@@ -283,7 +372,6 @@ def _block_arrays(work: Path, block: int) -> dict[str, np.ndarray]:
             "anchor_ok": np.asarray(data["anchor_ok"], dtype=bool),
             "anchors_e1": np.asarray(data["anchors"], dtype=np.int64),
         }
-    eth_src = work / "e2" / f"eth_block_{block}.npz"
     if not eth_src.is_file():
         raise SystemExit(
             f"timesfm_forecast_mv: no Ethereum channel at {eth_src} -- run "
@@ -299,6 +387,22 @@ def _block_arrays(work: Path, block: int) -> dict[str, np.ndarray]:
             "different stamps than the Bitcoin grid -- the two series are not "
             "aligned and no comparison between them is meaningful"
         )
+    # The nine extra currencies, when they exist. Only the validation window has
+    # them, and an arm that names one without the file present fails loudly in
+    # `_channels` rather than silently dropping a channel.
+    multi_src = work / "e3" / "multi_val.npz"
+    if block == "val" and multi_src.is_file():
+        with np.load(multi_src) as data:
+            if not np.array_equal(
+                np.asarray(data["grid_ns"], dtype=np.int64), out["grid_ns"]
+            ):
+                raise SystemExit(
+                    "timesfm_forecast_mv: the multi-currency channels sit on "
+                    "different stamps than the Bitcoin grid"
+                )
+            for name, symbol in EXTRA_SYMBOLS.items():
+                out[name] = np.asarray(data[f"price_{symbol}"], dtype=np.float64)
+                out[f"{name}_clean"] = np.asarray(data[f"clean_{symbol}"], dtype=bool)
     return out
 
 
@@ -306,8 +410,16 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--timesfm-root", type=Path, default=DEFAULT_TIMESFM_ROOT)
     parser.add_argument("--arm", default="none", choices=sorted(ARMS))
-    parser.add_argument("--anchors", default="e2", choices=("e1", "e2"))
+    parser.add_argument("--anchors", default="e2", choices=sorted(ANCHOR_BUNDLES))
     parser.add_argument("--blocks", default=",".join(str(b) for b in BLOCKS))
+    parser.add_argument(
+        "--val",
+        action="store_true",
+        help=(
+            "score E3's VALIDATION grid instead of the five OOF blocks -- the "
+            "one window where neither model has seen the data"
+        ),
+    )
     parser.add_argument("--device", default="mps")
     parser.add_argument("--batch", type=int, default=64)
     parser.add_argument("--chunk", type=int, default=512)
@@ -325,7 +437,11 @@ def main(argv: list[str] | None = None) -> int:
 
     _prepare_environment(args.timesfm_root)
     work = args.timesfm_root / "work"
-    blocks = tuple(int(b) for b in str(args.blocks).split(",") if b != "")
+    blocks: tuple[int | str, ...]
+    if args.val:
+        blocks = ("val",)
+    else:
+        blocks = tuple(int(b) for b in str(args.blocks).split(",") if b != "")
 
     if args.verify_e1:
         forecaster = _load(args.device, int(args.batch))
@@ -371,7 +487,13 @@ def main(argv: list[str] | None = None) -> int:
             flush=True,
         )
     tag = f"{args.arm}{'-perm' if args.permute else ''}"
-    out_dir = work / "e2" / f"fc-{tag}-{args.anchors}"
+    # The anchor set is part of the directory name, not just the arm: arms on
+    # DIFFERENT anchor sets score different rows and must never land in one
+    # place, because the scorer's whole guarantee is that everything it reads
+    # forecast the same windows.
+    out_dir = (work / "e3" if args.val else work / "e2") / (
+        f"fc-{tag}-val-{args.anchors}" if args.val else f"fc-{tag}-{args.anchors}"
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
 
     forecaster = _load(args.device, int(args.batch))
@@ -400,21 +522,20 @@ def main(argv: list[str] | None = None) -> int:
         if args.anchors == "e1":
             anchors = arrays["anchors_e1"]
         else:
-            anchors = _admissible(
-                arrays["clean"] & arrays["eth_clean"],
-                arrays["anchor_ok"],
-                stride=STRIDE,
-            )
+            combined = arrays["clean"].copy()
+            for channel in ANCHOR_BUNDLES[args.anchors]:
+                key = f"{channel}_clean"
+                if key not in arrays:
+                    raise SystemExit(
+                        f"timesfm_forecast_mv: anchor set {args.anchors!r} needs "
+                        f"{key}, which this window does not carry"
+                    )
+                combined &= arrays[key]
+            anchors = _admissible(combined, arrays["anchor_ok"], stride=STRIDE)
         if anchors.shape[0] == 0:
             raise SystemExit(f"timesfm_forecast_mv: block {block} has no anchors")
         contexts, levels = _contexts(arrays["mid"], anchors)
-        covariates = _channels(
-            names=names,
-            imb=arrays["imb"],
-            eth=arrays["eth"],
-            mid=arrays["mid"],
-            anchors=anchors,
-        )
+        covariates = _channels(names=names, arrays=arrays, anchors=anchors)
         if covariates is not None and args.permute:
             order = rng.permutation(len(covariates))
             covariates = [covariates[int(j)] for j in order]

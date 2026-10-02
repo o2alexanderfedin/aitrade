@@ -1,0 +1,245 @@
+{
+  "all_channels_clean_bars": 112003,
+  "all_channels_clean_fraction": 0.65697459570749,
+  "btc_clean_fraction": 0.8691071837074664,
+  "channels": {
+    "ADAUSDT": {
+      "clean_bars": 167019,
+      "clean_fraction": 0.9796812585419074,
+      "downloads": [
+        {
+          "bytes": 4120054,
+          "date": "2026-09-17",
+          "sha256": "cd1d8874445fc41e8a496e89d5a90d87f065ff995930cf7507e578e34ef14f76",
+          "url": "https://data.binance.vision/data/futures/um/daily/trades/ADAUSDT/ADAUSDT-trades-2026-09-17.zip"
+        },
+        {
+          "bytes": 5759861,
+          "date": "2026-09-18",
+          "sha256": "a534be82e1321aa3b93801c997a7b65e0ee52956f02c9c04ef1cf6ba2d123ecf",
+          "url": "https://data.binance.vision/data/futures/um/daily/trades/ADAUSDT/ADAUSDT-trades-2026-09-18.zip"
+        }
+      ],
+      "price_max": 0.2271,
+      "price_min": 0.1942,
+      "stale_median_ns": 658000000,
+      "stale_p99_ns": 6178359999,
+      "trades": 1116720,
+      "unique_ms_stamps": 259227
+    },
+    "AVAXUSDT": {
+      "clean_bars": 162432,
+      "clean_fraction": 0.9527753500349009,
+      "downloads": [
+        {
+          "bytes": 2783234,
+          "date": "2026-09-17",
+          "sha256": "15aebe4fa25627235f36fda7e9e41898a030ee47e80b0840fdfd1d6ee6732e6c",
+          "url": "https://data.binance.vision/data/futures/um/daily/trades/AVAXUSDT/AVAXUSDT-trades-2026-09-17.zip"
+        },
+        {
+          "bytes": 4304727,
+          "date": "2026-09-18",
+          "sha256": "5dbe472e67efb4aa3957990aa60c4bd6a84fb8ebbcbe501ac72c99f667adf70a",
+          "url": "https://data.binance.vision/data/futures/um/daily/trades/AVAXUSDT/AVAXUSDT-trades-2026-09-18.zip"
+        }
+      ],
+      "price_max": 8.342,
+      "price_min": 7.465,
+      "stale_median_ns": 894000000,
+      "stale_p99_ns": 8300000000,
+      "trades": 1089316,
+      "unique_ms_stamps": 235025
+    },
+    "BNBUSDT": {
+      "clean_bars": 169697,
+      "clean_fraction": 0.995389569634509,
+      "downloads": [
+        {
+          "bytes": 6843736,
+          "date": "2026-09-17",
+          "sha256": "5f156e0faaccedbc2d74df6c6a49c765d58bb764625d4f8c99e7cbd59f540e70",
+          "url": "https://data.binance.vision/data/futures/um/daily/trades/BNBUSDT/BNBUSDT-trades-2026-09-17.zip"
+        },
+        {
+          "bytes": 10888429,
+          "date": "2026-09-18",
+          "sha256": "71e85fe4b811c8daf1b3541f1054337d41f444396acf4802015324c4c89906b4",
+          "url": "https://data.binance.vision/data/futures/um/daily/trades/BNBUSDT/BNBUSDT-trades-2026-09-18.zip"
+        }
+      ],
+      "price_max": 769.46,
+      "price_min": 721.25,
+      "stale_median_ns": 427000000,
+      "stale_p99_ns": 4040179999,
+      "trades": 2684408,
+      "unique_ms_stamps": 513758
+    },
+    "DOGEUSDT": {
+      "clean_bars": 170023,
+      "clean_fraction": 0.9973017837555651,
+      "downloads": [
+        {
+          "bytes": 8528322,
+          "date": "2026-09-17",
+          "sha256": "293737ce4561ce1dc802c204bd03b64277de1331907a78590c8c91183a49b7fe",
+          "url": "https://data.binance.vision/data/futures/um/daily/trades/DOGEUSDT/DOGEUSDT-trades-2026-09-17.zip"
+        },
+        {
+          "bytes": 13937724,
+          "date": "2026-09-18",
+          "sha256": "2ce796ec6b7f42cb60baa82386d1b47d75084edea5aa5fe119809f6ecc1ac995",
+          "url": "https://data.binance.vision/data/futures/um/daily/trades/DOGEUSDT/DOGEUSDT-trades-2026-09-18.zip"
+        }
+      ],
+      "price_max": 0.08867,
+      "price_min": 0.08047,
+      "stale_median_ns": 286000000,
+      "stale_p99_ns": 3562000000,
+      "trades": 2476476,
+      "unique_ms_stamps": 464826
+    },
+    "LINKUSDT": {
+      "clean_bars": 162826,
+      "clean_fraction": 0.9550864309051342,
+      "downloads": [
+        {
+          "bytes": 4922488,
+          "date": "2026-09-17",
+          "sha256": "a8561557619b4991fbe6f3d1ca9584d6caf2845ab3fc31cd3d645196ade2a16c",
+          "url": "https://data.binance.vision/data/futures/um/daily/trades/LINKUSDT/LINKUSDT-trades-2026-09-17.zip"
+        },
+        {
+          "bytes": 7076962,
+          "date": "2026-09-18",
+          "sha256": "87dd7a805db50242196a3be9a3c13f15ba5c6067aa0282e50d7c5a7ee73dde1b",
+          "url": "https://data.binance.vision/data/futures/um/daily/trades/LINKUSDT/LINKUSDT-trades-2026-09-18.zip"
+        }
+      ],
+      "price_max": 12.421,
+      "price_min": 10.978,
+      "stale_median_ns": 831000000,
+      "stale_p99_ns": 8300179999,
+      "trades": 1237944,
+      "unique_ms_stamps": 268927
+    },
+    "LTCUSDT": {
+      "clean_bars": 154764,
+      "clean_fraction": 0.9077972583776681,
+      "downloads": [
+        {
+          "bytes": 2493596,
+          "date": "2026-09-17",
+          "sha256": "516eff0ee47e8ced9299fe88c4d74841560fe59adfc77faf5de9548239fcdb0b",
+          "url": "https://data.binance.vision/data/futures/um/daily/trades/LTCUSDT/LTCUSDT-trades-2026-09-17.zip"
+        },
+        {
+          "bytes": 3949094,
+          "date": "2026-09-18",
+          "sha256": "94d96771085f94946e00499fe66c9a90391fe54b8351eeabc4a98eaf30859e96",
+          "url": "https://data.binance.vision/data/futures/um/daily/trades/LTCUSDT/LTCUSDT-trades-2026-09-18.zip"
+        }
+      ],
+      "price_max": 58.21,
+      "price_min": 51.57,
+      "stale_median_ns": 1004000000,
+      "stale_p99_ns": 11467000000,
+      "trades": 633725,
+      "unique_ms_stamps": 165930
+    },
+    "SOLUSDT": {
+      "clean_bars": 170472,
+      "clean_fraction": 0.9999354774376331,
+      "downloads": [
+        {
+          "bytes": 15999370,
+          "date": "2026-09-17",
+          "sha256": "9b4169c01b8910cd7c8e5aa13387fdf33a2566fd57961bd8a0341fccb490822e",
+          "url": "https://data.binance.vision/data/futures/um/daily/trades/SOLUSDT/SOLUSDT-trades-2026-09-17.zip"
+        },
+        {
+          "bytes": 27139826,
+          "date": "2026-09-18",
+          "sha256": "32169c05e75936fb63de382f8f5028b93a17178eae12a57f1c2c61a468f4a1f4",
+          "url": "https://data.binance.vision/data/futures/um/daily/trades/SOLUSDT/SOLUSDT-trades-2026-09-18.zip"
+        }
+      ],
+      "price_max": 114.3,
+      "price_min": 98.42,
+      "stale_median_ns": 188000000,
+      "stale_p99_ns": 1792359999,
+      "trades": 5566574,
+      "unique_ms_stamps": 993611
+    },
+    "TRXUSDT": {
+      "clean_bars": 157945,
+      "clean_fraction": 0.9264560102766844,
+      "downloads": [
+        {
+          "bytes": 1567225,
+          "date": "2026-09-17",
+          "sha256": "ff0d9d0dbdc73ebed1991d8fa5f3570bb75ee271df59729a289349ba28e29758",
+          "url": "https://data.binance.vision/data/futures/um/daily/trades/TRXUSDT/TRXUSDT-trades-2026-09-17.zip"
+        },
+        {
+          "bytes": 1975197,
+          "date": "2026-09-18",
+          "sha256": "bc470e90316e441b0c1dacbecf1f0b9bb36b1e062844b94b0c8597ec5fa1a2d4",
+          "url": "https://data.binance.vision/data/futures/um/daily/trades/TRXUSDT/TRXUSDT-trades-2026-09-18.zip"
+        }
+      ],
+      "price_max": 0.33986,
+      "price_min": 0.33326,
+      "stale_median_ns": 1095000000,
+      "stale_p99_ns": 9909179999,
+      "trades": 361453,
+      "unique_ms_stamps": 141935
+    },
+    "XRPUSDT": {
+      "clean_bars": 170442,
+      "clean_fraction": 0.999759506812996,
+      "downloads": [
+        {
+          "bytes": 16288187,
+          "date": "2026-09-17",
+          "sha256": "b78905cb39caf6730a34a92b8e9d3ac5fceb2e7014f43ee79bef1f67edb8aa85",
+          "url": "https://data.binance.vision/data/futures/um/daily/trades/XRPUSDT/XRPUSDT-trades-2026-09-17.zip"
+        },
+        {
+          "bytes": 25243267,
+          "date": "2026-09-18",
+          "sha256": "aa478432c87c96abebb9e97b7f42043588c5bafe12d8e30715aa81fccd36d688",
+          "url": "https://data.binance.vision/data/futures/um/daily/trades/XRPUSDT/XRPUSDT-trades-2026-09-18.zip"
+        }
+      ],
+      "price_max": 1.4142,
+      "price_min": 1.2868,
+      "stale_median_ns": 271000000,
+      "stale_p99_ns": 2347000000,
+      "trades": 4967858,
+      "unique_ms_stamps": 744772
+    }
+  },
+  "dates": [
+    "2026-09-17",
+    "2026-09-18"
+  ],
+  "eth_clean_fraction": 0.999994134312512,
+  "generated_by": "mvp/scripts/e3_multi_asset_grid.py",
+  "grid_bars": 170483,
+  "looks_spent_by_this_script": 0,
+  "max_stale_ns": 5000000000,
+  "output": "/Volumes/ProjectsSSD/aihedgefund/timesfm/work/e3/multi_val.npz",
+  "segment": "val",
+  "symbols": [
+    "SOLUSDT",
+    "BNBUSDT",
+    "XRPUSDT",
+    "DOGEUSDT",
+    "ADAUSDT",
+    "LINKUSDT",
+    "AVAXUSDT",
+    "LTCUSDT",
+    "TRXUSDT"
+  ]
+}

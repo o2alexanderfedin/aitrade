@@ -1,0 +1,489 @@
+{
+  "arms": [
+    "none",
+    "imb",
+    "multi6",
+    "imb_multi6",
+    "multi6-perm",
+    "imb_multi6-perm"
+  ],
+  "baseline_arm": "none",
+  "blocks": {
+    "val": {
+      "arms": {
+        "imb": {
+          "breakeven_pearson": 0.12475085419920717,
+          "delta_r2_vs_zero": 0.018150491020976878,
+          "delta_r2_vs_zero_ci95": [
+            -0.0009397109213840893,
+            0.03544395740210608
+          ],
+          "delta_r2_vs_zero_fraction_above_zero": 0.967,
+          "delta_rank_ic": 0.01638942983921743,
+          "delta_rank_ic_ci95": [
+            -0.029687638594432422,
+            0.058854311828606155
+          ],
+          "delta_rank_ic_fraction_above_zero": 0.7375,
+          "mae": 0.00018041202251138893,
+          "mae_ratio_vs_zero": 1.0292603814242294,
+          "moved_rows": 2115,
+          "n": 2459,
+          "pearson_minus_breakeven": -0.01836750989708648,
+          "pearson_pred_vs_target": 0.1063833443021207,
+          "pred_std": 6.849415240669589e-05,
+          "pred_std_over_target_std": 0.24950170839841435,
+          "r2_vs_zero": -0.008270297586353781,
+          "r2_vs_zero_reconstruction_error": 0.0008951526103419399,
+          "r2_vs_zero_two_term_approximation": -0.00916545019669572,
+          "rank_ic": 0.04832952948670711,
+          "sign_agreement_on_moved_rows": 0.5210401891252955,
+          "target_std": 0.000274523781205224,
+          "wins_vs_baseline_fraction": 0.5201301342008947
+        },
+        "imb_multi6": {
+          "breakeven_pearson": 0.11873411849317182,
+          "delta_r2_vs_zero": 0.018153831098995266,
+          "delta_r2_vs_zero_ci95": [
+            -0.008740809594343736,
+            0.04896918654088647
+          ],
+          "delta_r2_vs_zero_fraction_above_zero": 0.9005,
+          "delta_rank_ic": 0.06983736178469449,
+          "delta_rank_ic_ci95": [
+            0.023172583388319835,
+            0.11272501595541863
+          ],
+          "delta_rank_ic_fraction_above_zero": 0.999,
+          "mae": 0.00017861752264909696,
+          "mae_ratio_vs_zero": 1.0190226623020917,
+          "moved_rows": 2115,
+          "n": 2459,
+          "pearson_minus_breakeven": -0.01666886742011668,
+          "pearson_pred_vs_target": 0.10206525107305514,
+          "pred_std": 6.519067833362928e-05,
+          "pred_std_over_target_std": 0.23746823698634364,
+          "r2_vs_zero": -0.008266957508335393,
+          "r2_vs_zero_reconstruction_error": -0.0003503043907069764,
+          "r2_vs_zero_two_term_approximation": -0.007916653117628417,
+          "rank_ic": 0.10177746143218416,
+          "sign_agreement_on_moved_rows": 0.5465721040189125,
+          "target_std": 0.000274523781205224,
+          "wins_vs_baseline_fraction": 0.5437169581130541
+        },
+        "imb_multi6-perm": {
+          "breakeven_pearson": 0.1110150696507599,
+          "delta_r2_vs_zero": 0.013324510637230835,
+          "delta_r2_vs_zero_ci95": [
+            -0.004120947313628775,
+            0.03501715467124861
+          ],
+          "delta_r2_vs_zero_fraction_above_zero": 0.9195,
+          "delta_rank_ic": 0.021394611351616924,
+          "delta_rank_ic_ci95": [
+            -0.02162123778742311,
+            0.0590570288660244
+          ],
+          "delta_rank_ic_fraction_above_zero": 0.8395,
+          "mae": 0.00017931255586094437,
+          "mae_ratio_vs_zero": 1.0229878645029784,
+          "moved_rows": 2115,
+          "n": 2459,
+          "pearson_minus_breakeven": -0.03174928374096489,
+          "pearson_pred_vs_target": 0.07926578590979501,
+          "pred_std": 6.095255338257582e-05,
+          "pred_std_over_target_std": 0.2220301393015198,
+          "r2_vs_zero": -0.013096277970099823,
+          "r2_vs_zero_reconstruction_error": 0.00100231781336,
+          "r2_vs_zero_two_term_approximation": -0.014098595783459823,
+          "rank_ic": 0.0533347109991066,
+          "sign_agreement_on_moved_rows": 0.5191489361702127,
+          "target_std": 0.000274523781205224,
+          "wins_vs_baseline_fraction": 0.5209434729564864
+        },
+        "multi6": {
+          "breakeven_pearson": 0.12082576130760478,
+          "delta_r2_vs_zero": -0.0007887960342811695,
+          "delta_r2_vs_zero_ci95": [
+            -0.01838557754854011,
+            0.020467472601553797
+          ],
+          "delta_r2_vs_zero_fraction_above_zero": 0.473,
+          "delta_rank_ic": 0.01235171499368843,
+          "delta_rank_ic_ci95": [
+            -0.028358223572985265,
+            0.049324099493993634
+          ],
+          "delta_rank_ic_fraction_above_zero": 0.7,
+          "mae": 0.00018047976388702885,
+          "mae_ratio_vs_zero": 1.029646849649344,
+          "moved_rows": 2115,
+          "n": 2459,
+          "pearson_minus_breakeven": -0.05786049287063226,
+          "pearson_pred_vs_target": 0.06296526843697252,
+          "pred_std": 6.633908972232702e-05,
+          "pred_std_over_target_std": 0.24165152261520956,
+          "r2_vs_zero": -0.027209584641611828,
+          "r2_vs_zero_reconstruction_error": 0.0007545677612976996,
+          "r2_vs_zero_two_term_approximation": -0.027964152402909528,
+          "rank_ic": 0.04429181464117811,
+          "sign_agreement_on_moved_rows": 0.51725768321513,
+          "target_std": 0.000274523781205224,
+          "wins_vs_baseline_fraction": 0.5111834078893859
+        },
+        "multi6-perm": {
+          "breakeven_pearson": 0.11236153023618277,
+          "delta_r2_vs_zero": 0.008962819350908369,
+          "delta_r2_vs_zero_ci95": [
+            -0.009234188371970405,
+            0.03085856711884548
+          ],
+          "delta_r2_vs_zero_fraction_above_zero": 0.815,
+          "delta_rank_ic": 0.017663931223997974,
+          "delta_rank_ic_ci95": [
+            -0.027523267927133162,
+            0.057119886090943726
+          ],
+          "delta_rank_ic_fraction_above_zero": 0.779,
+          "mae": 0.00017951602292483454,
+          "mae_ratio_vs_zero": 1.0241486551469259,
+          "moved_rows": 2115,
+          "n": 2459,
+          "pearson_minus_breakeven": -0.04121703812234205,
+          "pearson_pred_vs_target": 0.07114449211384072,
+          "pred_std": 6.169182428488399e-05,
+          "pred_std_over_target_std": 0.22472306047236554,
+          "r2_vs_zero": -0.01745796925642229,
+          "r2_vs_zero_reconstruction_error": 0.0010668686444954417,
+          "r2_vs_zero_two_term_approximation": -0.01852483790091773,
+          "rank_ic": 0.04960403087148765,
+          "sign_agreement_on_moved_rows": 0.5177304964539007,
+          "target_std": 0.000274523781205224,
+          "wins_vs_baseline_fraction": 0.5250101667344449
+        },
+        "none": {
+          "breakeven_pearson": 0.12640734108842244,
+          "mae": 0.00018128951863892622,
+          "mae_ratio_vs_zero": 1.0342665444634487,
+          "moved_rows": 2115,
+          "n": 2459,
+          "pearson_minus_breakeven": -0.05407824383757309,
+          "pearson_pred_vs_target": 0.07232909725084935,
+          "pred_std": 6.94036424953844e-05,
+          "pred_std_over_target_std": 0.2528146821768449,
+          "r2_vs_zero": -0.02642078860733066,
+          "r2_vs_zero_reconstruction_error": 0.0009227594496252628,
+          "r2_vs_zero_two_term_approximation": -0.02734354805695592,
+          "rank_ic": 0.03194009964748968,
+          "sign_agreement_on_moved_rows": 0.5158392434988179,
+          "target_std": 0.000274523781205224
+        }
+      },
+      "frozen_in_sample": {
+        "breakeven_pearson": 0.020084864001307795,
+        "mae": 0.00017429203995335488,
+        "mae_ratio_vs_zero": 0.994345548730116,
+        "moved_rows": 2115,
+        "n": 2459,
+        "pearson_minus_breakeven": 0.13462524674245827,
+        "pearson_pred_vs_target": 0.15471011074376606,
+        "pred_std": 1.1027545621263402e-05,
+        "pred_std_over_target_std": 0.04016972800261559,
+        "r2_vs_zero": 0.010716804637484478,
+        "r2_vs_zero_reconstruction_error": -9.891445037463892e-05,
+        "r2_vs_zero_two_term_approximation": 0.010815719087859117,
+        "rank_ic": 0.21534690390567174,
+        "sign_agreement_on_moved_rows": 0.6080378250591016,
+        "target_std": 0.000274523781205224
+      },
+      "windows": 2459
+    }
+  },
+  "bootstrap_block_windows": 50,
+  "bootstrap_seed": 20260930,
+  "comparability_note": "Every arm forecast the same anchors, asserted per block. On the five OOF blocks the frozen predictor's column is IN SAMPLE -- those are the blocks its grid was selected on. On the val window it is OUT OF SAMPLE: the body was committed to git before those days were read, and TimesFM is zero-shot, so neither model has an advantage and the comparison needs no caveat. In BOTH cases the rows are a time-weighted 1-second grid, not the event-weighted decision rows the published r-squared range was measured on, so no number here may be quoted beside that range.",
+  "experiment": "E2 -- multivariate TimesFM 3.0 on the 10 s Bitcoin mid",
+  "frozen_column_is_out_of_sample": true,
+  "generated_by": "mvp/scripts/e2_score_arms.py",
+  "horizon_bars": 10,
+  "n_bootstrap": 2000,
+  "pooled": {
+    "frozen": {
+      "breakeven_pearson": 0.020084864001307795,
+      "mae": 0.00017429203995335488,
+      "mae_ratio_vs_zero": 0.994345548730116,
+      "moved_rows": 2115,
+      "n": 2459,
+      "pearson_minus_breakeven": 0.13462524674245827,
+      "pearson_pred_vs_target": 0.15471011074376606,
+      "pred_std": 1.1027545621263402e-05,
+      "pred_std_over_target_std": 0.04016972800261559,
+      "r2_vs_zero": 0.010716804637484478,
+      "r2_vs_zero_reconstruction_error": -9.891445037463892e-05,
+      "r2_vs_zero_two_term_approximation": 0.010815719087859117,
+      "rank_ic": 0.21534690390567174,
+      "sign_agreement_on_moved_rows": 0.6080378250591016,
+      "target_std": 0.000274523781205224
+    },
+    "imb": {
+      "breakeven_pearson": 0.12475085419920717,
+      "delta_r2_vs_zero": 0.018150491020976878,
+      "delta_r2_vs_zero_ci95": [
+        -0.00035656281565735686,
+        0.03649740317111433
+      ],
+      "delta_r2_vs_zero_fraction_above_zero": 0.9735,
+      "delta_rank_ic": 0.01638942983921743,
+      "delta_rank_ic_ci95": [
+        -0.030759048210043934,
+        0.06286477538955701
+      ],
+      "delta_rank_ic_fraction_above_zero": 0.7405,
+      "mae": 0.00018041202251138893,
+      "mae_ratio_vs_zero": 1.0292603814242294,
+      "moved_rows": 2115,
+      "n": 2459,
+      "pearson_minus_breakeven": -0.01836750989708648,
+      "pearson_pred_vs_target": 0.1063833443021207,
+      "pred_std": 6.849415240669589e-05,
+      "pred_std_over_target_std": 0.24950170839841435,
+      "r2_vs_zero": -0.008270297586353781,
+      "r2_vs_zero_reconstruction_error": 0.0008951526103419399,
+      "r2_vs_zero_two_term_approximation": -0.00916545019669572,
+      "rank_ic": 0.04832952948670711,
+      "shrunk_from_oof_blocks": {
+        "breakeven_pearson": 0.035321022765785574,
+        "mae": 0.00017535888171935337,
+        "mae_ratio_vs_zero": 1.0004319389146814,
+        "moved_rows": 2115,
+        "n": 2459,
+        "oof_rows_used_to_fit_the_scale": 18021,
+        "pearson_minus_breakeven": 0.07106232153633515,
+        "pearson_pred_vs_target": 0.10638334430212074,
+        "pred_std": 1.9392921451398507e-05,
+        "pred_std_over_target_std": 0.07064204553157115,
+        "r2_vs_zero": 0.010354076024312264,
+        "r2_vs_zero_reconstruction_error": 0.00031410051721439056,
+        "r2_vs_zero_two_term_approximation": 0.010039975507097874,
+        "rank_ic": 0.04832952948670711,
+        "scale_fitted_on_oof_blocks": 0.2831325123384209,
+        "sign_agreement_on_moved_rows": 0.5210401891252955,
+        "target_std": 0.000274523781205224
+      },
+      "shrunk_out_of_block": {
+        "unavailable": "a single scored window has no other block to fit the amplitude on; see shrunk_from_oof_blocks"
+      },
+      "sign_agreement_on_moved_rows": 0.5210401891252955,
+      "target_std": 0.000274523781205224,
+      "wins_vs_baseline_fraction": 0.5201301342008947
+    },
+    "imb_multi6": {
+      "breakeven_pearson": 0.11873411849317182,
+      "delta_r2_vs_zero": 0.018153831098995266,
+      "delta_r2_vs_zero_ci95": [
+        -0.008630177363285273,
+        0.04868488189270867
+      ],
+      "delta_r2_vs_zero_fraction_above_zero": 0.906,
+      "delta_rank_ic": 0.06983736178469449,
+      "delta_rank_ic_ci95": [
+        0.02017954490591287,
+        0.11430470322970321
+      ],
+      "delta_rank_ic_fraction_above_zero": 0.999,
+      "mae": 0.00017861752264909696,
+      "mae_ratio_vs_zero": 1.0190226623020917,
+      "moved_rows": 2115,
+      "n": 2459,
+      "pearson_minus_breakeven": -0.01666886742011668,
+      "pearson_pred_vs_target": 0.10206525107305514,
+      "pred_std": 6.519067833362928e-05,
+      "pred_std_over_target_std": 0.23746823698634364,
+      "r2_vs_zero": -0.008266957508335393,
+      "r2_vs_zero_reconstruction_error": -0.0003503043907069764,
+      "r2_vs_zero_two_term_approximation": -0.007916653117628417,
+      "rank_ic": 0.10177746143218416,
+      "shrunk_from_oof_blocks": {
+        "unavailable": "arm 'imb_multi6' has no out-of-sample run, so its amplitude cannot be fitted away from the validation window"
+      },
+      "shrunk_out_of_block": {
+        "unavailable": "a single scored window has no other block to fit the amplitude on; see shrunk_from_oof_blocks"
+      },
+      "sign_agreement_on_moved_rows": 0.5465721040189125,
+      "target_std": 0.000274523781205224,
+      "wins_vs_baseline_fraction": 0.5437169581130541
+    },
+    "imb_multi6-perm": {
+      "breakeven_pearson": 0.1110150696507599,
+      "delta_r2_vs_zero": 0.013324510637230835,
+      "delta_r2_vs_zero_ci95": [
+        -0.0033645980155206224,
+        0.03457187789812613
+      ],
+      "delta_r2_vs_zero_fraction_above_zero": 0.9335,
+      "delta_rank_ic": 0.021394611351616924,
+      "delta_rank_ic_ci95": [
+        -0.021446738833498565,
+        0.060778523103415215
+      ],
+      "delta_rank_ic_fraction_above_zero": 0.8475,
+      "mae": 0.00017931255586094437,
+      "mae_ratio_vs_zero": 1.0229878645029784,
+      "moved_rows": 2115,
+      "n": 2459,
+      "pearson_minus_breakeven": -0.03174928374096489,
+      "pearson_pred_vs_target": 0.07926578590979501,
+      "pred_std": 6.095255338257582e-05,
+      "pred_std_over_target_std": 0.2220301393015198,
+      "r2_vs_zero": -0.013096277970099823,
+      "r2_vs_zero_reconstruction_error": 0.00100231781336,
+      "r2_vs_zero_two_term_approximation": -0.014098595783459823,
+      "rank_ic": 0.0533347109991066,
+      "shrunk_from_oof_blocks": {
+        "unavailable": "arm 'imb_multi6-perm' has no out-of-sample run, so its amplitude cannot be fitted away from the validation window"
+      },
+      "shrunk_out_of_block": {
+        "unavailable": "a single scored window has no other block to fit the amplitude on; see shrunk_from_oof_blocks"
+      },
+      "sign_agreement_on_moved_rows": 0.5191489361702127,
+      "target_std": 0.000274523781205224,
+      "wins_vs_baseline_fraction": 0.5209434729564864
+    },
+    "multi6": {
+      "breakeven_pearson": 0.12082576130760478,
+      "delta_r2_vs_zero": -0.0007887960342811695,
+      "delta_r2_vs_zero_ci95": [
+        -0.018177840850435566,
+        0.02030227072215017
+      ],
+      "delta_r2_vs_zero_fraction_above_zero": 0.472,
+      "delta_rank_ic": 0.01235171499368843,
+      "delta_rank_ic_ci95": [
+        -0.0286785503407812,
+        0.050885323001392375
+      ],
+      "delta_rank_ic_fraction_above_zero": 0.706,
+      "mae": 0.00018047976388702885,
+      "mae_ratio_vs_zero": 1.029646849649344,
+      "moved_rows": 2115,
+      "n": 2459,
+      "pearson_minus_breakeven": -0.05786049287063226,
+      "pearson_pred_vs_target": 0.06296526843697252,
+      "pred_std": 6.633908972232702e-05,
+      "pred_std_over_target_std": 0.24165152261520956,
+      "r2_vs_zero": -0.027209584641611828,
+      "r2_vs_zero_reconstruction_error": 0.0007545677612976996,
+      "r2_vs_zero_two_term_approximation": -0.027964152402909528,
+      "rank_ic": 0.04429181464117811,
+      "shrunk_from_oof_blocks": {
+        "unavailable": "arm 'multi6' has no out-of-sample run, so its amplitude cannot be fitted away from the validation window"
+      },
+      "shrunk_out_of_block": {
+        "unavailable": "a single scored window has no other block to fit the amplitude on; see shrunk_from_oof_blocks"
+      },
+      "sign_agreement_on_moved_rows": 0.51725768321513,
+      "target_std": 0.000274523781205224,
+      "wins_vs_baseline_fraction": 0.5111834078893859
+    },
+    "multi6-perm": {
+      "breakeven_pearson": 0.11236153023618277,
+      "delta_r2_vs_zero": 0.008962819350908369,
+      "delta_r2_vs_zero_ci95": [
+        -0.00887490697308676,
+        0.03093508375301326
+      ],
+      "delta_r2_vs_zero_fraction_above_zero": 0.8285,
+      "delta_rank_ic": 0.017663931223997974,
+      "delta_rank_ic_ci95": [
+        -0.027584513599403154,
+        0.05777898108778688
+      ],
+      "delta_rank_ic_fraction_above_zero": 0.7945,
+      "mae": 0.00017951602292483454,
+      "mae_ratio_vs_zero": 1.0241486551469259,
+      "moved_rows": 2115,
+      "n": 2459,
+      "pearson_minus_breakeven": -0.04121703812234205,
+      "pearson_pred_vs_target": 0.07114449211384072,
+      "pred_std": 6.169182428488399e-05,
+      "pred_std_over_target_std": 0.22472306047236554,
+      "r2_vs_zero": -0.01745796925642229,
+      "r2_vs_zero_reconstruction_error": 0.0010668686444954417,
+      "r2_vs_zero_two_term_approximation": -0.01852483790091773,
+      "rank_ic": 0.04960403087148765,
+      "shrunk_from_oof_blocks": {
+        "unavailable": "arm 'multi6-perm' has no out-of-sample run, so its amplitude cannot be fitted away from the validation window"
+      },
+      "shrunk_out_of_block": {
+        "unavailable": "a single scored window has no other block to fit the amplitude on; see shrunk_from_oof_blocks"
+      },
+      "sign_agreement_on_moved_rows": 0.5177304964539007,
+      "target_std": 0.000274523781205224,
+      "wins_vs_baseline_fraction": 0.5250101667344449
+    },
+    "none": {
+      "breakeven_pearson": 0.12640734108842244,
+      "mae": 0.00018128951863892622,
+      "mae_ratio_vs_zero": 1.0342665444634487,
+      "moved_rows": 2115,
+      "n": 2459,
+      "pearson_minus_breakeven": -0.05407824383757309,
+      "pearson_pred_vs_target": 0.07232909725084935,
+      "pred_std": 6.94036424953844e-05,
+      "pred_std_over_target_std": 0.2528146821768449,
+      "r2_vs_zero": -0.02642078860733066,
+      "r2_vs_zero_reconstruction_error": 0.0009227594496252628,
+      "r2_vs_zero_two_term_approximation": -0.02734354805695592,
+      "rank_ic": 0.03194009964748968,
+      "shrunk_from_oof_blocks": {
+        "breakeven_pearson": 0.015313750262847535,
+        "mae": 0.00017528183692717966,
+        "mae_ratio_vs_zero": 0.9999923941932399,
+        "moved_rows": 2115,
+        "n": 2459,
+        "oof_rows_used_to_fit_the_scale": 18021,
+        "pearson_minus_breakeven": 0.05701534698800177,
+        "pearson_pred_vs_target": 0.07232909725084931,
+        "pred_std": 8.407977253178795e-06,
+        "pred_std_over_target_std": 0.03062750052569507,
+        "r2_vs_zero": 0.003637134624218441,
+        "r2_vs_zero_reconstruction_error": 0.0001446594845230186,
+        "r2_vs_zero_two_term_approximation": 0.0034924751396954224,
+        "rank_ic": 0.03194009964748968,
+        "scale_fitted_on_oof_blocks": 0.12114605157413688,
+        "sign_agreement_on_moved_rows": 0.5158392434988179,
+        "target_std": 0.000274523781205224
+      },
+      "shrunk_out_of_block": {
+        "unavailable": "a single scored window has no other block to fit the amplitude on; see shrunk_from_oof_blocks"
+      },
+      "sign_agreement_on_moved_rows": 0.5158392434988179,
+      "target_std": 0.000274523781205224
+    }
+  },
+  "verdict": {
+    "imb_multi6": {
+      "delta_r2_vs_univariate": 0.018153831098995266,
+      "delta_rank_ic_vs_univariate": 0.06983736178469449,
+      "net_delta_r2_over_null": 0.00482932046176443,
+      "net_delta_rank_ic_over_null": 0.04844275043307757,
+      "null_delta_r2_vs_univariate": 0.013324510637230835,
+      "null_delta_rank_ic_vs_univariate": 0.021394611351616924,
+      "paired_interval_clears_univariate_baseline": false,
+      "still_loses_to_constant_zero": true,
+      "verdict": "ranking only"
+    },
+    "multi6": {
+      "delta_r2_vs_univariate": -0.0007887960342811695,
+      "delta_rank_ic_vs_univariate": 0.01235171499368843,
+      "net_delta_r2_over_null": -0.009751615385189538,
+      "net_delta_rank_ic_over_null": -0.005312216230309544,
+      "null_delta_r2_vs_univariate": 0.008962819350908369,
+      "null_delta_rank_ic_vs_univariate": 0.017663931223997974,
+      "paired_interval_clears_univariate_baseline": false,
+      "still_loses_to_constant_zero": true,
+      "verdict": "not separable from its own misaligned null"
+    }
+  },
+  "window": "val"
+}
